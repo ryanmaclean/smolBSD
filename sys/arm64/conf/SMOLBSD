@@ -1,0 +1,163 @@
+# Materialized from plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md
+# Authoring chain: planner@smolbsd.local <task-0005.planner@smolbsd.local>
+#
+# SMOLBSD — FreeBSD 15 arm64 minimal QEMU-only kernel
+# Target: headless VM, virtio block + net, UFS root, no physical hardware.
+# Derived from arm64/conf/MINIMAL (which is derived from GENERIC).
+#
+# DO NOT add physical device support here. This kernel is for QEMU/HVF only.
+# Build host: fbuild (FreeBSD 15 aarch64); native arm64 build — no cross-compile.
+# QEMU target: qemu-system-aarch64 -machine virt,accel=hvf -cpu host
+#
+# Maintainer: planner@smolbsd.local
+# Format: include MINIMAL, then remove what MINIMAL still carries for
+# physical hardware; then add arm64/QEMU-specific tuning.
+
+include MINIMAL
+machine arm64
+ident SMOLBSD
+
+# -----------------------------------------------------------------------
+# FDT — arm64 QEMU virt machine uses Flattened Device Tree (not ACPI-only)
+# -----------------------------------------------------------------------
+options FDT                     # Flattened Device Tree support; required for virt
+
+# -----------------------------------------------------------------------
+# Strip physical storage controllers (not needed in QEMU virtio-blk world)
+# Same list as amd64 SMOLBSD; all are dead code in a virt-machine context.
+# -----------------------------------------------------------------------
+nodevice ahc            # Adaptec SCSI — physical only
+nodevice ahd            # Adaptec Ultra320 — physical only
+nodevice hptiop         # HighPoint RAID — physical only
+nodevice isp            # Qlogic SCSI — physical only
+nodevice mpt            # LSI 53C1030 — physical only
+nodevice mps            # LSI SAS 2 — physical only
+nodevice mpr            # LSI SAS 3 — physical only
+nodevice mpi3mr         # Broadcom SAS 3.5 — physical only
+nodevice sym            # Symbios 53c8xx — physical only
+nodevice isci           # Intel ISCI — physical only
+nodevice ocs_fc         # Emulex FC — physical only
+nodevice pvscsi         # VMware PVSCSI — not QEMU virtio
+nodevice arcmsr         # Areca RAID — physical only
+nodevice ciss           # Compaq/HP RAID — physical only
+nodevice aac            # Adaptec RAID — physical only
+nodevice mfi            # LSI MegaRAID — physical only
+nodevice mrsas          # LSI MegaRAID SAS — physical only
+nodevice ata            # Legacy parallel ATA — virtio-blk handles storage
+nodevice mvs            # Marvell SATA — physical only
+nodevice siis           # SiliconImage SATA — physical only
+nodevice ufshci         # UFS Host Controller — embedded storage controller
+nodevice vmd            # Intel VMD — bare-metal NVMe aggregator; x86 only
+
+# -----------------------------------------------------------------------
+# Strip physical NICs (QEMU uses virtio-net; vtnet driver kept via MINIMAL)
+# -----------------------------------------------------------------------
+nodevice em             # Intel 82540/82571 — use virtio-net
+nodevice igc            # Intel I225 2.5G — physical only
+nodevice ix             # Intel 10G ixgbe — physical only
+nodevice ixv            # Intel 10G ixgbe VF — physical only
+nodevice ixl            # Intel 40G i40e — physical only
+nodevice iavf           # Intel AVF VF — physical only
+nodevice ice            # Intel E810 — physical only
+nodevice mlx5           # Mellanox ConnectX-5 — physical only
+nodevice aq             # Aquantia — physical only
+nodevice bxe            # Broadcom 10G — physical only
+nodevice rge            # Realtek 8169 — physical only
+nodevice ti             # Alteon/Tigon — physical only
+# Keep: vtnet (virtio-net) — the primary NIC interface in QEMU virt machine
+
+# -----------------------------------------------------------------------
+# Strip wireless (headless VM, no WiFi hardware)
+# -----------------------------------------------------------------------
+nodevice wlan           # 802.11 stack — no wireless in VM
+nodevice wlan_amrr
+nodevice wlan_ccmp
+nodevice wlan_tkip
+nodevice wlan_xauth
+nodevice ath
+nodevice ath_pci
+nodevice ath_hal
+nodevice iwn
+nodevice iwi
+nodevice ipw
+nodevice malo
+nodevice mwl
+nodevice ral
+nodevice wpi
+nodevice iwlwifi
+nodevice rtwn
+nodevice rsu
+
+# -----------------------------------------------------------------------
+# Strip USB (no USB devices in headless QEMU virt machine)
+# -----------------------------------------------------------------------
+nodevice uhci           # USB 1.1 OHCI/UHCI — no USB in smolBSD QEMU
+nodevice ohci
+nodevice ehci           # USB 2.0
+nodevice xhci           # USB 3.0
+nodevice usb
+nodevice usbhid
+nodevice hkbd
+nodevice ukbd           # USB keyboard
+nodevice umass          # USB mass storage
+
+# -----------------------------------------------------------------------
+# Strip parallel port / legacy I/O (x86 legacy; not present on arm64)
+# -----------------------------------------------------------------------
+nodevice ppc
+nodevice ppbus
+nodevice lpt
+
+# -----------------------------------------------------------------------
+# Strip sound (headless server image)
+# -----------------------------------------------------------------------
+nooptions SND_SUPPORT
+nodevice sound
+nodevice snd_hda
+nodevice snd_ich
+nodevice snd_via8233
+
+# -----------------------------------------------------------------------
+# Strip Hyper-V (QEMU/HVF target only, not Hyper-V)
+# -----------------------------------------------------------------------
+nodevice hyperv
+
+# -----------------------------------------------------------------------
+# arm64-specific: serial console is UART (not COM1/ISA)
+# QEMU virt machine exposes a PL011 UART at the FDT-described address.
+# loader.conf must set: boot_serial="YES" and console="uart0"
+# -----------------------------------------------------------------------
+device uart             # Generic UART driver; arm64 serial console path
+
+# -----------------------------------------------------------------------
+# ACPI note: QEMU virt machine supports ACPI via AAVMF/EDK2 firmware.
+# FDT is the primary enumeration path on arm64; ACPI is secondary.
+# Keeping acpi enables graceful shutdown (acpi_shutdown) from QEMU host.
+# -----------------------------------------------------------------------
+# device acpi            # Kept via MINIMAL; needed for -machine virt + EDK2
+
+# -----------------------------------------------------------------------
+# QEMU-specific tuning
+# -----------------------------------------------------------------------
+# VirtIO devices kept from MINIMAL:
+#   virtio, virtio_pci, virtio_blk, vtnet (virtio-net), virtio_balloon
+# NVMe kept from MINIMAL (QEMU supports nvme emulation as alternative)
+# Keep: ahci — QEMU also emulates AHCI SATA (needed for non-virtio disk)
+# Keep: efidev, efirtc — UEFI/EDK2 AAVMF boot support (arm64 UEFI path)
+# NOTE: kvm_clock is x86-only; arm64 uses generic counter (arch-timer).
+#       xenpci/xentimer are x86-only; not included in arm64 MINIMAL.
+#       pvbus/psci are arm64 power management — kept from MINIMAL.
+
+# Reduce debug overhead in production image
+makeoptions DEBUG=          # no debug symbols in kernel binary
+nooptions KDB_UNATTENDED    # panic reboot, not drop to debugger
+nooptions WITNESS           # no lock order checker in production
+nooptions INVARIANTS        # no internal consistency checks
+nooptions INVARIANT_SUPPORT
+nooptions BUF_TRACKING
+nooptions FULL_BUF_TRACKING
+
+# compat shims: keep COMPAT_FREEBSD12 onward (needed for pkg(8) ABI)
+# COMPAT_FREEBSD10, COMPAT_FREEBSD11 can be dropped for size
+nooptions COMPAT_FREEBSD10
+nooptions COMPAT_FREEBSD11
