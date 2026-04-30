@@ -1,0 +1,142 @@
+# Materialized from plans/tinyos/PHASE-1-FORGE-TINY-BASELINE.md §4.3
+# Authoring chain: architect@smolbsd.local <task-0001.architect@smolbsd.local>
+#                  builder@smolbsd.local   <task-0002.builder@smolbsd.local>
+#
+# SMOLBSD — FreeBSD 15 amd64 minimal QEMU-only kernel
+# Target: headless VM, virtio block + net, UFS root, no physical hardware.
+# Derived from MINIMAL (which is derived from GENERIC).
+#
+# DO NOT add physical device support here. This kernel is for QEMU/KVM only.
+#
+# Maintainer: architect@smolbsd.local
+# Format: include MINIMAL, then remove what MINIMAL still carries for
+# physical hardware; then add back QEMU-specific tuning.
+
+include MINIMAL
+ident SMOLBSD
+
+# -----------------------------------------------------------------------
+# Strip physical storage controllers (not needed in QEMU virtio-blk world)
+# -----------------------------------------------------------------------
+nodevice ahc            # Adaptec SCSI — physical only
+nodevice ahd            # Adaptec Ultra320 — physical only
+nodevice hptiop         # HighPoint RAID — physical only
+nodevice isp            # Qlogic SCSI — physical only
+nodevice mpt            # LSI 53C1030 — physical only
+nodevice mps            # LSI SAS 2 — physical only
+nodevice mpr            # LSI SAS 3 — physical only
+nodevice mpi3mr         # Broadcom SAS 3.5 — physical only
+nodevice sym            # Symbios 53c8xx — physical only
+nodevice isci           # Intel ISCI — physical only
+nodevice ocs_fc         # Emulex FC — physical only
+nodevice pvscsi         # VMware PVSCSI — not QEMU virtio
+nodevice arcmsr         # Areca RAID — physical only
+nodevice ciss           # Compaq/HP RAID — physical only
+nodevice aac            # Adaptec RAID — physical only
+nodevice mfi            # LSI MegaRAID — physical only
+nodevice mrsas          # LSI MegaRAID SAS — physical only
+nodevice ata            # Legacy parallel ATA — virtio-blk handles storage
+nodevice mvs            # Marvell SATA — physical only
+nodevice siis           # SiliconImage SATA — physical only
+nodevice ufshci         # UFS Host Controller — embedded storage
+nodevice vmd            # Intel VMD — bare-metal NVMe aggregator
+
+# -----------------------------------------------------------------------
+# Strip physical NICs (QEMU uses virtio-net / vmxnet / e1000 emulation)
+# We keep vtnet (VirtIO NIC) and remove all physical Ethernet drivers.
+# -----------------------------------------------------------------------
+nodevice em             # Intel 82540/82571 — use virtio-net or e1000e emul
+nodevice igc            # Intel I225 2.5G — physical only
+nodevice ix             # Intel 10G ixgbe — physical only
+nodevice ixv            # Intel 10G ixgbe VF — physical only
+nodevice ixl            # Intel 40G i40e — physical only
+nodevice iavf           # Intel AVF VF — physical only
+nodevice ice            # Intel E810 — physical only
+nodevice mlx5           # Mellanox ConnectX-5 — physical only
+nodevice aq             # Aquantia — physical only
+nodevice bxe            # Broadcom 10G — physical only
+nodevice rge            # Realtek 8169 — physical only
+nodevice ti             # Alteon/Tigon — physical only
+# Keep: vtnet (virtio-net), vmx (VMware — used by QEMU with -device vmxnet3)
+
+# -----------------------------------------------------------------------
+# Strip wireless (headless VM, no WiFi hardware)
+# -----------------------------------------------------------------------
+nodevice wlan           # 802.11 stack — no wireless in VM
+nodevice wlan_amrr
+nodevice wlan_ccmp
+nodevice wlan_tkip
+nodevice wlan_xauth
+nodevice ath
+nodevice ath_pci
+nodevice ath_hal
+nodevice iwn
+nodevice iwi
+nodevice ipw
+nodevice malo
+nodevice mwl
+nodevice ral
+nodevice wpi
+nodevice iwlwifi
+nodevice rtwn
+nodevice rsu
+
+# -----------------------------------------------------------------------
+# Strip USB (no USB devices in headless QEMU VM)
+# -----------------------------------------------------------------------
+nodevice uhci           # USB 1.1 OHCI/UHCI — no USB in smolBSD QEMU
+nodevice ohci
+nodevice ehci           # USB 2.0
+nodevice xhci           # USB 3.0
+nodevice usb
+nodevice usbhid
+nodevice hkbd
+nodevice ukbd           # USB keyboard
+nodevice umass          # USB mass storage
+
+# -----------------------------------------------------------------------
+# Strip parallel port / legacy I/O
+# -----------------------------------------------------------------------
+nodevice ppc
+nodevice ppbus
+nodevice lpt
+
+# -----------------------------------------------------------------------
+# Strip sound (headless server image)
+# -----------------------------------------------------------------------
+nooptions SND_SUPPORT
+nodevice sound
+nodevice snd_hda
+nodevice snd_ich
+nodevice snd_via8233
+
+# -----------------------------------------------------------------------
+# Strip Hyper-V (QEMU target only, not Hyper-V)
+# -----------------------------------------------------------------------
+nodevice hyperv
+
+# -----------------------------------------------------------------------
+# QEMU-specific tuning
+# -----------------------------------------------------------------------
+# VirtIO devices kept from MINIMAL:
+#   virtio, virtio_pci, virtio_blk, vtnet (virtio-net), virtio_balloon
+# NVMe kept from MINIMAL (QEMU supports nvme emulation as alternative)
+# Keep: ahci — QEMU also emulates AHCI SATA (needed for non-virtio disk)
+# Keep: xenpci, xentimer — for Xen HVM compatibility (low cost, wide deploy)
+# Keep: kvm_clock — KVM paravirtual clock (essential for timing correctness)
+# Keep: efidev, efirtc — UEFI boot support
+# Keep: acpi — QEMU exposes ACPI tables; graceful shutdown requires acpi
+
+# Reduce debug overhead in production image
+makeoptions DEBUG=          # no debug symbols in kernel binary
+nooptions KDB_UNATTENDED    # panic reboot, not drop to debugger
+nooptions WITNESS           # no lock order checker in production
+nooptions INVARIANTS        # no internal consistency checks
+nooptions INVARIANT_SUPPORT
+nooptions BUF_TRACKING
+nooptions FULL_BUF_TRACKING
+
+# compat shims: keep COMPAT_FREEBSD12 onward (needed for pkg(8) ABI)
+# COMPAT_FREEBSD10, COMPAT_FREEBSD11 can be dropped for size
+nooptions COMPAT_FREEBSD10
+nooptions COMPAT_FREEBSD11
