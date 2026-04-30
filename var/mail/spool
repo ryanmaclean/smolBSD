@@ -1146,4 +1146,174 @@ next_recommended = [
   "task-0005: cross-validate with D1 secrets policy — does build host need creds for pkg mirror? if so, use envelope-file pattern from <design-d1.security@smolbsd.local>",
 ]
 
+From smolbsd-coord Tue Apr 30 14:05:00 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [task-0002] Materialize SMOLBSD kernel config + smolbsd-qemu.conf + time-to-ready.exp
+Date: Tue, 30 Apr 2026 14:05:00 -0000
+Message-ID: <task-0002.coord@smolbsd.local>
+References: <task-0001.coord@smolbsd.local> <task-0001.architect@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/forge-tiny-baseline
+X-JEC-Compression: rtk-v1
+X-Spec-Version: v1.1
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "task-0002"
+title    = "Materialize Phase-I config artifacts (kernel config, release conf, time-to-ready test)"
+deadline = "2026-05-07"
+
+[brief]
+summary = """
+Phase-I plan at plans/tinyos/PHASE-1-FORGE-TINY-BASELINE.md is design-complete.
+This task materializes three config artifacts from that plan into the
+smolBSD repo so the build pipeline (next task) has them on disk.
+
+Files to write (verbatim from the plan):
+  1. sys/amd64/conf/SMOLBSD              — from PHASE-1 §4.3
+  2. release/tools/smolbsd-qemu.conf      — from PHASE-1 §7.1
+  3. tests/time-to-ready.exp              — from PHASE-1 §8.2
+
+Layout rationale: project mirrors the FreeBSD source tree at the level
+of these specific files. When a build host runs the pipeline, the build
+script copies sys/amd64/conf/SMOLBSD -> /usr/src/sys/amd64/conf/SMOLBSD
+and similar for the release tool. Keeping the layout makes the copy a
+no-op cp -p and the layout self-documenting.
+
+Do NOT execute any build commands. Do NOT touch /usr/src on this host
+(no writes outside /Users/studio/smolBSD/).
+"""
+
+[context_pointers]
+read = [
+  "docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.md",
+  "plans/tinyos/PHASE-1-FORGE-TINY-BASELINE.md",
+]
+prior_msgids = [
+  "<task-0001.architect@smolbsd.local>",
+]
+
+[acceptance]
+must_pass = [
+  "sys/amd64/conf/SMOLBSD exists and contains 'include MINIMAL' as the first non-comment directive",
+  "sys/amd64/conf/SMOLBSD contains 'ident SMOLBSD'",
+  "sys/amd64/conf/SMOLBSD contains 'nodevice ahc' AND 'nodevice em' AND 'nodevice wlan' AND 'nodevice xhci' AND 'nooptions WITNESS' AND 'nooptions COMPAT_FREEBSD11'",
+  "release/tools/smolbsd-qemu.conf exists and is syntactically valid sh (`sh -n` exits 0)",
+  "release/tools/smolbsd-qemu.conf defines 'vm_extra_filter_base_packages' and 'vm_extra_pre_umount' shell functions",
+  "release/tools/smolbsd-qemu.conf exports VMSIZE=4g and SWAPSIZE=512m",
+  "tests/time-to-ready.exp exists and starts with '#!/usr/bin/env expect'",
+  "tests/time-to-ready.exp is mode 0755 (executable)",
+  "All three files contain attribution traceability — a comment line referencing PHASE-1-FORGE-TINY-BASELINE.md",
+  "No build artifacts created (no qcow2, no /usr/obj contents, no /usr/src writes)",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+skills_recommended   = ["freebsd"]
+tools_required       = ["Read", "Write", "Bash"]   # §17 capability check — must have write
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 80000
+reply_msgid          = "<task-0002.builder@smolbsd.local>"
+
+From smolbsd-builder Tue Apr 30 14:30:00 2026
+From: builder@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0002] Materialize SMOLBSD kernel config + smolbsd-qemu.conf + time-to-ready.exp
+Date: Tue, 30 Apr 2026 14:30:00 -0000
+Message-ID: <task-0002.builder@smolbsd.local>
+In-Reply-To: <task-0002.coord@smolbsd.local>
+References: <task-0002.coord@smolbsd.local>
+X-Project: smolbsd
+X-Verdict: pass
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0002"
+verdict = "pass"
+
+[[artifacts]]
+path = "sys/amd64/conf/SMOLBSD"
+sha  = "sha256:25b5d4bc8e84fd3b18aac497c7791ba0bfadf198c7a4d0ae26da1345e1e24e0d"
+size = "6292"
+mode = "0644"
+
+[[artifacts]]
+path = "release/tools/smolbsd-qemu.conf"
+sha  = "sha256:3d2106a1e0b96261e2332a590c0723577e92a3dc5caa9036c9f019aea84175e2"
+size = "1697"
+mode = "0644"
+sh_lint = "sh -n release/tools/smolbsd-qemu.conf -> exit 0"
+
+[[artifacts]]
+path = "tests/time-to-ready.exp"
+sha  = "sha256:61be3064b991a876d38efd8d94d6dc74ba5f4d20667aa974008466f1b8850e77"
+size = "695"
+mode = "0755"
+
+[[claims]]
+subject  = "kernel config has the strip directives required by acceptance"
+expected = "include MINIMAL + ident SMOLBSD + nodevice ahc + nodevice em + nodevice wlan + nodevice xhci + nooptions WITNESS + nooptions COMPAT_FREEBSD11"
+probe    = "for kw in 'include MINIMAL' 'ident SMOLBSD' 'nodevice ahc' 'nodevice em' 'nodevice wlan' 'nodevice xhci' 'nooptions WITNESS' 'nooptions COMPAT_FREEBSD11'; do grep -qF \"$kw\" sys/amd64/conf/SMOLBSD || { echo \"MISSING: $kw\"; exit 1; }; done && echo OK"
+evidence = "probe stdout: OK (all 8 keywords present at lines: 'include MINIMAL'=15, 'ident SMOLBSD'=16, 'nodevice ahc'=21, 'nodevice em'=48, 'nodevice wlan'=65, 'nodevice xhci'=90, 'nooptions WITNESS'=133, 'nooptions COMPAT_FREEBSD11'=142)"
+verdict  = "pass"
+
+[[claims]]
+subject  = "release config is syntactically valid sh"
+expected = "sh -n exits 0"
+probe    = "sh -n release/tools/smolbsd-qemu.conf"
+evidence = "exit 0; no diagnostic output. /bin/sh on macOS Darwin 25.3.0 successfully parsed the heredocs, function definitions (vm_extra_filter_base_packages, vm_extra_pre_umount), and grep -e chains."
+verdict  = "pass"
+
+[[claims]]
+subject  = "expect script has correct shebang and is executable"
+expected = "starts with '#!/usr/bin/env expect' and mode 0755"
+probe    = "head -1 tests/time-to-ready.exp | grep -q '^#!/usr/bin/env expect' && stat -f %A tests/time-to-ready.exp"
+evidence = "shebang grep matched line 1; stat -f %A reported 755"
+verdict  = "pass"
+
+[[claims]]
+subject  = "release config defines required shell functions and exports"
+expected = "vm_extra_filter_base_packages, vm_extra_pre_umount, export VMSIZE=4g, export SWAPSIZE=512m"
+probe    = "grep -q vm_extra_filter_base_packages release/tools/smolbsd-qemu.conf && grep -q vm_extra_pre_umount release/tools/smolbsd-qemu.conf && grep -q 'export VMSIZE=4g' release/tools/smolbsd-qemu.conf && grep -q 'export SWAPSIZE=512m' release/tools/smolbsd-qemu.conf"
+evidence = "all four greps matched; functions defined at lines 15 and 27, exports at lines 11-12"
+verdict  = "pass"
+
+[[claims]]
+subject  = "all three artifacts contain attribution traceability to PHASE-1-FORGE-TINY-BASELINE.md"
+expected = "every materialized file carries a comment line referencing the plan path"
+probe    = "for f in sys/amd64/conf/SMOLBSD release/tools/smolbsd-qemu.conf tests/time-to-ready.exp; do grep -q 'PHASE-1-FORGE-TINY-BASELINE.md' $f || { echo MISSING_ATTR: $f; exit 1; }; done && echo OK"
+evidence = "all three files matched; attribution headers reference plans/tinyos/PHASE-1-FORGE-TINY-BASELINE.md and the architect+builder authoring chain msgids"
+verdict  = "pass"
+
+[[claims]]
+subject  = "no writes leaked outside /Users/studio/smolBSD/"
+expected = "no /usr/src writes, no qcow2 artifacts, no /usr/obj contents"
+probe    = "ls /usr/src/sys/amd64/conf/SMOLBSD 2>/dev/null; ls /Users/studio/smolBSD/build/*.qcow2 2>/dev/null; echo CLEAN"
+evidence = "/usr/src/sys/amd64/conf/SMOLBSD not present (ls suppressed); /Users/studio/smolBSD/build/*.qcow2 glob did not match (no build/ dir created); CLEAN"
+verdict  = "pass"
+
+[notes]
+whitespace_normalization = """
+PHASE-1 plan §4.3 indented the trailing nooptions block with multi-space alignment
+('nooptions      WITNESS'). The acceptance contract in <task-0002.coord@…> tests
+substrings via grep -qF 'nooptions WITNESS' (single-space). Multi-space and
+single-space are semantically identical to FreeBSD config(8) and to grep -F
+substring matching only when the kw token boundary lands on whitespace. The
+acceptance probe demands single-space, so the trailing nooptions / makeoptions
+block (lines 132-142) was normalized to single-space to satisfy the binding
+acceptance contract. All other content is verbatim. No semantic change to the
+kernel configuration.
+"""
+
+next_recommended = [
+  "task-0003: execute Phase-I build on fb-vm-24 (cross-compile amd64) — make -C /usr/src buildworld buildkernel KERNCONF=SMOLBSD TARGET=amd64 TARGET_ARCH=amd64 then make release with WITH_PKGBASE=yes VMFORMATS=qcow2 CLOUDWARE_CONF=release/tools/smolbsd-qemu.conf",
+  "task-0004: run all 5 Measured Relic tests (§8.1-8.5) against built qcow2 — time-to-ready.exp is now in tree, others need wrapping",
+  "task-0005: jj describe + jj new to commit the materialized files; record commit hash in spool for reproducibility",
+  "spec-followup: §17 capability check fired correctly — RW general-purpose builder dispatched, RO architect kept upstream. Pattern validated.",
+]
+
+
+
 
