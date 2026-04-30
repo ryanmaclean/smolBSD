@@ -1,9 +1,10 @@
-# Mailbox + JEC Handoff Protocol — Design Spec v1
+# Mailbox + JEC Handoff Protocol — Design Spec v1.1
 
 - **Date**: 2026-04-30
 - **Project**: smolBSD
-- **Status**: v1 — open sections deferred to dispatched agents (D1, D2, D3)
+- **Status**: v1.1 — §§11–13 folded from D1/D2/D3 replies; §17 added (capability/intent enforcement)
 - **License**: BSD-2-Clause (project default)
+- **History**: v1 (2026-04-30 13:30 — open sections deferred); v1.1 (2026-04-30 14:30 — agent replies harvested, folded)
 
 ## 1. Purpose
 
@@ -70,6 +71,7 @@ output_to            = "coordinator@smolbsd.local"
 output_format        = "mbox+toml-v1"
 attestation_required = true
 skills_recommended   = ["freebsd", "qemu-fleet", "freebsd-build-vm"]
+tools_required       = ["Read", "Write", "Edit", "Bash"]   # §17: coord rejects dispatch if subagent type lacks any
 tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
 budget_tokens        = 80000
 ```
@@ -165,15 +167,15 @@ Per `~/.claude/CLAUDE.md`, every reply with `verdict = "pass"` and `attestation_
 
 ## 8. Roles and agent assignments
 
-| Role            | Address                       | Backing subagent type              |
-|-----------------|-------------------------------|------------------------------------|
-| coordinator     | `coordinator@smolbsd.local`   | (this Opus 4.7 1M session)         |
-| architect       | `architect@smolbsd.local`     | `feature-dev:code-architect`       |
-| builder         | `builder@smolbsd.local`       | `general-purpose` + freebsd skill  |
-| reviewer        | `reviewer@smolbsd.local`      | `pr-review-toolkit:code-reviewer`  |
-| researcher      | `researcher@smolbsd.local`    | `general-purpose` + Explore        |
-| security        | `security@smolbsd.local`      | `general-purpose` + security skill |
-| ops             | `ops@smolbsd.local`           | `general-purpose` + ansible-fleet  |
+| Role            | Address                       | Backing subagent type              | Tools required (writes?)         |
+|-----------------|-------------------------------|------------------------------------|----------------------------------|
+| coordinator     | `coordinator@smolbsd.local`   | (this Opus 4.7 1M session)         | Read+Write+Edit+Bash             |
+| architect       | `architect@smolbsd.local`     | `feature-dev:code-architect` (RO) **OR** `general-purpose` (RW) | depends on `tools_required` field — see §17 |
+| builder         | `builder@smolbsd.local`       | `general-purpose` + freebsd skill  | Read+Write+Edit+Bash             |
+| reviewer        | `reviewer@smolbsd.local`      | `pr-review-toolkit:code-reviewer`  | Read-mostly                      |
+| researcher      | `researcher@smolbsd.local`    | `general-purpose` + Explore        | Read-only OK                     |
+| security        | `security@smolbsd.local`      | `general-purpose` + redact skill   | Read+Bash (Write only for envelopes under `var/run/secrets/`) |
+| ops             | `ops@smolbsd.local`           | `general-purpose` + fleet-irc skill | Read+Write+Bash                  |
 
 ## 9. State that survives a handoff
 
@@ -187,51 +189,245 @@ The receiving agent team boots cold and gains full project state from these on-d
 
 This is the AX-first surface from `~/.claude/CLAUDE.md`: structured in/out, manifest-discoverable, attestation-bearing, schema-composable.
 
-## 10. Open sections — deferred to dispatched agents
+## 10. Closed sections — folded from agent replies
 
-| § | Question                | Owner | Reply msgid expected             |
-|---|-------------------------|-------|----------------------------------|
-| D1 | Secrets handling       | security  | `<design-d1.security@…>`     |
-| D2 | Retry policy           | reviewer  | `<design-d2.reviewer@…>`     |
-| D3 | Escalation channel     | ops       | `<design-d3.ops@…>`          |
+| §  | Question            | Owner    | Reply msgid (canonical record)          | Status |
+|----|---------------------|----------|------------------------------------------|--------|
+| 11 | Secrets handling    | security | `<design-d1.security@smolbsd.local>` (spool L441–711) | folded v1.1 |
+| 12 | Retry policy        | reviewer | `<design-d2.reviewer@smolbsd.local>` (spool L712–1057) | folded v1.1 |
+| 13 | Escalation channel  | ops      | `<design-d3.ops@smolbsd.local>` (spool L215–440) | folded v1.1 |
 
-Their replies become spec §§ 11, 12, 13 in v1.1.
+The full reply contents live in the spool. Sections below are distillations; on conflict, the spool reply is canonical.
 
-## 11. Open: Secrets handling
+## 11. Secrets handling (from D1)
 
-*Deferred to D1.*
+**Mechanism**: out-of-band envelope files at `var/run/secrets/<task-id>/<key>` mode 0600, with a `.meta.toml` sidecar containing the `redact`-fingerprint. The spool only carries a `[secrets.<key>]` pointer table — never values. `var/run/` is `.gitignore`'d.
 
-## 12. Open: Retry policy
+**Six rules:**
 
-*Deferred to D2.*
+1. No secret value, plaintext or encoded, ever appears in the spool. Pointers only.
+2. `var/run/` is `.gitignore`'d at repo root. Mode 0700 dir, 0600 envelopes.
+3. Envelope filenames carry the *key name*, never a value-derived fingerprint.
+4. Replies attest "I read $key" via `redact` fingerprint (e.g. `fc1dxxxx4439`) — proves identity, never leaks the value.
+5. Envelopes are ephemeral — coordinator unlinks `var/run/secrets/<task-id>/` after harvest, regardless of verdict.
+6. Backing store is the source of truth; envelopes are a per-task materialization layer, not storage. Rotation happens in the backing store.
 
-## 13. Open: Escalation channel
+**Pointer table** (the only secret-related content in the spool):
 
-*Deferred to D3.*
+```toml
+[secrets.gitea_token]
+envelope    = "var/run/secrets/task-0042/gitea_token"
+fingerprint = "fc1dxxxx4439"
+source      = "keychain:gitea-pat"
+expires_at  = "2026-04-30T18:00:00Z"
+scope       = ["gitea.local:3000/api/v1/repos/*"]   # advisory
+```
+
+**Backing stores (license-clean):**
+
+- Prototype phase: `/usr/bin/security` (macOS Keychain, ships with macOS) — verified present on this host.
+- Target BSD VM: `gopass` (MIT, drop-in for `pass`). NOT `pass(1)` — GPL-2.0, disallowed.
+- ssh-agent for SSH-key-shaped credentials (BSD-2 + ISC). `SSH_AUTH_SOCK` verified live.
+- 1Password CLI (`op`) is mentioned in CLAUDE.md but **not installed on this host** (`which op` → not found). Design degrades gracefully; `op:vault/item` is a one-line addition to the materializer if/when available.
+
+**Cross-phase invariance**: only the materializer (step 1 of the worked example) changes between prototype and BSD VM target. Steps 2–5 (subagent reads envelope → verifies fingerprint → uses inline → emits attestation → coordinator wipes) are byte-identical.
+
+**Revocation**: three drills — planned (control message + drain), emergency (composes with D3's HALT marker, `rm -P` envelopes, `[control] HALT-ALL`), envelope leak (per-task wipe + new msgid). Audit trail = spool's jj history.
+
+**Cross-design hooks:**
+
+- D2 retry policy treats credential-fingerprint mismatch as **immediate escalate, no auto-retry** (one extra predicate before the retry table).
+- D3 HALT marker accepts `X-Halt-Reason: credential-fingerprint-mismatch` as a recognized halt cause.
+
+**Implementation backlog** (assigned forward):
+
+- ops: create `.gitignore` with `var/run/` and `var/mail/spool.lock` before first dispatch.
+- coordinator: `bin/secret-materialize.nu` (Nushell per CLAUDE.md), `bin/secret-wipe.nu`, `bin/spool-emit-control.nu`.
+
+## 12. Retry policy (from D2)
+
+The coordinator is a **state-machine interpreter, not a planner**. Every reply category maps to exactly one transition. Mechanical, no per-case judgement.
+
+**State machine:**
+
+```
+[DISPATCHED] -> [AWAITING_REPLY] -> [HARVEST] -> [VERIFY] -> [DONE]
+                                       |             |
+                                       +-> [RETRY_QUEUED] -+
+                                       |                   |
+                                       +-> [ESCALATE]      |
+                                                           |
+                            (after fib backoff) <----------+
+```
+
+Seven states: `DISPATCHED`, `AWAITING_REPLY`, `HARVEST`, `VERIFY`, `RETRY_QUEUED`, `DONE`, `ESCALATE`. (Full DOT digraph in `<design-d2.reviewer@…>` body.)
+
+**Decision table** (one row per reply category, schema = category, predicate, next_state, max_retries):
+
+| Category                  | Predicate                                                         | Next state    | Max retries |
+|---------------------------|-------------------------------------------------------------------|---------------|-------------|
+| `pass+verified`           | `verdict='pass'` AND every `[[claims]]` re-probes pass            | `DONE`        | 0           |
+| `pass+probe-failed`       | `verdict='pass'` AND any `[[claims]]` re-probe fails/inconclusive | `RETRY_QUEUED` | **1** (half budget) |
+| `fail`                    | `verdict='fail'`                                                  | `RETRY_QUEUED` | 3           |
+| `blocked+unblocker-named` | `verdict='blocked'` + actionable `blocked_by` field               | `RETRY_QUEUED` | 3           |
+| `blocked+no-unblocker`    | `verdict='blocked'` + no `blocked_by`                             | `ESCALATE`    | 0 (immediate) |
+| `no-reply`                | no msg matching dispatch Message-ID after timeout (default 30 min)| `RETRY_QUEUED` | 3           |
+| `malformed`               | mbox parse fail / TOML invalid / missing required fields / pass-without-claims-when-required | `RETRY_QUEUED` | 3 |
+
+**Backoff: Fibonacci** `[60, 60, 120]` capped at 300s.
+
+**Why Fibonacci, not exponential**: each retry costs 60–100k tokens of agent budget. Exponential `(60→120→240→480)` burns the prompt-cache TTL (5 min, per CLAUDE.md ScheduleWakeup guidance) on every step. Fibonacci grows slower; the doubled-60 lets a transient flake resolve in a cache-warm window. Cap aligns with the 5-min TTL.
+
+**Why `max_attempts = 3`**: rule-of-three. (1) baseline establishes failure mode; (2) proves it isn't transient, with prior failure summary inlined; (3) last shot, with explicit "if you can't pass, return blocked-with-named-blocker rather than fail again". Beyond 3 = muri (unreasonable strain) → escalate.
+
+**Why probe-disagreement gets only 1 retry**: more agent retries can't break a tie between agent and probe. Either probe is wrong (operator fix) or agent is hallucinating (operator adjust). Both need human input → escalate fast.
+
+**Retry payload contract** — every retry MUST mutate the request payload (pure resends are forbidden — pure muda):
+
+- `prior_attempt_msgid` — Message-ID of failed reply (or NIL for no-reply)
+- `prior_attempt_failure` — verdict + first 500 chars of failure evidence
+- `prior_attempt_count` — 1 or 2
+- `format_violation` — parser error (if `category=malformed`)
+- `probe_disagreement` — fleet-eval probe output (if `category=pass+probe-failed`)
+- New Message-ID per retry: `<task-XXX.coord.r{N}@smolbsd.local>`
+- `X-Attempt: <N>` header (1-indexed; coord state reconstructable from spool alone)
+- For `no-reply` only: `budget_tokens` doubles per retry, capped at 200000
+
+**Cross-design predicate (pre-table check):**
+
+- `reply.secrets_consumed[*].fingerprint` mismatch with materializer's recorded fingerprint → bypass table, force-escalate with `X-Halt-Reason: credential-fingerprint-mismatch`. Mechanical, not judgement (per D1).
+
+**No-double-dispatch invariant**: coordinator MUST NOT have two in-flight messages with the same `task_id`. Enforced by scanning spool for unmatched `<task-XXX.coord*@>` before each new dispatch.
+
+**Edge cases worth naming explicitly:**
+
+- `pass` without `[[claims]]` when `attestation_required=true` → MALFORMED, not pass+verified.
+- `INCONCLUSIVE` probe (e.g. SSH timeout) → probe-failed, not pass+verified.
+- Multiple `[[claims]]` with mixed PASS/FAIL → category is `pass+probe-failed`.
+- Late reply after timeout-fired retry → logged, ignored; in-flight retry has authority.
+- Two replies with same `In-Reply-To` → first wins; second logged as protocol violation.
+- Coordinator crash mid-retry → on restart, scan spool for dispatched-without-reply older than timeout; treat as no-reply with attempt count from `X-Attempt` header.
+
+## 13. Escalation channel (from D3)
+
+**Primary**: in-spool message to `user@smolbsd.local` + `var/mail/HALT` marker file. The spool *is* the substrate — reusing it costs zero new tooling, threads correctly, survives a fresh clone, and the user already has standard mbox tools (`mailx`, `less`, `grep`).
+
+**Fallback**: one-shot Ergo IRC DM to `ryan` on `10.0.3.203:6697` (TLS) via `openssl s_client`. Push-only signal, NOT the canonical reply path. Honors CLAUDE.md "no probe loops on LAN servers" and Ergo auto-block protections — exactly one TLS attempt, optional one plain on 6667 if TLS handshake fails, then record outcome in HALT marker and move on.
+
+**Pause marker**: `var/mail/HALT` — one `stat()` per coordinator tick is the entire pause check. Spool is only re-parsed once HALT presence is confirmed, to find the resume reply.
+
+**HALT message shape:**
+
+```
+From: coordinator@smolbsd.local
+To: user@smolbsd.local
+Subject: [HALT] <task-id> — <one-line cause>
+Message-ID: <halt-<task-id>.coord@smolbsd.local>
+In-Reply-To: <task-id.coord@smolbsd.local>
+References: <all retry msgids, space-separated>
+X-Priority: 1
+X-Halt-Reason: retry-exhausted | claim-verification-failed | malformed-reply
+             | no-reply | blocked-no-unblocker | credential-fingerprint-mismatch
+X-Resume-Tag: resume-<task-id>
+```
+
+Body (TOML) carries category, attempts list (msgid+verdict+evidence+probe-result per attempt), last_failure summary, proposed_actions = [retry, retry-as-<role>, abort, edit], and asks (what coordinator wants from human/D3).
+
+**HALT marker (TOML body)**: `halted_at`, `task_id`, `halt_msgid`, `resume_tag`, `reason`, `fallback_fired`, `fallback_status`.
+
+**User reply protocol**: append a resume mbox message (`Subject: Re: [HALT]`, `Message-ID: <resume-<task-id>.user@…>`, `X-Resume-Action: retry | retry-as-<role> | abort | edit`), then `rm var/mail/HALT`. Bare `rm var/mail/HALT` alone = abort, no redispatch. Detection latency = next coord tick (suggested 60s when HALT present).
+
+**Triple-failure path** (spool write fails AND IRC fails AND HALT marker write fails):
+
+1. Try `var/mail/HALT` write unconditionally — one filesystem op.
+2. If even that fails, print structured panic to stderr: `{"event":"smolbsd-coord-panic","task_id":"…","spool_writable":false,"irc_reachable":false,"halt_writable":false,"ts":"…"}`. Exit code 78 (`EX_CONFIG`).
+3. Coord process termination is itself the final escalation. The Claude Code harness session log carries the signal to user on next engagement. Async constraint satisfied via the harness boundary.
+
+Triple-failure = substrate-integrity event, not task-level. Recovery is human; no automatic resume.
+
+**Per-task isolation**: HALT marker is keyed by `task_id`, not global. Other tasks continue dispatching even when one task is halted. (D2 confirms: escalated task moves to `status=escalated`; dispatch loop continues for unrelated work.)
+
+## 17. Capability/intent enforcement (lesson from round 1)
+
+**Failure mode discovered**: in the round-1 dispatch wave, the architect (`feature-dev:code-architect`) was assigned a task whose `acceptance` required writing a file (`plans/tinyos/PHASE-1-FORGE-TINY-BASELINE.md`). That subagent type is **read-only** — it has Read/Glob/Grep/WebFetch/TodoWrite but no Write/Edit/Bash. The agent produced the plan content in its reply but couldn't materialize it; the coordinator had to do that step. The protocol let this happen silently because nothing pre-validated the agent's tool capabilities against the task's actual needs.
+
+**Rule**: every request envelope MUST include a `tools_required` field (in addition to the existing `tools_allowed`). The coordinator MUST refuse to dispatch a task to a subagent type whose tool set doesn't cover `tools_required`.
+
+**Schema addition** (insert in `[reply_contract]` of every request, see §4.1):
+
+```toml
+[reply_contract]
+tools_required = ["Read", "Write", "Edit", "Bash"]   # MUST be a subset of subagent's actual tool set
+tools_allowed  = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]   # additional permitted
+```
+
+**Coordinator pre-flight check** (mechanical):
+
+```
+for tool in tools_required:
+    assert tool in subagent_type.available_tools
+        or refuse_dispatch("capability mismatch", task_id, subagent_type, missing=tool)
+```
+
+**Capability registry** (built into the coordinator, derived from each subagent type's documented tools):
+
+| Subagent type                  | Has Write? | Has Bash? | Suitable for |
+|--------------------------------|-----------|-----------|--------------|
+| `general-purpose`              | yes       | yes       | building, ops, general work |
+| `feature-dev:code-architect`   | **no**    | no        | research, design, planning **only** |
+| `feature-dev:code-explorer`    | no        | no        | codebase exploration |
+| `feature-dev:code-reviewer`    | no        | no        | review-only tasks |
+| `pr-review-toolkit:code-reviewer` | yes (\*) | yes      | review with action |
+| `Explore`                      | no        | yes       | search-heavy exploration |
+
+(\*) per documented tool list
+
+**Failure handling**: capability-mismatch refusal is a coordinator-level rejection, NOT a retry. The coordinator either (a) re-routes to a capable subagent type, or (b) splits the task into a research-only step (RO subagent) + a materialization step (RW subagent). The architect+coordinator pattern from round 1 is the canonical (b) form: architect produces content, coordinator materializes.
+
+**Why this is its own §**: the failure mode generalizes — every protocol that decouples *intent* (the task brief) from *capability* (the executor) needs this check. mbox+TOML handoff just made the gap visible.
 
 ## 14. Caveats and known limits
 
 1. **No `sequential-thinking` MCP server is loaded** in this Claude Code instance. Stepwise reasoning happens in-prompt, not via that MCP. If the user installs it later, the protocol doesn't change — it's an internal-to-coordinator concern.
-2. **smolBSD is not yet a jj repo**. Fleet default is jj (Jujutsu), not git. Without `jj git init`, the spool is the only durable handoff channel. Recommend `jj git init` (Git-backed colocated, so `gh` and other Git tools still work) before the first build task.
-3. **No memory file exists** for smolBSD or globally. The spec, plan, and spool ARE the memory.
-4. **Single-writer assumption** for the spool holds only while the coordinator is the sole producer. Multi-coordinator scenarios (e.g., two parallel orchestrators) need locking — out of scope for v1.
+2. **smolBSD is now a jj repo** as of v1.1 (`jj git init` ran; commit `24b600c3` recorded round 1). Multi-agent isolation later via `jj workspace add ../smolBSD-<role>`.
+3. **Memory exists but is sparse**. `~/.claude/projects/-Users-studio-smolBSD/memory/MEMORY.md` indexes three entries (Knox/TrustZone background, BRAP L1 decision, jj-not-git VCS preference). The spec, plan, and spool remain the primary durable state.
+4. **Single-writer assumption** for the spool holds only while the coordinator is the sole producer. Multi-coordinator scenarios need locking — out of scope for v1.
 5. **Subagent context bleed**: when this Opus session uses the `Agent` tool, the subagent does inherit some implicit harness context (skills index, CLAUDE.md). True "no shared context" requires moving to a separate `claude` invocation or different harness — see §15.
-6. **RTK is optional on agent side**. Agents without RTK degrade gracefully but produce larger outputs. Mitigation: pre-compress in `[brief]` rather than relying on agent-side filtering.
-7. **Trust boundary**: the coordinator must verify `[[claims]]` independently. A misaligned subagent could fabricate claims; `fleet-eval` is the eval-reflex gate.
+6. **RTK is optional on agent side and not yet installed on this host** (`which rtk` → not found). Outbound compression (side A) is honored by the coordinator pre-inlining; inbound (side B) becomes active when `brew install rtk && rtk init -g` is run. Agents without RTK degrade gracefully but produce larger outputs.
+7. **Trust boundary**: the coordinator must verify `[[claims]]` independently. A misaligned subagent could fabricate claims; `fleet-eval` is the eval-reflex gate. **Round-1 claims have not yet been re-probed** — outstanding follow-up.
 8. **Apache-2.0 RTK** — license is on the user's allowlist. If it changes upstream we re-evaluate.
+9. **Capability/intent gap** existed in v1; closed by §17 in v1.1. Pre-existing requests in the spool do not have `tools_required` fields — they are grandfathered in for round 1 only.
+10. **Citation hallucination risk**: the round-1 architect cited a "vermaden 2026-02 blog post" not independently verified. Treat agent-introduced citations as low-confidence until cross-checked. Substantive technical content (oci-image-runtime.conf, MINIMAL config, Makefile.vm) is verifiable against [cgit.freebsd.org](https://cgit.freebsd.org/src/tree/sys/amd64/conf/).
+11. **`.gitignore` not yet written** — D1 secrets design requires `var/run/` to be jj/git-ignored before first credential dispatch. ops follow-up.
+12. **`pass(1)` is GPL-2.0** — disallowed under the user's licensing rule. The secrets design uses `gopass` (MIT) instead. Don't accidentally drop `pass` into a future dependency.
 
 ## 15. Future work
 
-- Move spool to a real (Tiny|Rump)BSD instance once §11–13 are filled.
-- Add `jj git init` and commit the spool + spec on every coordinator loop (`jj describe -m "..."` + `jj new`). Per-agent isolation via `jj workspace add ../smolBSD-<role>` instead of git worktrees.
-- Add a `bin/spool-tail` viewer (Nushell) — `mailx -f spool` style, but with TOML pretty-printing.
-- Add a `bin/spool-archive` rotator — when spool > N messages, rotate to `var/mail/spool.YYYY-MM-DD`.
-- Cross-harness handoff: prove the protocol works coordinator-Claude → builder-Codex.
-- Add a `Manifest:` discovery endpoint per AX-first principle.
+- Move spool to a real (Tiny|Rump)BSD instance now that §§11–13 are filled — protocol is portable by construction.
+- Commit the spool + spec on every coordinator loop (`jj describe -m "..." && jj new`). Per-agent isolation via `jj workspace add ../smolBSD-<role>`.
+- Implement coordinator binaries:
+  - `bin/coord-tick.nu` — table-driven state-machine interpreter reading §12 verbatim
+  - `bin/coord-escalate.nu` — D3 protocol entry point
+  - `bin/secret-materialize.nu` / `bin/secret-wipe.nu` — D1 envelope lifecycle
+  - `bin/spool-emit-control.nu` — control messages (rotate-key, halt, resume)
+  - `bin/spool-tail.nu` — `mailx -f spool` style viewer with TOML pretty-printing
+  - `bin/spool-archive.nu` — rotate spool > N messages to `var/mail/spool.YYYY-MM-DD`
+- Cross-harness handoff: prove protocol works coordinator-Claude → builder-Codex.
+- `Manifest:` discovery endpoint per AX-first.
+- TrustZone integration (forward-look, given user's Knox background + BRAP L1 decision): replies could carry `[[attestations]]` blocks alongside `[[claims]]`, where the attestation is a TA-signed quote produced by the building VM. Spec v2 candidate.
 
-## 16. Self-review checklist (filled inline)
+## 16. Self-review checklist (v1.1)
 
-- [x] No "TBD" in committed sections (open sections explicitly deferred to D1/D2/D3 — that's a contract, not a placeholder)
-- [x] Sections internally consistent (envelope §4 matches schema §4.1/4.2; addressing §3 used in §6 dispatch loop)
-- [x] Scope: single spec, one substrate, three open Q's deferred to agents — focused
-- [x] Ambiguities resolved: mbox path is explicit; RTK side-A vs side-B clearly distinguished; trust boundary named
+- [x] No "TBD" in any section — §§11/12/13 fully folded; §17 fully specified
+- [x] Sections internally consistent — §4.1 schema includes new `tools_required` field per §17; §8 role table has Tools-required column; §11/§12 cross-reference (D1+D2 fingerprint-mismatch override); §12/§13 cross-reference (ESCALATE → HALT protocol)
+- [x] Scope: focused on a single substrate (mbox+TOML+spool) with one closed contract — ready to implement
+- [x] Ambiguities resolved:
+  - mbox path explicit (`var/mail/spool`)
+  - RTK side-A vs side-B distinguished
+  - trust boundary named (fleet-eval probes; coordinator never trusts self-report alone)
+  - capability/intent split (§17) — read-only vs read-write subagent types
+  - pass+probe-failed has half retry budget (§12)
+  - blocked has two sub-categories (with/without unblocker) with different transitions
+- [x] License floor verified: openssl Apache-2.0, Ergo MIT, Nushell MIT, mbox = plain RFC822 (no library), gopass MIT, ssh-agent BSD-2+ISC, RTK Apache-2.0. No GPL/LGPL/AGPL.
+- [x] Cross-design composition explicit: D1↔D2 (fingerprint mismatch path), D2↔D3 (escalation handoff), D1↔D3 (HALT marker accepts X-Halt-Reason from D1)
+- [x] Forward references named: §17's capability check is mechanical, not a judgement call
