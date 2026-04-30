@@ -23,22 +23,32 @@ This file defines the build contract. No build commands are run here.
 
 ### 2.1 What the `freebsd-build-vm` skill already provides
 
-The existing `fb-vm-24` on `minim4-24` is FreeBSD 15.0-RELEASE **aarch64** built
-via the official `release/` scripts and `mk-vmimage.sh`. It demonstrates:
+The existing build VM on `minim4-24` (skill-canonical name: `fb-vm-24` (drift;
+actual VM is `fbuild`) — see spec §18.1) is FreeBSD 15.0-RELEASE **aarch64**
+built via the official `release/` scripts and `mk-vmimage.sh`. It demonstrates:
 
 - `release/Makefile.vm` with `WITH_PKGBASE=yes` and `VMFORMATS=qcow2` works end-to-end
 - `vm_extra_filter_base_packages()` pattern for stripping -dbg/-lib32/-tests/-lldb
 - virtiofs shared folder + screen+socket serial launch pattern (mandatory for detached QEMU)
-- Port 2225 on `minim4-24` is live; use port 2226+ for a smolBSD build VM
+- SSH hostfwd: actual port is **2222** on `minim4-24` (the freebsd-build-vm skill
+  prose says `2225`; ground-truth verified on the live qemu pid is `2222` —
+  see spec §18.2). Use port 2226+ for any additional smolBSD build VM peer.
 
 This skill does NOT cover amd64. The smolBSD build will produce a new amd64 image,
-not reuse the aarch64 fb-vm-24 image. We run the build **inside** fb-vm-24 (which
-is a FreeBSD 15 aarch64 host), targeting the amd64 cross-build path, OR we use an
+not reuse the aarch64 fbuild image. We run the build **inside** fbuild (which is
+a FreeBSD 15 aarch64 host), targeting the amd64 cross-build path, OR we use an
 amd64 cloud/build host with FreeBSD 15 installed.
 
-**Preferred build host for Phase I**: `fb-vm-24` (FreeBSD 15.0-RELEASE aarch64) running
+**Preferred build host for Phase I**: `fbuild` (skill-canonical name: `fb-vm-24`
+(drift; actual VM is `fbuild`) — FreeBSD 15.0-RELEASE aarch64) running
 `make -j4 buildworld buildkernel KERNCONF=SMOLBSD TARGET=amd64 TARGET_ARCH=amd64`
 then `make release KERNCONF=SMOLBSD WITH_PKGBASE=yes VMFORMATS=qcow2`.
+
+**Operational caveats** (see spec §18 for full detail):
+
+- The freebsd-build-vm skill upstream (`/Users/studio/.claude/skills/freebsd-build-vm/SKILL.md`) is **stale** on VM name (`fb-vm-24` → `fbuild`) and SSH port (`2225` → `2222`); needs a separate update PR.
+- The virtfs share path on the host side is currently `/Users/studio/Users/studio/share/fbuild` (doubled-prefix launch-wrapper bug; documented to fix in fleet-ops `vm-templates/run-freebsd-vm.sh.template` separately).
+- The fbuild qemu process can outlive its launching screen socket — `screen -r fbuild` may fail even while the VM is reachable on `ssh -p 2222`. Recovery: `pkill -f qemu-system-aarch64` + relaunch via `~/vms/run-fb-vm-24.sh`. See spec §18.4.
 
 ### 2.2 Build tool decision: `release/Makefile.vm` (not nanobsd, not mkimg standalone)
 
@@ -319,7 +329,7 @@ nooptions      COMPAT_FREEBSD11
 
 | Format | Verdict | Rationale |
 |--------|---------|-----------|
-| **qcow2** | CHOSEN | Native QEMU format. Supports sparse allocation (actual disk usage matches data written, not provisioned size). Snapshots at zero cost. Directly usable with `-drive file=img.qcow2,format=qcow2`. Aligns with existing fleet skill (`fb-vm-24` produces qcow2). The FreeBSD 15.0-RELEASE official VM images ship in qcow2. |
+| **qcow2** | CHOSEN | Native QEMU format. Supports sparse allocation (actual disk usage matches data written, not provisioned size). Snapshots at zero cost. Directly usable with `-drive file=img.qcow2,format=qcow2`. Aligns with existing fleet skill (`fbuild` (skill-canonical name: `fb-vm-24` (drift)) produces qcow2). The FreeBSD 15.0-RELEASE official VM images ship in qcow2. |
 | raw | Fallback/test | No overhead, maximum compatibility with any hypervisor. Use `qemu-img convert -O qcow2` to derive from raw. Raw is the build intermediate; qcow2 is the shipped artifact. |
 | vmdk | Reject for Phase I | VMware/VirtualBox format. No current fleet use case. Can be derived from raw/qcow2 with qemu-img if needed later. |
 | vhd/vhdx | Reject for Phase I | Azure/Hyper-V format. Not in current fleet scope. |
@@ -436,10 +446,11 @@ EOF
 }
 ```
 
-### 7.2 Build invocation sequence (inside fb-vm-24 or amd64 build host)
+### 7.2 Build invocation sequence (inside fbuild or amd64 build host)
 
 ```sh
 # Inside FreeBSD 15 build host:
+# (skill-canonical name: fb-vm-24 (drift; actual VM is `fbuild`) — see spec §18.1)
 
 # Step 1: Ensure source tree is present at /usr/src (releng/15.0)
 # gitup or: git clone -b releng/15.0 https://git.freebsd.org/src.git /usr/src
@@ -452,7 +463,7 @@ cp /usr/src/sys/amd64/conf/SMOLBSD.conf /usr/src/sys/amd64/conf/SMOLBSD
 cp smolbsd-qemu.conf /usr/src/release/tools/smolbsd-qemu.conf
 
 # Step 4: Build world + kernel cross-compiled to amd64
-# (if on aarch64 fb-vm-24):
+# (if on aarch64 fbuild):
 make -j4 -C /usr/src buildworld buildkernel \
     KERNCONF=SMOLBSD \
     TARGET=amd64 \
@@ -581,11 +592,12 @@ echo "CRASH_RECOVERY_TIME=$(($(date +%s) - T0))s"
 ## 10. Build Host Requirements
 
 - **OS**: FreeBSD 15.0-RELEASE (any arch that can cross-compile to amd64)
-- **RAM**: 8 GiB minimum (buildworld requires ~4 GiB; fb-vm-24 has 8 GiB — sufficient)
+- **RAM**: 8 GiB minimum (buildworld requires ~4 GiB; fbuild has 8 GiB — sufficient)
 - **Disk**: 40 GiB free (src tree ~2 GiB, /usr/obj ~20 GiB, image artifacts ~1 GiB)
 - **Tools**: `git` (fetch src), `pkg` (verify package set), `qemu-img` (validate output)
 - **Cross-compile**: aarch64 → amd64 is supported by FreeBSD's build system with
-  `TARGET=amd64 TARGET_ARCH=amd64`; fb-vm-24 is a valid build host
+  `TARGET=amd64 TARGET_ARCH=amd64`; `fbuild` (skill-canonical name: `fb-vm-24`
+  (drift)) is a valid build host. SSH access via `ssh -J minim4-24 -p 2222 builder@localhost` (note port 2222, not the skill's stale 2225 — see spec §18.2).
 
 ---
 
