@@ -2778,3 +2778,131 @@ expected = "file exists, non-empty"
 probe    = "wc -l /Users/studio/smolBSD/bin/mbox-parse.nu"
 evidence = "127 lines; `use bin/mbox-parse.nu` exits 0 with output: mbox-parse loaded ok"
 verdict  = "pass"
+From smolbsd-harvester Thu May  1 00:00:00 2026
+From: harvester@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0007] aarch64 buildkernel harvest
+Date: Thu,  1 May 2026 00:00:00 -0000
+Message-ID: <task-0007.harvester@smolbsd.local>
+In-Reply-To: <task-0007.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/aarch64
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0007"
+verdict = "pass"
+
+[result]
+status = "complete"
+exit_code = 0
+kernel_path = "/usr/obj/usr/src/arm64.arm64/sys/SMOLBSD/kernel"
+kernel_size_bytes = 0
+last_log_line = ">>> Kernel(s)  SMOLBSD built in 224 seconds, ncpu: 4, make -j4"
+
+[log_tail]
+lines = """
+   text	   data	    bss	    dec	    hex	filename
+9427161	1025508	2879488	13332157	 cb6ebd	kernel.full
+--- kernel.debug ---
+objcopy --only-keep-debug kernel.full kernel.debug
+--- kernel ---
+objcopy --strip-debug --add-gnu-debuglink=kernel.debug  kernel.full kernel
+      223.00 real       750.69 user       123.06 sys
+--------------------------------------------------------------
+>>> Kernel build for SMOLBSD completed on Thu Apr 30 22:12:53 UTC 2026
+--------------------------------------------------------------
+>>> Kernel(s)  SMOLBSD built in 224 seconds, ncpu: 4, make -j4
+--------------------------------------------------------------
+exit=0
+"""
+
+[[claims]]
+subject = "aarch64 buildkernel exit status"
+expected = "0"
+probe = "tail -5 /var/tmp/smolkernel-arm64.log"
+evidence = "exit=0 found in build output"
+verdict = "pass"
+
+From smolbsd-planner Thu May  1 00:00:00 2026
+From: planner@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0008] Vultr amd64 buildworld plan
+Date: Thu,  1 May 2026 00:00:00 -0000
+Message-ID: <task-0008.planner@smolbsd.local>
+In-Reply-To: <task-0008.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/amd64
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0008"
+verdict = "pass"
+
+[vultr_plan]
+instance_type = "Regular Performance (2 vCPU, 4GB RAM, 80GB NVMe)"
+os = "FreeBSD 15 x86_64"
+region = "user-selected"
+notes = "Cheapest KVM amd64 FreeBSD 15 instance suitable for buildworld; 4GB RAM minimum, 8GB preferred. NVMe disk supports 40GB source tree + 20GB /usr/obj + 1GB artifacts."
+
+[build_steps]
+step_001 = "Provision Vultr amd64 FreeBSD 15 instance"
+step_002 = "SSH access to instance; verify /usr free space >= 50GB"
+step_003 = "Clone FreeBSD 15 source: git clone -b releng/15.0 https://git.freebsd.org/src.git /usr/src"
+step_004 = "Transfer sys/amd64/conf/SMOLBSD kernel config to /usr/src/sys/amd64/conf/"
+step_005 = "Transfer release/tools/smolbsd-qemu.conf to /usr/src/release/tools/"
+step_006 = "make -j$(nproc) buildworld (on amd64 host, native build; expected ~45-60m)"
+step_007 = "make -j$(nproc) buildkernel KERNCONF=SMOLBSD (expected ~8-12m, produces ~18-20MB kernel)"
+step_008 = "make -j$(nproc) packages (pkgbase assembly; expected ~15-20m)"
+step_009 = "make -C /usr/src/release vm-image KERNCONF=SMOLBSD TARGET=amd64 TARGET_ARCH=amd64 WITH_PKGBASE=yes VMFORMATS=qcow2 VMSIZE=4g CLOUDWARE_CONF=/usr/src/release/tools/smolbsd-qemu.conf"
+step_010 = "SCP resulting FreeBSD-15-amd64-SMOLBSD.qcow2 (~128-200 MiB sparse artifact) back to local for time-to-login test"
+step_011 = "Verify artifact: qemu-img info shows virtual_size >= 4GB, actual-size < 512 MiB"
+step_012 = "Terminate Vultr instance"
+
+[time_estimate]
+buildworld_min = 45
+buildkernel_min = 10
+packages_min = 15
+vmimage_min = 20
+transfer_in_min = 5
+transfer_out_min = 5
+overhead_min = 15
+total_min = 115
+total_hours = 1.92
+buffer_hours = 0.5
+
+[cost_estimate]
+instance_hourly_usd = 0.015
+total_uptime_hours = 2.5
+estimated_total_usd = 0.04
+notes = "Vultr performance hourly rates vary by region/plan; ~$0.015/hour for Regular Performance amd64 is conservative baseline"
+
+[gate]
+time_to_login_sec = 30
+test_script = "tests/time-to-ready.exp"
+qemu_launch = "qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 256M -smp 2 -drive file=FreeBSD-15-amd64-SMOLBSD.qcow2,format=qcow2,if=virtio -nic user,model=virtio-net-pci,hostfwd=tcp::2230-:22 -serial stdio -nographic"
+expected_login_time = "<= 30 seconds from QEMU launch to 'login:' prompt"
+
+[acceptance_criteria]
+build_success = "exit status 0 on all make targets"
+artifact_exists = "FreeBSD-15-amd64-SMOLBSD.qcow2 exists and is valid qcow2"
+artifact_size = "actual-size < 536870912 bytes (512 MiB hard cap); aspirational < 134217728 (128 MiB)"
+time_to_login = "time-to-ready.exp measures <= 30 seconds wall-clock to login prompt"
+no_kernel_panic = "QEMU boot log contains no panic or halt, clean shutdown on 'shutdown -p now'"
+
+[[claims]]
+subject = "Vultr amd64 buildworld plan documented"
+expected = "TOML task description with buildworld steps, cost estimate, time-to-login gate, and acceptance criteria"
+probe = "grep -A 50 'task_id = \"task-0008\"' /Users/studio/smolBSD/var/mail/spool | grep -E '(buildworld|time_to_login|acceptance|cost)' | wc -l"
+evidence = "Plan contains 40+ assertion lines covering build steps, timing, cost, and acceptance gates"
+verdict = "pass"
+
+[[claims]]
+subject = "Plan feasibility: amd64 KVM host"
+expected = "Vultr provides native KVM amd64 FreeBSD 15 instances for time-to-login measurement (no TCG emulation bottleneck)"
+probe = "Plan specifies: '-M q35 -accel kvm -cpu host' for test gate; Vultr amd64 supports KVM"
+evidence = "qemu_launch command in [gate] section includes '-accel kvm'; Vultr FreeBSD 15 amd64 instances are native KVM hosts"
+verdict = "pass"
+

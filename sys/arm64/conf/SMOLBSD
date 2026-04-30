@@ -3,19 +3,22 @@
 #
 # SMOLBSD — FreeBSD 15 arm64 minimal QEMU-only kernel
 # Target: headless VM, virtio block + net, UFS root, no physical hardware.
-# Derived from arm64/conf/MINIMAL (which is derived from GENERIC).
+# Derived from arm64/conf/VIRT (QEMU-optimized baseline).
 #
 # DO NOT add physical device support here. This kernel is for QEMU/HVF only.
 # Build host: fbuild (FreeBSD 15 aarch64); native arm64 build — no cross-compile.
 # QEMU target: qemu-system-aarch64 -machine virt,accel=hvf -cpu host
 #
 # Maintainer: planner@smolbsd.local
-# Format: include MINIMAL, then remove what MINIMAL still carries for
-# physical hardware; then add arm64/QEMU-specific tuning.
+# Format: include std.arm64 + std.virt, then remove what they carry for
+# non-QEMU hardware; then add arm64/QEMU-specific tuning.
 
-include MINIMAL
-machine arm64
+cpu ARM64
 ident SMOLBSD
+
+include "std.arm64"
+include "std.dev"
+include "std.virt"
 
 # -----------------------------------------------------------------------
 # FDT — arm64 QEMU virt machine uses Flattened Device Tree (not ACPI-only)
