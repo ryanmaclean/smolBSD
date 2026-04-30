@@ -1,10 +1,10 @@
-# Mailbox + JEC Handoff Protocol — Design Spec v1.1
+# Mailbox + JEC Handoff Protocol — Design Spec v1.2
 
 - **Date**: 2026-04-30
 - **Project**: smolBSD
-- **Status**: v1.1 — §§11–13 folded from D1/D2/D3 replies; §17 added (capability/intent enforcement)
+- **Status**: v1.2 — fb-vm-24/fbuild reconciliation, port 2222, screen-socket gotcha, .local network-context caveat
 - **License**: BSD-2-Clause (project default)
-- **History**: v1 (2026-04-30 13:30 — open sections deferred); v1.1 (2026-04-30 14:30 — agent replies harvested, folded)
+- **History**: v1 (2026-04-30 13:30 — open sections deferred); v1.1 (2026-04-30 14:30 — agent replies harvested, folded); v1.2 (2026-04-30 15:00 — fb-vm-24/fbuild reconciliation, port 2222, screen-socket gotcha, .local network-context caveat)
 
 ## 1. Purpose
 
@@ -386,6 +386,124 @@ for tool in tools_required:
 
 **Why this is its own §**: the failure mode generalizes — every protocol that decouples *intent* (the task brief) from *capability* (the executor) needs this check. mbox+TOML handoff just made the gap visible.
 
+## 18. Operational notes — fbuild VM, network context, skill drift (v1.2)
+
+This section captures three operational realities discovered during round-2
+reachability testing. None change the protocol contract; all change what an
+agent dropped in cold needs to know to actually use the substrate.
+
+### 18.1 fbuild VM identity (the "fb-vm-24" drift)
+
+The FreeBSD aarch64 build VM on `minim4-24` is canonically named **`fbuild`**
+in reality: that is the screen-session name, the qemu `-name` argument, and
+the disk image base name (`/Users/studio/vms/freebsd-15-build.qcow2`,
+launched as `screen -dmS fbuild ...`). The **freebsd-build-vm skill** at
+`/Users/studio/.claude/skills/freebsd-build-vm/SKILL.md` calls it
+**`fb-vm-24`** throughout — the "24" was a host suffix (`minim4-24`) that
+got promoted into the VM name in skill prose. **The skill is stale on
+this point and needs a separate update PR** (out of scope for this repo;
+the skill lives globally under `~/.claude/`).
+
+**Operational rule**: when reading the freebsd-build-vm skill, mentally
+substitute `fbuild` for `fb-vm-24` for VM-level identifiers (screen
+session, qemu `-name`, image filename). When the skill name `fb-vm-24` is
+referenced as a symbol in this repo, it is marked
+"skill-canonical name (drift; actual VM is `fbuild`)".
+
+### 18.2 SSH hostfwd port (2225 → 2222)
+
+The freebsd-build-vm skill documents `hostfwd=tcp::2225-:22`. Ground-truth
+on minim4-24 (verified 2026-04-30T21:33:39Z via `lsof` against qemu pid
+29210): `hostfwd=tcp::2222-:22`. **Use port 2222 for ssh-into-fbuild**.
+
+```
+ssh -J minim4-24 -p 2222 builder@localhost      # correct (current reality)
+ssh -J studio@10.0.3.1 -p 2225 builder@localhost  # stale skill prose; do not use
+```
+
+### 18.3 virtfs share path (doubled-prefix wrapper bug)
+
+The fbuild qemu cmdline carries
+`-virtfs local,path=/Users/studio/Users/studio/share/fbuild,...`. The
+doubled `/Users/studio/Users/studio/` is a **launch-wrapper bug**: a
+literal `~` was prefixed to an already-absolute path inside
+`run-fb-vm-24.sh` (the fleet-ops template), producing the doubled prefix
+when the shell expanded `~` to `/Users/studio` before string concatenation.
+
+**Status**: documented as a wrapper bug to fix separately in fleet-ops
+(`vm-templates/run-freebsd-vm.sh.template`). Until then, source-IN /
+artifacts-OUT must use the doubled path on the host side:
+
+```
+# host (minim4-24) side — drop sources here:
+~/Users/studio/share/fbuild/source/        # WRONG (skill prose)
+/Users/studio/Users/studio/share/fbuild/source/  # CURRENT REALITY
+```
+
+Inside the VM the mount tag (`host0`) and mountpoint (`/mnt/host`) are
+unchanged — the bug is host-path-only.
+
+### 18.4 Screen-socket-lost gotcha (qemu alive, screen -r fails)
+
+**Detected via**: on minim4-24, `pgrep -f qemu-system-aarch64` returns pid
+29210 (qemu running) but `screen -ls` returns
+`No Sockets found in /var/folders/.../screen`. The fbuild VM is reachable
+on ssh:2222, but the canonical recovery path
+(`screen -r fbuild` → console) is **inert** — the screen session that
+launched qemu lost its socket file. The qemu process inherited the file
+descriptors and survived; the screen wrapper did not.
+
+**Recovery procedure** (per freebsd-build-vm skill §"Launching the VM
+(canonical)"):
+
+```
+# 1. Confirm both halves of the diagnostic on minim4-24:
+ssh minim4-24 'pgrep -f qemu-system-aarch64; screen -ls'
+#  -> qemu pid present
+#  -> "No Sockets found"  --> socket lost
+
+# 2. Kill the orphan qemu (it has no console anyway):
+ssh minim4-24 'pkill -f "qemu-system-aarch64.*-name fbuild"'
+
+# 3. Relaunch via the canonical wrapper (re-establishes screen + socket):
+ansible minim4-24 -m raw -a "~/vms/run-fb-vm-24.sh"
+ansible minim4-24 -m raw -a "screen -ls; pgrep -f qemu-system-aarch64"
+```
+
+**When NOT to do this**: while a long build is in progress inside the VM
+(via ssh-launched `screen -dmS smolkernel` or similar in-VM screen
+session). Killing qemu kills the build. Verify no in-flight build exists
+before recovery — `ssh -p 2222 builder@... screen -ls` from minim4-24
+will list any in-VM screen sessions.
+
+### 18.5 `.local` fleet hostnames are LAN-only (network-context caveat)
+
+The fleet's `.local` hostnames (`qnas.local`, `ergo.local`,
+`searxng.local`, `gitea.local`, etc., per ansible-managed `/etc/hosts`
+entries with `10.0.3.x` IPs — see CLAUDE.md "Search" section) **resolve
+only when the agent is LAN-attached** (host is on the QNAS LAN
+10.0.3.0/23). From a non-LAN-attached coordinator (e.g. a Mac on a
+different network using Tailscale to reach minim4-24), they fail to
+resolve / route.
+
+Tailscale resolves Tailscale-attached node names (`minim4-24` itself is a
+tailnet member) but does **not** proxy to non-tailnet hosts inside a
+nested QEMU guest (`fbuild` reaches the LAN via SLIRP NAT only; the LAN
+does not see fbuild as a tailnet peer).
+
+**Implication for D3 escalation fallback** (§13): the fallback IRC DM
+`openssl s_client 10.0.3.203:6697` is **inert from a non-LAN-attached
+coordinator** — there is no route to `10.0.3.203` from a Mac that only
+sees minim4-24 over Tailscale. The HALT marker + spool-message primary
+path (§13) still works (it is filesystem-local), so the design is not
+broken. The fallback is best-effort and degrades to "logged in HALT
+marker, fallback_status = 'no-route'" when fired off-LAN.
+
+**No design change**: D3's triple-failure path (§13) already covers this
+case — fallback failure is logged, not fatal. This caveat is just the
+explicit network-context assumption an agent dropped in cold needs to
+recognize before debugging "why did the IRC fallback silently no-op".
+
 ## 14. Caveats and known limits
 
 1. **No `sequential-thinking` MCP server is loaded** in this Claude Code instance. Stepwise reasoning happens in-prompt, not via that MCP. If the user installs it later, the protocol doesn't change — it's an internal-to-coordinator concern.
@@ -400,6 +518,9 @@ for tool in tools_required:
 10. **Citation hallucination risk**: the round-1 architect cited a "vermaden 2026-02 blog post" not independently verified. Treat agent-introduced citations as low-confidence until cross-checked. Substantive technical content (oci-image-runtime.conf, MINIMAL config, Makefile.vm) is verifiable against [cgit.freebsd.org](https://cgit.freebsd.org/src/tree/sys/amd64/conf/).
 11. **`.gitignore` not yet written** — D1 secrets design requires `var/run/` to be jj/git-ignored before first credential dispatch. ops follow-up.
 12. **`pass(1)` is GPL-2.0** — disallowed under the user's licensing rule. The secrets design uses `gopass` (MIT) instead. Don't accidentally drop `pass` into a future dependency.
+13. **freebsd-build-vm skill is stale on VM-name and SSH-port** (v1.2). The global skill at `/Users/studio/.claude/skills/freebsd-build-vm/SKILL.md` calls the VM `fb-vm-24` (actual: `fbuild`) and lists hostfwd port `2225` (actual: `2222`). Skill update is a separate PR outside this repo; §18 is the authoritative reconciliation for now. Mentally substitute when reading the skill.
+14. **`.local` hostnames are LAN-only** (v1.2 — see §18.5). From a coordinator reaching minim4-24 only over Tailscale, the D3 IRC fallback to `10.0.3.203:6697` is inert — design degrades gracefully (HALT marker + spool path are filesystem-local), but agents should expect `fallback_status = 'no-route'` when off-LAN.
+15. **Screen-socket-lost is a known fbuild hazard** (v1.2 — see §18.4). qemu can outlive its launching screen session; `screen -r fbuild` then fails even though the VM is reachable on ssh:2222. Recovery is `pkill qemu` + relaunch via `~/vms/run-fb-vm-24.sh`. Verify no in-VM build is in flight first.
 
 ## 15. Future work
 
@@ -416,10 +537,10 @@ for tool in tools_required:
 - `Manifest:` discovery endpoint per AX-first.
 - TrustZone integration (forward-look, given user's Knox background + BRAP L1 decision): replies could carry `[[attestations]]` blocks alongside `[[claims]]`, where the attestation is a TA-signed quote produced by the building VM. Spec v2 candidate.
 
-## 16. Self-review checklist (v1.1)
+## 16. Self-review checklist (v1.2)
 
-- [x] No "TBD" in any section — §§11/12/13 fully folded; §17 fully specified
-- [x] Sections internally consistent — §4.1 schema includes new `tools_required` field per §17; §8 role table has Tools-required column; §11/§12 cross-reference (D1+D2 fingerprint-mismatch override); §12/§13 cross-reference (ESCALATE → HALT protocol)
+- [x] No "TBD" in any section — §§11/12/13 fully folded; §17 fully specified; §18 (operational notes) added in v1.2
+- [x] Sections internally consistent — §4.1 schema includes new `tools_required` field per §17; §8 role table has Tools-required column; §11/§12 cross-reference (D1+D2 fingerprint-mismatch override); §12/§13 cross-reference (ESCALATE → HALT protocol); §13/§18.5 cross-reference (IRC fallback inert when off-LAN, by design — falls back to filesystem-local primary)
 - [x] Scope: focused on a single substrate (mbox+TOML+spool) with one closed contract — ready to implement
 - [x] Ambiguities resolved:
   - mbox path explicit (`var/mail/spool`)
@@ -428,6 +549,8 @@ for tool in tools_required:
   - capability/intent split (§17) — read-only vs read-write subagent types
   - pass+probe-failed has half retry budget (§12)
   - blocked has two sub-categories (with/without unblocker) with different transitions
+  - fbuild VM identity and reachability primitives (§18) — VM name `fbuild` (not `fb-vm-24`), SSH port 2222 (not 2225), virtfs path `/Users/studio/Users/studio/share/fbuild` (doubled-prefix wrapper bug, documented to fix separately)
 - [x] License floor verified: openssl Apache-2.0, Ergo MIT, Nushell MIT, mbox = plain RFC822 (no library), gopass MIT, ssh-agent BSD-2+ISC, RTK Apache-2.0. No GPL/LGPL/AGPL.
-- [x] Cross-design composition explicit: D1↔D2 (fingerprint mismatch path), D2↔D3 (escalation handoff), D1↔D3 (HALT marker accepts X-Halt-Reason from D1)
-- [x] Forward references named: §17's capability check is mechanical, not a judgement call
+- [x] Cross-design composition explicit: D1↔D2 (fingerprint mismatch path), D2↔D3 (escalation handoff), D1↔D3 (HALT marker accepts X-Halt-Reason from D1), §18.5↔§13 (off-LAN IRC fallback degrades to logged no-route, primary path unaffected)
+- [x] Forward references named: §17's capability check is mechanical, not a judgement call; §18 reconciliations are mechanical lookups (no judgement) until upstream skill is updated
+- [x] Drift surfaced and reconciled (v1.2): freebsd-build-vm skill is stale on VM name + SSH port; §18 + caveats §14.13 are the authoritative reconciliation in-tree; skill needs separate update PR
