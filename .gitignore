@@ -1,0 +1,20 @@
+# Per spec §11 (secrets handling): ephemeral envelope files MUST NOT be tracked
+var/run/
+
+# Spool lock files (future, when multi-coordinator is in scope)
+var/mail/*.lock
+
+# Build artifacts (Phase I onward — qcow2/raw images are large + reproducible)
+build/
+*.qcow2
+*.raw
+*.vmdk
+
+# Editor / OS detritus
+.DS_Store
+*.swp
+*.swo
+*~
+
+# jj-internal: do not check the .jj/working-copy contents into git via colocated repo
+# (jj manages this on its own; this is a defense-in-depth comment)
