@@ -1314,6 +1314,275 @@ next_recommended = [
   "spec-followup: §17 capability check fired correctly — RW general-purpose builder dispatched, RO architect kept upstream. Pattern validated.",
 ]
 
+From smolbsd-coord Tue Apr 30 14:10:00 2026
+From: coordinator@smolbsd.local
+To: auditor@smolbsd.local
+Subject: [verify-d1] fleet-eval re-probe of <design-d1.security@smolbsd.local> claims
+Date: Tue, 30 Apr 2026 14:10:00 -0000
+Message-ID: <verify-d1.coord@smolbsd.local>
+References: <design-d1.security@smolbsd.local>
+X-Project: smolbsd
+X-Phase: protocol/audit-r1
+X-JEC-Compression: rtk-v1
+X-Spec-Version: v1.1
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "verify-d1"
+title    = "Independently verify each [[claims]] block in the security agent's D1 reply"
+deadline = "2026-05-01"
+
+[brief]
+summary = """
+Per spec §7 (eval-reflex) and CLAUDE.md ('claim → proof'), the round-1
+agent self-attestations need independent re-probing before we trust
+them as substrate for Phase II. Your job: run every probe, classify the
+verdict {PASS, FAIL, INCONCLUSIVE, N/A} against actual filesystem +
+process state, and emit a structured audit reply.
+
+Source claims live at <design-d1.security@smolbsd.local> in the spool
+(lines ~654-701 of var/mail/spool, but find by Message-ID).
+"""
+
+[context_pointers]
+read = [
+  "var/mail/spool",
+  "docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.md",
+  ".gitignore",
+]
+prior_msgids = [
+  "<design-d1.security@smolbsd.local>",
+]
+
+[acceptance]
+must_pass = [
+  "Reply enumerates every [[claims]] block found in <design-d1.security@smolbsd.local>",
+  "Each claim has a verified verdict (PASS/FAIL/INCONCLUSIVE/N/A) AND the captured probe output",
+  "N/A is used ONLY for probes referencing files that do not yet exist (forward-looking design assertions); the reply MUST list which files were missing",
+  "No probe output contains a literal secret value (use redact if any does)",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+skills_recommended   = ["fleet-eval", "redact"]
+tools_required       = ["Read", "Write", "Edit", "Bash"]
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 50000
+reply_msgid          = "<verify-d1.auditor@smolbsd.local>"
+
+From smolbsd-coord Tue Apr 30 14:10:01 2026
+From: coordinator@smolbsd.local
+To: auditor@smolbsd.local
+Subject: [verify-d2] fleet-eval re-probe of <design-d2.reviewer@smolbsd.local> claims
+Date: Tue, 30 Apr 2026 14:10:01 -0000
+Message-ID: <verify-d2.coord@smolbsd.local>
+References: <design-d2.reviewer@smolbsd.local>
+X-Project: smolbsd
+X-Phase: protocol/audit-r1
+X-JEC-Compression: rtk-v1
+X-Spec-Version: v1.1
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "verify-d2"
+title    = "Independently verify each [[claims]] block in the reviewer agent's D2 reply"
+deadline = "2026-05-01"
+
+[brief]
+summary = """
+D2 is mostly spec-quality assertions (state machine present, max_attempts
+named, etc.) verifiable by parsing the reviewer's reply itself. Some
+probes use TOML-lookup pseudocode — translate those to actual grep/awk
+commands against var/mail/spool for the body of msgid
+<design-d2.reviewer@smolbsd.local>.
+"""
+
+[context_pointers]
+read = [
+  "var/mail/spool",
+  "docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.md",
+]
+prior_msgids = [
+  "<design-d2.reviewer@smolbsd.local>",
+]
+
+[acceptance]
+must_pass = [
+  "Reply enumerates every [[claims]] block found in <design-d2.reviewer@smolbsd.local>",
+  "Each claim has a verified verdict (PASS/FAIL/INCONCLUSIVE/N/A) AND the captured probe output",
+  "TOML-lookup probes are translated to runnable shell commands and executed",
+  "Verify the decision_table actually has the named categories — count and enumerate",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+skills_recommended   = ["fleet-eval"]
+tools_required       = ["Read", "Write", "Edit", "Bash"]
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 50000
+reply_msgid          = "<verify-d2.auditor@smolbsd.local>"
+
+From smolbsd-coord Tue Apr 30 14:10:02 2026
+From: coordinator@smolbsd.local
+To: auditor@smolbsd.local
+Subject: [verify-d3] fleet-eval re-probe of <design-d3.ops@smolbsd.local> claims
+Date: Tue, 30 Apr 2026 14:10:02 -0000
+Message-ID: <verify-d3.coord@smolbsd.local>
+References: <design-d3.ops@smolbsd.local>
+X-Project: smolbsd
+X-Phase: protocol/audit-r1
+X-JEC-Compression: rtk-v1
+X-Spec-Version: v1.1
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "verify-d3"
+title    = "Independently verify each [[claims]] block in the ops agent's D3 reply"
+deadline = "2026-05-01"
+
+[brief]
+summary = """
+D3 has a mix of design-time assertions (license floor, triple-failure
+non-silent) and runtime-checkable ones (HALT marker O(1), one-shot IRC).
+For runtime-checkable, run the probe. For design-time, verify the
+assertion is present + internally consistent in the reply body.
+
+DO NOT actually fire an IRC DM to ryan during verification — verifying
+the protocol's *mechanics* is in scope; verifying live network reach is
+NOT (would violate CLAUDE.md "no probe loops on LAN servers").
+"""
+
+[context_pointers]
+read = [
+  "var/mail/spool",
+  "docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.md",
+  "/Users/studio/.claude/CLAUDE.md",
+]
+prior_msgids = [
+  "<design-d3.ops@smolbsd.local>",
+]
+
+[acceptance]
+must_pass = [
+  "Reply enumerates every [[claims]] block found in <design-d3.ops@smolbsd.local>",
+  "Each claim has a verified verdict (PASS/FAIL/INCONCLUSIVE/N/A) AND the captured probe output",
+  "License-floor claim independently verified by checking each named component's license",
+  "HALT-marker O(1) probe demonstrated (touch + stat + rm)",
+  "DO NOT make any actual IRC connection or DNS lookup against 10.0.3.203",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+skills_recommended   = ["fleet-eval"]
+tools_required       = ["Read", "Write", "Edit", "Bash"]
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 50000
+reply_msgid          = "<verify-d3.auditor@smolbsd.local>"
+
+From smolbsd-auditor Tue Apr 30 14:30:00 2026
+From: auditor@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [verify-d1] fleet-eval re-probe of <design-d1.security@smolbsd.local> claims
+Date: Tue, 30 Apr 2026 14:30:00 -0000
+Message-ID: <verify-d1.auditor@smolbsd.local>
+In-Reply-To: <verify-d1.coord@smolbsd.local>
+References: <verify-d1.coord@smolbsd.local> <design-d1.security@smolbsd.local>
+X-Project: smolbsd
+X-Verdict: mixed
+Content-Type: text/toml; charset=utf-8
+
+task_id      = "verify-d1"
+audit_target = "<design-d1.security@smolbsd.local>"
+
+[summary]
+total_claims    = 7
+pass            = 5
+fail            = 1
+inconclusive    = 0
+n_a             = 1
+overall_verdict = "mixed"
+
+[[audited_claims]]
+claim_subject = "no secret value appears in var/mail/spool when the protocol is followed"
+self_verdict  = "pass"
+audit_verdict = "PASS"
+probe_run     = "grep -nE '^(api_key|token|password|secret|gitea_token|ssh_key)\\s*=\\s*\"[A-Za-z0-9_+/=.-]{8,}\"' /Users/studio/smolBSD/var/mail/spool || echo CLEAN"
+probe_exit    = 0
+probe_output  = "CLEAN"
+
+[[audited_claims]]
+claim_subject = "var/run/secrets is not git-tracked"
+self_verdict  = "pass"
+audit_verdict = "PASS"
+probe_run     = "test -f /Users/studio/smolBSD/.gitignore && grep -q '^var/run/' /Users/studio/smolBSD/.gitignore && echo IGNORED-OK || echo NEEDS-GITIGNORE-ENTRY"
+probe_exit    = 0
+probe_output  = "IGNORED-OK"
+notes         = "Source evidence said .gitignore did not yet exist; in fact it does (484 bytes, dated Apr 30 14:00) and contains 'var/run/' on its own line. The current state matches the claim's expected outcome even though the source-reply evidence text is stale."
+
+[[audited_claims]]
+claim_subject = "redact is installed and produces the documented head/tail mask"
+self_verdict  = "pass"
+audit_verdict = "PASS"
+probe_run     = "echo 'fc1df7a5b8c2d4e6f0123456789abcdef0123456789abcdef0123456789a4439' | ~/.local/bin/redact"
+probe_exit    = 0
+probe_output  = "fc1dxxxx4439"
+
+[[audited_claims]]
+claim_subject = "macOS Keychain CLI is available for prototype-phase backing store"
+self_verdict  = "pass"
+audit_verdict = "PASS"
+probe_run     = "which security && security -h 2>&1 | head -1"
+probe_exit    = 0
+probe_output  = "/usr/bin/security\n    help                                 Show all commands, or show usage for a command."
+
+[[audited_claims]]
+claim_subject = "1Password CLI is NOT a hard dependency despite CLAUDE.md mention"
+self_verdict  = "pass"
+audit_verdict = "PASS"
+probe_run     = "which op || echo NOT-INSTALLED"
+probe_exit    = 0
+probe_output  = "op not found\nNOT-INSTALLED"
+
+[[audited_claims]]
+claim_subject = "ssh-agent is available for SSH-key-shaped credentials on prototype phase"
+self_verdict  = "pass"
+audit_verdict = "FAIL"
+probe_run     = "test -S \"$SSH_AUTH_SOCK\" && ssh-add -l >/dev/null 2>&1 && echo AGENT-LIVE || echo NO-AGENT"
+probe_exit    = 0
+probe_output  = "NO-AGENT"
+notes         = "Probe outputs NO-AGENT, contradicting the source self-verdict of 'pass'. Diagnostic: SSH_AUTH_SOCK=/private/tmp/com.apple.launchd.ja4XHbnV0b/Listeners IS a live socket (srw-rw-rw-), and both /usr/bin/ssh-agent and /usr/bin/ssh-add are installed, BUT 'ssh-add -l' reports 'The agent has no identities.' (exit 1), which short-circuits the probe to NO-AGENT. The expected wording ('SSH_AUTH_SOCK is set ... and points to a live socket') is satisfied; the probe as written is stricter (requires loaded keys) and fails. Either weaken the probe to 'test -S \"$SSH_AUTH_SOCK\" && echo AGENT-LIVE' if presence-only is the contract, or load identities before declaring pass. Flagging FAIL because the probe-output-vs-expected mismatch is the contract per spec section 7."
+
+[[audited_claims]]
+claim_subject = "design portability: same envelope contract on the target BSD VM"
+self_verdict  = "pass"
+audit_verdict = "N/A"
+probe_run     = "ls coord/materialize-prototype.nu coord/materialize-target.nu"
+probe_exit    = 1
+probe_output  = "ls: coord/materialize-prototype.nu: No such file or directory\nls: coord/materialize-target.nu: No such file or directory"
+notes         = "Forward-looking design assertion. Missing files: coord/materialize-prototype.nu, coord/materialize-target.nu (the coord/ directory itself does not exist yet). The original probe was a diff against these unwritten artifacts; it cannot run today. Listed in next_recommended of the source reply ('implement bin/secret-materialize.nu') — N/A is the correct classification per spec section 7 / verify-d1 acceptance gate."
+
+[[claims]]
+subject  = "all probes were run, none were skipped"
+expected = "exactly 7 [[audited_claims]] blocks for the 7 source claims; sum(pass+fail+inconclusive+n_a) == total_claims"
+probe    = "grep -c '^\\[\\[audited_claims\\]\\]' /Users/studio/smolBSD/var/mail/spool  # tail-only verification: count rises by exactly 7 after this append"
+evidence = "summary table: total_claims=7, pass=5, fail=1, inconclusive=0, n_a=1; 5+1+0+1=7 matches"
+verdict  = "pass"
+
+next_recommended = [
+  "coordinator: per spec section 12 retry table, 'pass+probe-failed' = RETRY_QUEUED with max_retries=1 (half budget). Re-dispatch design-d1 to security@smolbsd.local with the FAIL claim's probe rewritten OR with ssh identities loaded — agent vs probe disagreement, one retry only.",
+  "coordinator: re-author the ssh-agent claim's probe to 'test -S \"$SSH_AUTH_SOCK\" && echo AGENT-LIVE' if the design only requires socket presence, not loaded keys. Otherwise run 'ssh-add ~/.ssh/id_*' before re-dispatch.",
+  "coordinator: the N/A claim (envelope-contract portability) blocks on coord/materialize-prototype.nu + coord/materialize-target.nu. Promote to a builder@smolbsd.local task per next_recommended[1] of design-d1.security.",
+  "ops: source-reply evidence for the .gitignore claim is now stale (file exists). Edit-in-place is forbidden by append-only invariant; record correction via control message instead, or accept the stale evidence as historical.",
+]
+
+
+
 
 
 
