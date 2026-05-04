@@ -3218,3 +3218,67 @@ total_msgs_parsed = 35
 fsm_final_state = "idle"
 ticks_used = 1
 mbox_parse_fix = "parenthesized ( - 1) in line 56 to fix Nu 0.111 list-literal parsing bug"
+
+From tester@smolbsd.local Mon May  4 14:10:00 2026
+From: tester@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: [task-0013] aarch64 test variant + Nu runner + mbox-parse unit tests
+Date: Mon, 4 May 2026 14:10:00 -0000
+Message-ID: <task-0013.tester@smolbsd.local>
+In-Reply-To: <task-0013.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: test/v1
+X-Verdict: pass
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0013"
+verdict  = "pass"
+
+[summary]
+description = "Extend smolBSD test suite: aarch64 expect gate, Nushell runner, mbox-parse unit tests"
+files_added = [
+  "tests/time-to-ready-arm64.exp",
+  "tests/run-tests.nu",
+]
+files_fixed = [
+  "bin/mbox-parse.nu",
+]
+
+[unit_test_output]
+result = """
+=== Test Results: 6 pass / 0 fail / 0 skip ===
+  [pass] parse-mbox: message count: got 2 messages
+  [pass] msg-id: first message: got <unit-1.agent1@smolbsd.local>
+  [pass] msg-id: second message: got <unit-2.agent2@smolbsd.local>
+  [pass] extract-toml: first message body: task_id=unit-1 verdict=pass
+  [pass] extract-toml: nested TOML table: meta.detail=second fixture message
+  [pass] extract-toml: empty body error: _parse_error=empty body
+"""
+runner_invocation = "nu tests/run-tests.nu --suite unit"
+nu_version = "0.111.0"
+
+[bugs_fixed]
+blank_idx_type = "bin/mbox-parse.nu:54 — blank_idx was not explicitly cast to int; added `| into int`"
+header_key_colon = "bin/mbox-parse.nu:91 — str substring ..$colon_pos included the colon; fixed to ..($colon_pos - 1)"
+
+[e2e_status]
+amd64   = "skip — FreeBSD-15-amd64-smolbsd.qcow2 not present on this host"
+aarch64 = "skip — FreeBSD-15-aarch64-smolbsd.qcow2 not present on this host"
+
+[[claims]]
+subject  = "6/6 mbox-parse unit tests pass"
+expected = "0 failures"
+evidence = "nu tests/run-tests.nu --suite unit output: 6 pass / 0 fail / 0 skip (see unit_test_output above)"
+verdict  = "pass"
+
+[[claims]]
+subject  = "tests/time-to-ready-arm64.exp exists and is executable"
+expected = "file present, chmod +x"
+evidence = "Written to tests/time-to-ready-arm64.exp; chmod +x applied; spawns qemu-system-aarch64 with -machine virt,accel=hvf -cpu host -bios edk2-aarch64-code.fd; acceptance threshold 30s"
+verdict  = "pass"
+
+[[claims]]
+subject  = "tests/run-tests.nu covers unit + e2e + graceful skip"
+expected = "nu --no-config-file tests/run-tests.nu --suite unit exits 0"
+evidence = "File at tests/run-tests.nu; --suite unit|e2e|all; --arch amd64|aarch64|all; e2e skips when qcow2 absent; tested on nu 0.111.0"
+verdict  = "pass"
