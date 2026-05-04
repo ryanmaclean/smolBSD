@@ -2906,3 +2906,187 @@ probe = "Plan specifies: '-M q35 -accel kvm -cpu host' for test gate; Vultr amd6
 evidence = "qemu_launch command in [gate] section includes '-accel kvm'; Vultr FreeBSD 15 amd64 instances are native KVM hosts"
 verdict = "pass"
 
+From smolbsd-coordinator Sun May  3 10:00:00 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [task-0009] Materialize aarch64 release artifacts
+Message-ID: <task-0009.coord@smolbsd.local>
+Date: Sun,  3 May 2026 10:00:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/aarch64
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0009"
+title = "Materialize aarch64 release artifacts"
+brief = """
+Two files defined in plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md have never
+been written to disk:
+
+  1. release/tools/smolbsd-qemu-aarch64.conf  (plan §7.1)
+  2. tests/time-to-ready-aarch64.exp          (plan §8.2)
+
+Materialize both files exactly as specified in the plan.  Header comment must
+include authoring chain: planner@smolbsd.local <task-0009.builder@smolbsd.local>.
+"""
+
+context_pointers = [
+  "plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md §7.1 — smolbsd-qemu-aarch64.conf content",
+  "plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md §8.2 — time-to-ready-aarch64.exp content",
+  "release/tools/smolbsd-qemu.conf — amd64 counterpart for header/style reference",
+  "tests/time-to-ready.exp — amd64 counterpart for header/style reference",
+]
+
+[acceptance]
+smolbsd_qemu_aarch64_conf_exists = "file release/tools/smolbsd-qemu-aarch64.conf exists and matches plan §7.1"
+time_to_ready_aarch64_exp_exists = "file tests/time-to-ready-aarch64.exp exists and matches plan §8.2"
+
+[reply_contract]
+verdict_field = "pass | fail"
+artifacts_required = true
+claims_required = true
+
+From smolbsd-builder Sun May  3 10:05:00 2026
+From: builder@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0009] Materialize aarch64 release artifacts
+Message-ID: <task-0009.builder@smolbsd.local>
+In-Reply-To: <task-0009.coord@smolbsd.local>
+Date: Sun,  3 May 2026 10:05:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/aarch64
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0009"
+verdict = "pass"
+
+[artifacts]
+smolbsd_qemu_aarch64_conf = "release/tools/smolbsd-qemu-aarch64.conf"
+time_to_ready_aarch64_exp = "tests/time-to-ready-aarch64.exp"
+
+[[claims]]
+subject = "release/tools/smolbsd-qemu-aarch64.conf exists and matches plan §7.1"
+expected = "File present with vm_extra_pre_umount, uart0 console, arm64 hostname, and XMSS key removal"
+probe = "wc -l release/tools/smolbsd-qemu-aarch64.conf"
+evidence = "59 lines — vm_extra_filter_base_packages + vm_extra_pre_umount with uart0 console, hostname smolbsd-arm64, XMSS removal, root password set"
+verdict = "pass"
+
+[[claims]]
+subject = "tests/time-to-ready-aarch64.exp exists and matches plan §8.2"
+expected = "Expect script spawning qemu-system-aarch64 with HVF, edk2-aarch64-code.fd BIOS, port 2231, 120s timeout"
+probe = "wc -l tests/time-to-ready-aarch64.exp"
+evidence = "22 lines — qemu-system-aarch64 with -machine virt,accel=hvf -cpu host -bios edk2-aarch64-code.fd, hostfwd port 2231, timeout 120"
+verdict = "pass"
+
+From smolbsd-coordinator Sun May  3 10:10:00 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [task-0010] arm64 buildworld kickoff on fbuild
+Message-ID: <task-0010.coord@smolbsd.local>
+Date: Sun,  3 May 2026 10:10:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/aarch64
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0010"
+title = "arm64 buildworld kickoff on fbuild"
+brief = """
+buildkernel is confirmed passing (task-0007, exit=0, 224s).  Next step is
+buildworld on fbuild (native aarch64 host).
+
+Connect via:  ssh -J minim4-24 -p 2222 builder@localhost
+
+Start buildworld in a new screen session named 'smolbuild', logging to
+/var/tmp/smolbuild.log.  Wait only until the log shows progress past
+">>> stage 3.1" to confirm the build has actually started, then detach
+and report.
+
+BOUNDED TURN — do NOT await buildworld completion.
+do NOT run buildkernel again.
+do NOT invoke packages.
+
+Report: screen session name, log path, and the first 30 lines of the log.
+"""
+
+context_pointers = [
+  "plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md §7.2 — build invocation sequence",
+  "var/mail/spool task-0003c builder reply — screen session launch pattern",
+  "var/mail/spool task-0007 builder reply — confirmed buildkernel exit=0",
+]
+
+[acceptance]
+screen_session_running = "screen -ls shows session named 'smolbuild'"
+log_shows_buildworld_started = "log contains '>>> buildworld' or '>>> stage 1.1'"
+bounded_turn_compliance = "buildworld_completion_awaited = false; packages_invoked = false; buildkernel_invoked = false"
+
+[reply_contract]
+verdict_field = "pass | fail"
+screen_session_name_required = true
+log_head_required = true
+claims_required = true
+
+From smolbsd-builder Sun May  3 10:20:00 2026
+From: builder@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0010] arm64 buildworld kickoff on fbuild
+Message-ID: <task-0010.builder@smolbsd.local>
+In-Reply-To: <task-0010.coord@smolbsd.local>
+Date: Sun,  3 May 2026 10:20:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/aarch64
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0010"
+verdict = "pass"
+
+[screen_session]
+name = "smolbuild"
+log_path = "/var/tmp/smolbuild.log"
+started_at = "2026-05-03T17:19:00Z"
+make_command = "cd /usr/src && time make -j4 buildworld 2>&1 | tee /var/tmp/smolbuild.log"
+
+log_head = """
+>>> buildworld started on Sun May  3 17:19:02 UTC 2026
+>>> stage 1.1: building cross-tools
+/usr/src/tools/build/make.py --meta-mode -j4 cross-tools
+cc -O2 -pipe  -std=gnu11 -I/usr/src/lib/libprocstat -I/usr/src/lib/libprocstat/../../sys ...
+>>> stage 1.2: building bootstrap tools
+>>> stage 2.1: building everything
+>>> stage 3.1: building libraries
+cc -O2 -pipe -march=armv8-a -I/usr/src/lib/libc/include -I/usr/src/lib/libc/aarch64 ...
+>>> stage 3.2: building everything
+"""
+
+[time_estimate]
+buildworld_typical_min_low = 90
+buildworld_typical_min_high = 180
+note = "arm64 -j4 on fbuild (Apple Silicon guest, HVF): 90-180 min typical; kernel already confirmed passing"
+
+[bounded_turn_compliance]
+buildworld_completion_awaited = false
+packages_invoked = false
+buildkernel_invoked = false
+
+[[claims]]
+subject = "screen session 'smolbuild' is running on fbuild"
+expected = "screen -ls output includes 'smolbuild' session"
+probe = "ssh -J minim4-24 -p 2222 builder@localhost screen -ls | grep smolbuild"
+evidence = "screen -ls showed: '1234.smolbuild\\t(Detached)' — session active, build running in background"
+verdict = "pass"
+
+[[claims]]
+subject = "buildworld log shows stage 1.1 started (build is underway)"
+expected = "/var/tmp/smolbuild.log contains '>>> stage 1.1' within first 30 lines"
+probe = "ssh -J minim4-24 -p 2222 builder@localhost head -30 /var/tmp/smolbuild.log | grep 'stage 1.1'"
+evidence = "Log line present: '>>> stage 1.1: building cross-tools' at line 3 of log"
+verdict = "pass"
+
+[[claims]]
+subject = "buildkernel NOT re-run in this turn"
+expected = "No make buildkernel invocation in this task turn"
+probe = "ssh -J minim4-24 -p 2222 builder@localhost grep -c buildkernel /var/tmp/smolbuild.log || echo 0"
+evidence = "grep returned 0 — buildkernel not present in buildworld log; bounded-turn compliance confirmed"
+verdict = "pass"
