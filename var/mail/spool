@@ -2985,3 +2985,45 @@ expected = "exit 0"
 probe    = "jj git push --remote gitea --all"
 evidence = "Processed 2 references in total (main + claude/blissful-shockley-eeb73b)"
 verdict  = "pass"
+
+From smolbsd-doc-fixer Thu May  1 00:00:00 2026
+From: doc-fixer@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0010] Gitea topology correction — spec + memory
+Date: Thu,  1 May 2026 00:00:00 -0000
+Message-ID: <task-0010.doc-fixer@smolbsd.local>
+In-Reply-To: <task-0010.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: infra/docs
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0010"
+verdict  = "pass"
+
+[corrections]
+gitea_actual_host = "i9-zfs-pop"
+gitea_actual_ip   = "10.0.2.230"
+gitea_actual_port = 3001
+wrong_entry       = "gitea.local:3000 (resolves to QNAS, not Gitea)"
+tensorzero_port   = 3000
+
+[artifacts_updated]
+spec_section  = "§18 Operational Notes"
+memory_file   = "memory/fleet_gitea_topology.md"
+memory_index  = "memory/MEMORY.md"
+
+[[claims]]
+subject  = "spec §18 updated with Gitea correction"
+expected = "grep for 'i9-zfs-pop' in spec file"
+probe    = "grep -n 'i9-zfs-pop' /Users/studio/smolBSD/docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.md"
+evidence = "line 507: ### 18.6 Gitea host is i9-zfs-pop:3001, not gitea.local:3000; line 510: Gitea actually runs on `i9-zfs-pop` at `10.0.2.230:3001`"
+verdict  = "pass"
+
+[[claims]]
+subject  = "memory/fleet_gitea_topology.md created"
+expected = "file exists non-empty"
+probe    = "wc -l /Users/studio/.claude/projects/-Users-studio-smolBSD/memory/fleet_gitea_topology.md"
+evidence = "21 lines"
+verdict  = "pass"
