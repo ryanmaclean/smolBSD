@@ -2906,3 +2906,82 @@ probe = "Plan specifies: '-M q35 -accel kvm -cpu host' for test gate; Vultr amd6
 evidence = "qemu_launch command in [gate] section includes '-accel kvm'; Vultr FreeBSD 15 amd64 instances are native KVM hosts"
 verdict = "pass"
 
+From smolbsd-builder Thu May  1 00:00:00 2026
+From: builder@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0008] Vultr amd64 buildworld — FAILED (missing tooling)
+Date: Thu,  1 May 2026 00:00:00 -0000
+Message-ID: <task-0008.builder@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/amd64
+X-Verdict: fail
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0008"
+verdict  = "fail"
+reason   = "Required tooling absent"
+
+[error]
+phase     = "tooling-check"
+detail    = "vultr-cli not found at /opt/homebrew/bin/vultr-cli, /usr/local/bin/vultr-cli, or in PATH"
+exit_code = 127
+
+[[checks]]
+path     = "/opt/homebrew/bin/vultr-cli"
+result   = "not-found"
+
+[[checks]]
+path     = "/usr/local/bin/vultr-cli"
+result   = "not-found"
+
+[[checks]]
+path     = "PATH (which vultr-cli)"
+result   = "not-found"
+
+[remediation]
+action = "Install vultr-cli before retrying"
+install_method = "homebrew or direct download from https://github.com/vultr/vultr-cli"
+
+
+From smolbsd-pusher Mon May  4 20:10:00 2026
+From: pusher@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0009] Gitea push via minim4-16 tunnel
+Date: Mon,  4 May 2026 20:10:00 -0000
+Message-ID: <task-0009.pusher@smolbsd.local>
+In-Reply-To: <task-0009.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: infra/vcs
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0009"
+verdict  = "pass"
+
+[push]
+tunnel_via       = "home@100.93.79.79"
+gitea_host       = "10.0.2.230:3001"
+repo_url         = "http://localhost:3001/studio/smolBSD"
+remote_name      = "gitea"
+push_result      = "Add bookmark main to e685b5cdda58; Add bookmark claude/blissful-shockley-eeb73b to e685b5cdda58; Processed 2 references in total"
+
+[notes]
+deviation        = "Gitea runs on port 3001 (not 3000) on i9-zfs-pop; tunnel adjusted to -L 3001:10.0.2.230:3001"
+host_key_note    = "100.93.79.79 added to known_hosts via ssh-keyscan before tunnel"
+credentials      = "studio credentials sourced from ~/.netrc (not stored in plaintext here)"
+
+[[claims]]
+subject  = "tunnel established to gitea"
+expected = "HTTP 200 or 302 on localhost:3001"
+probe    = "curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/"
+evidence = "HTTP 200"
+verdict  = "pass"
+
+[[claims]]
+subject  = "jj git push to gitea succeeded"
+expected = "exit 0"
+probe    = "jj git push --remote gitea --all"
+evidence = "Processed 2 references in total (main + claude/blissful-shockley-eeb73b)"
+verdict  = "pass"
