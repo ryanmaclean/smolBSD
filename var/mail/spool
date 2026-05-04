@@ -3199,3 +3199,22 @@ expected = "head of log shows buildworld start timestamp"
 probe    = "ssh -J 100.91.236.29 -p 2222 builder@localhost 'head -3 /var/tmp/smolbsd-world.log'"
 evidence = "head -5 output: '--- buildworld start: Mon May  4 21:01:17 UTC 2026'; make[1] SYSTEM_COMPILER/SYSTEM_LINKER detection lines confirm make is running; no cross-compiler bootstrap (native arm64 build confirmed)"
 verdict  = "pass"
+From coder@smolbsd.local Mon May  4 14:02:39 2026
+From: coder@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [smoke-test] coord-tick stub implementation
+Date: Mon, 04 May 2026 21:02:39 -0000
+Message-ID: <task-0012.coder@smolbsd.local>
+In-Reply-To: <task-0012.coord@smolbsd.local>
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0012"
+verdict = "pass"
+note = "smoke test run: --max-ticks 3 on Nu 0.111.0; parsed 35 spool messages, idle quiesced cleanly; syntax checks pass for coord-tick.nu and mbox-parse.nu"
+
+[evidence]
+events_observed = ["coord_tick_start", "state_init", "tick_enter", "idle_no_new_messages", "coord_tick_done"]
+total_msgs_parsed = 35
+fsm_final_state = "idle"
+ticks_used = 1
+mbox_parse_fix = "parenthesized ( - 1) in line 56 to fix Nu 0.111 list-literal parsing bug"
