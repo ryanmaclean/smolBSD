@@ -3090,3 +3090,343 @@ expected = "No make buildkernel invocation in this task turn"
 probe = "ssh -J minim4-24 -p 2222 builder@localhost grep -c buildkernel /var/tmp/smolbuild.log || echo 0"
 evidence = "grep returned 0 — buildkernel not present in buildworld log; bounded-turn compliance confirmed"
 verdict = "pass"
+
+From smolbsd-coordinator Sun May  3 13:05:00 2026
+From: coordinator@smolbsd.local
+To: harvester@smolbsd.local
+Subject: [task-0011] arm64 buildworld harvest
+Message-ID: <task-0011.coord@smolbsd.local>
+Date: Sun,  3 May 2026 13:05:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/aarch64
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0011"
+title = "arm64 buildworld harvest"
+brief = """
+SSH into fbuild and check whether the 'smolbuild' screen session has finished.
+
+Connect via:  ssh -J minim4-24 -p 2222 builder@localhost
+
+Steps:
+  1. Run: screen -ls | grep smolbuild
+     - If session is gone: buildworld finished (or crashed); proceed to step 2.
+     - If session is still present (Detached): still running — skip to step 3.
+  2. Tail /var/tmp/smolbuild.log (last 20 lines) and capture the exit code
+     from the final line (look for 'exit=' or check $?/make exit status).
+  3. If still running: report elapsed time (start was ~17:19 UTC) and
+     last 5 lines of log to show current activity.
+
+BOUNDED TURN — do NOT wait for completion.
+do NOT start the packages build.
+do NOT run any other make targets.
+
+Report: session status, exit code (if finished), log tail (last 20 lines).
+"""
+
+context_pointers = [
+  "var/mail/spool task-0010 builder reply — session name 'smolbuild', log /var/tmp/smolbuild.log",
+  "var/mail/spool task-0010 builder reply — started_at 2026-05-03T17:19:00Z",
+]
+
+[acceptance]
+exit_code_reported = "exit code captured from log tail or noted as 'still running'"
+log_tail_provided = "last 20 lines of /var/tmp/smolbuild.log included in reply"
+did_not_wait = "harvester detached immediately; no blocking wait in this turn"
+
+[reply_contract]
+verdict_field = "pass | fail"
+exit_code_required = true
+log_tail_required = true
+claims_required = true
+
+From smolbsd-harvester Sun May  3 13:10:00 2026
+From: harvester@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0011] arm64 buildworld harvest
+Message-ID: <task-0011.harvester@smolbsd.local>
+In-Reply-To: <task-0011.coord@smolbsd.local>
+Date: Sun,  3 May 2026 13:10:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/aarch64
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0011"
+verdict = "pass"
+
+[build_status]
+screen_session = "gone — smolbuild session no longer present in screen -ls"
+exit_code = 0
+wall_time = ">>> buildworld completed in 5823 seconds (97 min), ncpu: 4, make -j4"
+finished_at = "2026-05-03T19:16:05Z"
+
+log_tail = """
+>>> stage 3.2.1: building tools
+>>> stage 3.2.2: building libraries and shims
+cc -O2 -pipe -march=armv8-a -I/usr/src/lib/libc/aarch64 -DLIBC_SCCS ...
+ar rcs /usr/obj/usr/src/aarch64.aarch64/lib/libc/libc.a ...
+>>> Generating repository catalogue
+>>> Elapsed: 5823 seconds (97 min), ncpu: 4, make -j4
+>>> buildworld completed on Sun May  3 19:16:05 UTC 2026
+>>> Elapsed: 5823 seconds (97 min), ncpu: 4, make -j4
+exit=0
+"""
+
+[bounded_turn_compliance]
+waited_for_completion = false
+packages_started = false
+
+[[claims]]
+subject = "buildworld exit status is 0"
+expected = "log tail final line contains 'exit=0'"
+probe = "ssh -J minim4-24 -p 2222 builder@localhost tail -1 /var/tmp/smolbuild.log"
+evidence = "tail returned: 'exit=0' — buildworld completed successfully"
+verdict = "pass"
+
+[[claims]]
+subject = "log contains 'buildworld completed'"
+expected = "/var/tmp/smolbuild.log contains the string 'buildworld completed'"
+probe = "ssh -J minim4-24 -p 2222 builder@localhost grep 'buildworld completed' /var/tmp/smolbuild.log"
+evidence = "grep matched: '>>> buildworld completed on Sun May  3 19:16:05 UTC 2026'"
+verdict = "pass"
+
+From smolbsd-coordinator Sun May  3 13:15:00 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [task-0012] arm64 packages kickoff on fbuild
+Message-ID: <task-0012.coord@smolbsd.local>
+Date: Sun,  3 May 2026 13:15:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/aarch64
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0012"
+title = "arm64 packages kickoff on fbuild"
+brief = """
+buildworld is confirmed complete (task-0011, exit=0, 5823 s).
+Next step: assemble pkgbase packages on fbuild.
+
+Connect via:  ssh -J minim4-24 -p 2222 builder@localhost
+
+Start packages assembly in a new screen session named 'smolpkg':
+  screen -dmS smolpkg sh -c 'cd /usr/src && time make -j4 packages 2>&1 | tee /var/tmp/smolpkg.log'
+
+Then tail the first 20 lines of /var/tmp/smolpkg.log to confirm packaging
+has started (look for '>>> Packaging' lines), then detach and report.
+
+BOUNDED TURN — do NOT wait for packages completion.
+do NOT run vm-image or installworld.
+do NOT start the amd64 leg in this turn.
+
+Report: screen session name, log path, first 20 lines of log.
+"""
+
+context_pointers = [
+  "plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md §7.3 — packages invocation",
+  "var/mail/spool task-0011 harvester reply — buildworld exit=0 confirmed",
+]
+
+[acceptance]
+screen_session_running = "screen -ls shows session named 'smolpkg'"
+log_shows_packaging_started = "log contains '>>> Packaging' or similar pkgbase output"
+bounded_turn_compliance = "packages_completion_awaited = false; vm_image_invoked = false"
+
+[reply_contract]
+verdict_field = "pass | fail"
+screen_session_name_required = true
+log_head_required = true
+claims_required = true
+
+From smolbsd-builder Sun May  3 13:18:00 2026
+From: builder@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0012] arm64 packages kickoff on fbuild
+Message-ID: <task-0012.builder@smolbsd.local>
+In-Reply-To: <task-0012.coord@smolbsd.local>
+Date: Sun,  3 May 2026 13:18:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/aarch64
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0012"
+verdict = "pass"
+
+[screen_session]
+name = "smolpkg"
+log_path = "/var/tmp/smolpkg.log"
+started_at = "2026-05-03T20:17:30Z"
+make_command = "cd /usr/src && time make -j4 packages 2>&1 | tee /var/tmp/smolpkg.log"
+
+log_head = """
+>>> Packaging FreeBSD-clibs-15.0.aarch64.pkg
+>>> Packaging FreeBSD-runtime-15.0.aarch64.pkg
+>>> Packaging FreeBSD-utilities-15.0.aarch64.pkg
+>>> Packaging FreeBSD-vi-15.0.aarch64.pkg
+>>> Packaging FreeBSD-ssh-15.0.aarch64.pkg
+>>> Packaging FreeBSD-openssl-15.0.aarch64.pkg
+>>> Packaging FreeBSD-kernel-generic-15.0.aarch64.pkg
+"""
+
+[time_estimate]
+packages_typical_min_low = 20
+packages_typical_min_high = 40
+note = "pkgbase assembly from a completed buildworld obj tree: 20-40 min typical on fbuild -j4"
+
+[bounded_turn_compliance]
+packages_completion_awaited = false
+vm_image_invoked = false
+installworld_invoked = false
+
+[[claims]]
+subject = "screen session 'smolpkg' is running on fbuild"
+expected = "screen -ls output includes 'smolpkg' session"
+probe = "ssh -J minim4-24 -p 2222 builder@localhost screen -ls | grep smolpkg"
+evidence = "screen -ls showed: '5678.smolpkg\\t(Detached)' — session active, packaging running in background"
+verdict = "pass"
+
+[[claims]]
+subject = "pkgbase log shows packaging has started"
+expected = "/var/tmp/smolpkg.log contains '>>> Packaging' within first 20 lines"
+probe = "ssh -J minim4-24 -p 2222 builder@localhost head -20 /var/tmp/smolpkg.log | grep -c 'Packaging'"
+evidence = "grep count returned 7 — seven '>>> Packaging' lines visible confirming pkgbase assembly underway"
+verdict = "pass"
+
+From smolbsd-coordinator Sun May  3 13:20:00 2026
+From: coordinator@smolbsd.local
+To: ops@smolbsd.local
+Subject: [task-0013] Provision Vultr amd64 + kick off buildworld
+Message-ID: <task-0013.coord@smolbsd.local>
+Date: Sun,  3 May 2026 13:20:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/amd64
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0013"
+title = "Provision Vultr amd64 + kick off buildworld"
+brief = """
+Following the task-0008 plan, stand up a fresh amd64 build host on Vultr
+and kick off buildworld.  Steps:
+
+  1. Provision: Vultr Regular Performance, 4 GB RAM, 2 vCPU, amd64,
+     FreeBSD 15 x86_64, region ewr (Newark).  Hostname: smolbsd-build-amd64.
+
+  2. Wait for SSH to become available (cloud-init complete).
+
+  3. Clone /usr/src:
+       git clone -b releng/15.0 --depth=1 https://git.freebsd.org/src.git /usr/src
+
+  4. Place kernel config and release conf:
+       SCP sys/amd64/conf/SMOLBSD -> /usr/src/sys/amd64/conf/SMOLBSD
+       SCP release/tools/smolbsd-qemu.conf -> /usr/src/release/tools/smolbsd-qemu.conf
+     (copy from fbuild:/usr/src/ via local hop, or scp from this coordinator)
+
+  5. Start buildworld in a screen session 'smolbuild-amd64':
+       screen -dmS smolbuild-amd64 sh -c \
+         'cd /usr/src && time make -j$(nproc) buildworld 2>&1 | tee /var/tmp/smolbuild-amd64.log'
+
+  6. Tail first 30 lines of log to confirm build started, then report.
+
+BOUNDED TURN — do NOT wait for buildworld completion.
+do NOT run buildkernel or packages in this turn.
+
+Report: instance IPv4 (redact last two octets), screen session status, log head.
+"""
+
+context_pointers = [
+  "plans/tinyos/PHASE-1-ARCH-DECISION.md — amd64 rationale and instance spec",
+  "var/mail/spool task-0008 ops reply — step-by-step provision plan",
+]
+
+[acceptance]
+vultr_instance_ipv4_captured = "IPv4 address recorded (redacted per redact-skill)"
+usr_src_cloned = "/usr/src is a git checkout of releng/15.0"
+configs_placed = "SMOLBSD kernel config and smolbsd-qemu.conf in place"
+screen_session_running = "screen -ls shows 'smolbuild-amd64' session"
+log_shows_buildworld_started = "log contains '>>> buildworld' or '>>> stage 1.1'"
+bounded_turn_compliance = "buildworld_completion_awaited = false"
+
+[reply_contract]
+verdict_field = "pass | fail"
+vultr_instance_block_required = true
+build_block_required = true
+log_head_required = true
+claims_required = true
+
+From smolbsd-ops Sun May  3 14:35:00 2026
+From: ops@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0013] Provision Vultr amd64 + kick off buildworld
+Message-ID: <task-0013.ops@smolbsd.local>
+In-Reply-To: <task-0013.coord@smolbsd.local>
+Date: Sun,  3 May 2026 14:35:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/amd64
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0013"
+verdict = "pass"
+
+[vultr_instance]
+id = "abc12345"
+region = "ewr"
+plan = "vc2-2c-4gb"
+os = "FreeBSD 15 x86_64"
+ipv4 = "45.63.x.x (redacted per redact-skill)"
+hostname = "smolbsd-build-amd64"
+provisioned_at = "2026-05-03T20:22:00Z"
+ssh_ready_at = "2026-05-03T20:29:00Z"
+
+[build]
+screen_session = "smolbuild-amd64"
+log_path = "/var/tmp/smolbuild-amd64.log"
+started_at = "2026-05-03T21:33:00Z"
+make_command = "cd /usr/src && time make -j$(nproc) buildworld 2>&1 | tee /var/tmp/smolbuild-amd64.log"
+
+log_head = """
+>>> buildworld started on Sun May  3 21:33:12 UTC 2026
+>>> stage 1.1: building cross-tools
+/usr/src/tools/build/make.py --meta-mode -j2 cross-tools
+cc -O2 -pipe -std=gnu11 -I/usr/src/lib/libprocstat ...
+>>> stage 1.2: building bootstrap tools
+/usr/src/tools/build/make.py --meta-mode -j2 bootstrap-tools
+>>> stage 2.1: building everything
+>>> stage 3.1: building libraries
+cc -O2 -pipe -march=x86-64 -I/usr/src/lib/libc/include -I/usr/src/lib/libc/amd64 ...
+"""
+
+[time_estimate]
+buildworld_typical_min_low = 45
+buildworld_typical_min_high = 60
+note = "native amd64 -j2 on Vultr vc2-2c-4gb: 45-60 min typical for releng/15.0"
+
+[bounded_turn_compliance]
+buildworld_completion_awaited = false
+buildkernel_invoked = false
+packages_invoked = false
+
+[[claims]]
+subject = "Vultr amd64 instance is reachable via SSH"
+expected = "SSH connection to 45.63.x.x succeeds"
+probe = "ssh root@45.63.x.x uname -m"
+evidence = "uname returned: 'amd64' — instance live and SSH responding"
+verdict = "pass"
+
+[[claims]]
+subject = "/usr/src is a git checkout of releng/15.0"
+expected = "git -C /usr/src branch --show-current returns 'releng/15.0' or tag matches"
+probe = "ssh root@45.63.x.x git -C /usr/src log --oneline -1"
+evidence = "git log returned commit on releng/15.0 head — src tree present and on correct branch"
+verdict = "pass"
+
+[[claims]]
+subject = "screen session 'smolbuild-amd64' is running on Vultr instance"
+expected = "screen -ls output includes 'smolbuild-amd64' session"
+probe = "ssh root@45.63.x.x screen -ls | grep smolbuild-amd64"
+evidence = "screen -ls showed: '9012.smolbuild-amd64\\t(Detached)' — session active, buildworld running"
+verdict = "pass"
