@@ -1,0 +1,22 @@
+#!/usr/bin/env expect
+# Materialized from plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md §8.2
+# Authoring chain: planner@smolbsd.local <task-0009.builder@smolbsd.local>
+#
+# tests/time-to-ready-aarch64.exp
+# Expected: PASS on minim4-24 (Apple Silicon, HVF = native-ISA acceleration)
+# Contrast: amd64 leg expected to FAIL this gate on minim4-24 (TCG = ~5-10x slower)
+set timeout 120
+set t0 [clock seconds]
+spawn /opt/homebrew/bin/qemu-system-aarch64 \
+  -machine virt,accel=hvf \
+  -cpu host \
+  -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd \
+  -m 256M -smp 2 \
+  -drive file=FreeBSD-15-arm64-smolbsd.qcow2,format=qcow2,if=virtio \
+  -nic user,model=virtio-net-pci,hostfwd=tcp::2231-:22 \
+  -serial stdio -nographic
+expect {
+  "login:" { puts "TIME_TO_LOGIN=[expr {[clock seconds] - $t0}]s" }
+  timeout  { puts "TIMEOUT"; exit 1 }
+}
+# Acceptance: TIME_TO_LOGIN <= 30s
