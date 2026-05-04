@@ -208,7 +208,10 @@ def main [
     let skipped = $results | where status == "skip" | length
 
     print $"\n=== Test Results: ($passed) pass / ($failed) fail / ($skipped) skip ==="
-    $results | each {|r| print $"  [$r.status] ($r.name): ($r.detail)" }
+    $results | each {|r|
+        let s = $r.status
+        print $"  [($s)] ($r.name): ($r.detail)"
+    }
 
     if $failed > 0 { exit 1 }
 }

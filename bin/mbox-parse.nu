@@ -88,7 +88,7 @@ def parse-headers [lines: list<string>] {
             }
             let colon_pos = $line | str index-of ":"
             if $colon_pos > 0 {
-                $current_key = $line | str substring ..$colon_pos | str trim
+                $current_key = $line | str substring ..($colon_pos - 1) | str trim
                 $current_val = $line | str substring ($colon_pos + 1).. | str trim
             } else {
                 $current_key = ""
