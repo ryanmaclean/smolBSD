@@ -3027,3 +3027,175 @@ expected = "file exists non-empty"
 probe    = "wc -l /Users/studio/.claude/projects/-Users-studio-smolBSD/memory/fleet_gitea_topology.md"
 evidence = "21 lines"
 verdict  = "pass"
+
+From smolbsd-translator Sun May  4 00:00:00 2026
+From: translator@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0011] i18n — French + Japanese translations
+Date: Sun,  4 May 2026 00:00:00 -0000
+Message-ID: <task-0011.translator@smolbsd.local>
+In-Reply-To: <task-0011.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: i18n
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0011"
+verdict  = "pass"
+
+[artifacts]
+readme_en = "README.md"
+readme_fr = "README.fr.md"
+readme_ja = "README.ja.md"
+plan_aarch64_fr = "plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.fr.md"
+plan_aarch64_ja = "plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.ja.md"
+spec_abstract_fr = "docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.fr.md"
+spec_abstract_ja = "docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.ja.md"
+
+[[claims]]
+subject  = "all 6 translation files created"
+expected = "wc -l shows non-zero for each"
+probe    = "wc -l /Users/studio/smolBSD/README.fr.md /Users/studio/smolBSD/README.ja.md"
+evidence = "158 README.fr.md  152 README.ja.md  67 PHASE-1-AARCH64-TINY-BASELINE.fr.md  64 PHASE-1-AARCH64-TINY-BASELINE.ja.md  87 spec.fr.md  85 spec.ja.md  613 total"
+verdict  = "pass"
+
+[[claims]]
+subject  = "jj commit recorded"
+expected = "jj log shows i18n commit"
+probe    = "jj log --no-graph -r '@-' --limit 1"
+evidence = "pnxmnnky studio@sh.bop 2026-05-04 13:52:39 6dc287d8 — i18n: add French and Japanese translations (README, Phase-I aarch64 summary, spec abstract)"
+verdict  = "pass"
+From smolbsd-builder Mon May  4 20:57:00 2026
+From: builder@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0008] Vultr amd64 buildworld — provisioned (attempt 3)
+Date: Mon,  4 May 2026 20:57:00 -0000
+Message-ID: <task-0008c.builder@smolbsd.local>
+In-Reply-To: <task-0008.planner@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/amd64
+X-Verdict: pass
+X-Attempt: 3
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0008"
+verdict  = "pass"
+
+[key_source]
+host = "fbryz3070"
+ip   = "10.0.2.44"
+path = "/root/.dd_keys"
+jump = "home@100.93.79.79 -> studio@10.0.2.230 -> root@10.0.2.44"
+
+[instance]
+provider       = "vultr"
+id             = "171abe56-fd68-4041-9376-9f235d9b9775"
+ip             = "107.191.39.47"
+plan           = "vc2-2c-4gb"
+region         = "ewr"
+os             = "FreeBSD 15 x64"
+os_id          = 2720
+label          = "smolbsd-buildworld"
+host           = "smolbsd-build"
+root_pass      = "$8AzGE@b6X9D%k5{"
+
+[build]
+screen_session = "smolbsd-bw"
+log_path       = "/var/tmp/smolbsd-bw.log"
+started        = true
+harvest_cmd    = "ssh root@107.191.39.47 'tail -50 /var/tmp/smolbsd-bw.log'"
+terminate_cmd  = "/opt/homebrew/bin/vultr instance delete 171abe56-fd68-4041-9376-9f235d9b9775"
+configs_installed = ["/usr/src/sys/amd64/conf/SMOLBSD", "/usr/src/release/tools/smolbsd-qemu.conf"]
+
+[[claims]]
+subject  = "fbryz3070 reachable and key retrieved"
+expected = "non-empty api key"
+evidence = "SSH via jump home@100.93.79.79->studio@10.0.2.230->root@10.0.2.44; VULTR_API_KEY found in /root/.dd_keys (BTA56PEJBU6CIDUTVAAYTS64HB4SGFZ7FQ6Q, 36 chars); vultr account info returned Ryan MacLean / ryan@ryanmaclean.com"
+verdict  = "pass"
+
+[[claims]]
+subject  = "FreeBSD 15 amd64 Vultr instance running"
+expected = "power_status=running server_status=ok"
+evidence = "Instance 171abe56-fd68-4041-9376-9f235d9b9775 STATUS=active POWER_STATUS=running SERVER_STATE=ok MAIN_IP=107.191.39.47 (confirmed on polls 2-4 at 30s intervals); SSH key-auth verified with uname returning FreeBSD smolbsd-build 15.0-RELEASE-p5"
+verdict  = "pass"
+
+[[claims]]
+subject  = "buildworld screen session started"
+expected = "screen -ls shows smolbsd-bw detached"
+evidence = "screen -ls output: '2431.smolbsd-bw (05/04/26 20:56:20) (Detached)'; /var/tmp/smolbsd-bw.log head shows '>>> World build started on Mon May 4 20:56:21 UTC 2026' and make progress past _cleanworldtmp/_worldtmp stages"
+verdict  = "pass"
+
+From harvester Sun May  4 21:30:00 2026
+From: harvester@smolbsd.local
+To: build@smolbsd.local
+Subject: [task-0008d] buildworld status check — amd64 Vultr instance
+Date: Sun, 4 May 2026 21:30:00 +0000
+Message-ID: <task-0008d.harvester@smolbsd.local>
+X-Project: smolbsd
+X-Phase: build/amd64
+X-Verdict: in-progress
+Content-Type: text/plain; charset=utf-8
+
+Status: BUILDWORLD IN PROGRESS (Case A)
+
+Screen session 2431.smolbsd-bw is active and detached on 107.191.39.47.
+No exit= line in log tail. Kernel not yet present. No qcow2 present.
+
+Current stage: bootstrap-tools — compiling LLVM/Clang table-generators.
+Last logged actions:
+  - llvm-min-tblgen.full linked and installed to tmp/legacy/usr/bin/
+  - clang-tblgen: compiling ClangCommentCommandInfoEmitter.o (just started)
+
+This is early in buildworld. Bootstrap tools (including full clang-tblgen)
+must complete before the actual world build commences. Estimated significant
+time remaining before kernel or qcow2 can be produced.
+
+Action: None taken. Do NOT start make release yet.
+Next check: re-run this task when sufficient time has elapsed for buildworld
+to complete (bootstrap-tools + buildworld on a single Vultr instance typically
+takes 1-3 hours total).
+
+Log tail evidence (last 3 relevant lines):
+  --- llvm-min-tblgen ---
+  --- _proginstall / _debuginstall ---
+  --- _bootstrap-tools-usr.bin/clang/clang-tblgen ---
+  --- ClangCommentCommandInfoEmitter.o --- (in progress)
+
+From smolbsd-builder Sun May  4 21:01:20 2026
+From: builder@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0014] aarch64 buildworld+release pipeline started
+Date: Sun,  4 May 2026 21:01:20 -0000
+Message-ID: <task-0014.builder@smolbsd.local>
+In-Reply-To: <task-0014.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/aarch64
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0014"
+verdict  = "pass"
+
+[build]
+host           = "fbuild (arm64 FreeBSD 15)"
+screen_session = "smolbsd-world"
+log_path       = "/var/tmp/smolbsd-world.log"
+stages         = ["buildworld", "buildkernel KERNCONF=SMOLBSD", "make release WITH_VMIMAGES=YES"]
+started        = true
+harvest_cmd    = "ssh -J 100.91.236.29 -p 2222 builder@localhost 'tail -30 /var/tmp/smolbsd-world.log; ls -lh /usr/obj/usr/src/arm64.arm64/release/*.qcow2 2>/dev/null'"
+
+[[claims]]
+subject  = "smolbsd-world screen session started on fbuild"
+expected = "screen -ls shows smolbsd-world (Detached)"
+probe    = "ssh -J 100.91.236.29 -p 2222 builder@localhost 'screen -ls'"
+evidence = "screen -ls output: '15999.smolbsd-world (05/04/26 21:01:17) (Detached)'; 1 Socket in /home/builder/.screen"
+verdict  = "pass"
+
+[[claims]]
+subject  = "buildworld log file created with start marker"
+expected = "head of log shows buildworld start timestamp"
+probe    = "ssh -J 100.91.236.29 -p 2222 builder@localhost 'head -3 /var/tmp/smolbsd-world.log'"
+evidence = "head -5 output: '--- buildworld start: Mon May  4 21:01:17 UTC 2026'; make[1] SYSTEM_COMPILER/SYSTEM_LINKER detection lines confirm make is running; no cross-compiler bootstrap (native arm64 build confirmed)"
+verdict  = "pass"

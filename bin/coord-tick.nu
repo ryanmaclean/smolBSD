@@ -21,11 +21,12 @@ const STATE_VERSION = "1"
 # Default state for a fresh coordinator with no prior history.
 def default-state [] {
     {
-        version:      $STATE_VERSION
-        tick_count:   0
-        fsm_state:    "idle"
-        seen_ids:     []
-        last_tick_at: (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        version:          $STATE_VERSION
+        tick_count:       0
+        fsm_state:        "idle"
+        seen_ids:         []
+        last_tick_at:     (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        pending_dispatch: null   # null | record<task_id, to_role, subject, toml_body>
     }
 }
 
@@ -101,7 +102,7 @@ def state-idle [state: record, spool: string, root: string, remaining: int] {
 }
 
 # harvesting: process each unseen message; update seen_ids.
-# Scaffolding: logs what would be dispatched; actual subagent launch is future phase.
+# Logs outbound coord requests; marks all processed messages as seen.
 def state-harvesting [state: record, spool: string, root: string, remaining: int] {
     let content  = open --raw $spool
     let messages = parse-mbox $content
@@ -140,16 +141,18 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                 verdict:    $verdict
             }
 
-            # Scaffolding: if this looks like an unmatched request, log what WOULD
-            # be dispatched.  A real dispatch would spawn a subagent here.
             if $direction == "request" {
                 let in_reply_to = $msg.headers | get "In-Reply-To"? | default ""
                 if $in_reply_to == "" {
-                    log-event "would_dispatch" {
-                        task_id:    $task_id
-                        to_role:    $to_addr
+                    # This is a fresh outbound request — was it already dispatched?
+                    # (seen_ids tracks what we've processed, not what we've sent)
+                    # For now: if there's no pending_dispatch yet, nothing to do —
+                    # coord-written requests are already in the spool; we don't re-dispatch them.
+                    # Future: if an external task-queue record is present in state, dispatch it here.
+                    log-event "harvest_outbound_request" {
+                        task_id: $task_id
                         message_id: $id
-                        note:       "scaffolding — actual subagent launch is a future phase"
+                        note: "outbound coord request already in spool — no re-dispatch needed"
                     }
                 }
             }
@@ -163,17 +166,71 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
     | update fsm_state "idle"
 }
 
-# waiting: a request has been dispatched; we are polling for a reply.
-# Scaffolding only — transitions back to idle to re-check the spool.
+# waiting: a request has been dispatched; poll the spool for a matching reply.
+# A reply is identified by In-Reply-To matching <waiting_for>.coord@smolbsd.local.
 def state-waiting [state: record, spool: string, root: string, remaining: int] {
-    log-event "waiting_check" {note: "scaffolding — polling not yet implemented, returning idle"}
-    tick ($state | update fsm_state "idle") $spool $root ($remaining - 1)
+    let waiting_for = $state | get waiting_for? | default ""
+    if $waiting_for == "" {
+        log-event "waiting_no_task" {}
+        return (tick ($state | update fsm_state "idle") $spool $root ($remaining - 1))
+    }
+
+    let expected_irt = $"<($waiting_for).coord@smolbsd.local>"
+    let content   = if ($spool | path exists) { open --raw $spool } else { "" }
+    let messages  = parse-mbox $content
+
+    let reply = $messages | where {|m|
+        let irt = $m.headers | get "In-Reply-To"? | default ""
+        $irt == $expected_irt
+    } | first?
+
+    if $reply == null {
+        log-event "waiting_no_reply_yet" {waiting_for: $waiting_for}
+        return ($state | update fsm_state "waiting")   # stay waiting
+    }
+
+    let reply_id = msg-id $reply
+    if $reply_id in $state.seen_ids {
+        log-event "waiting_reply_already_seen" {reply_id: $reply_id}
+        return (tick ($state | update fsm_state "idle") $spool $root ($remaining - 1))
+    }
+
+    log-event "waiting_reply_found" {reply_id: $reply_id, waiting_for: $waiting_for}
+    tick ($state | update fsm_state "harvesting") $spool $root ($remaining - 1)
 }
 
-# dispatching: scaffolding placeholder.
+# dispatching: write the pending_dispatch envelope into the spool, then move to waiting.
 def state-dispatching [state: record, spool: string, root: string, remaining: int] {
-    log-event "dispatching_tick" {note: "scaffolding — dispatch logic not yet implemented"}
-    tick ($state | update fsm_state "waiting") $spool $root ($remaining - 1)
+    if $state.pending_dispatch == null {
+        log-event "dispatch_nothing_pending" {}
+        return (tick ($state | update fsm_state "idle") $spool $root ($remaining - 1))
+    }
+
+    let task  = $state.pending_dispatch
+    let ts    = date now | format date "%a, %d %b %Y %H:%M:%S -0000"
+    let dstamp = date now | format date "%a %b %e %H:%M:%S %Y"
+
+    # Build the mbox+TOML envelope per spec §4
+    let envelope = $"From coord@smolbsd.local ($dstamp)\nFrom: coordinator@smolbsd.local\nTo: ($task.to_role)\nSubject: ($task.subject)\nDate: ($ts)\nMessage-ID: <($task.task_id).coord@smolbsd.local>\nContent-Type: text/toml; charset=utf-8\n\n($task.toml_body)\n"
+
+    # Anchored append: read current size before appending
+    let before_size = if ($spool | path exists) { ls $spool | get size | first } else { 0 }
+    $envelope | save --append $spool
+    let after_size = ls $spool | get size | first
+
+    log-event "dispatched" {
+        task_id:        $task.task_id
+        to_role:        $task.to_role
+        subject:        $task.subject
+        bytes_appended: ($after_size - $before_size)
+    }
+
+    # Clear pending_dispatch, move to waiting
+    tick ($state
+        | update fsm_state "waiting"
+        | update pending_dispatch null
+        | upsert waiting_for $task.task_id
+    ) $spool $root ($remaining - 1)
 }
 
 # halted: HALT marker is present.  Log and stop — do not recurse further.
@@ -225,6 +282,25 @@ def tick [state: record, spool: string, root: string, remaining: int] {
             log-event "unknown_state" {fsm_state: $stamped.fsm_state}
             $stamped | update fsm_state "idle"
         }
+    }
+}
+
+# ── Public helpers ─────────────────────────────────────────────────────────────
+
+# Queue a task for dispatch on the next coord tick.
+# Returns an updated state record with pending_dispatch populated.
+export def queue-task [
+    state:     record
+    task_id:   string
+    to_role:   string   # e.g. "builder@smolbsd.local"
+    subject:   string
+    toml_body: string  # pre-formatted TOML string for the message body
+] {
+    $state | update pending_dispatch {
+        task_id:   $task_id
+        to_role:   $to_role
+        subject:   $subject
+        toml_body: $toml_body
     }
 }
 

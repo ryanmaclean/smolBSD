@@ -51,9 +51,9 @@ export def parse-mbox [content: string] {
         )
 
         # Guard against messages with no blank line (malformed — skip body).
-        let blank_idx = $blank_idx_result | get index? | default ($lines | length)
+        let blank_idx = ($blank_idx_result | get index? | default ($lines | length) | into int)
 
-        let header_lines = $lines | skip 1 | first ([$blank_idx - 1, 0] | math max)
+        let header_lines = $lines | skip 1 | first ([($blank_idx - 1), 0] | math max)
         let body_lines   = if ($blank_idx + 1) < ($lines | length) {
             $lines | skip ($blank_idx + 1)
         } else {
