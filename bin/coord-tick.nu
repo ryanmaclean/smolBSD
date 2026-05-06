@@ -137,7 +137,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
             let task_id   = $payload | get "task_id"? | default "unknown"
 
             # Determine whether this is a coord→agent request or agent→coord reply.
-            let direction = if ($to_addr | str contains "coordinator@") { "reply" } else { "request" }
+            let direction = if $to_addr == "coordinator@smolbsd.local" { "reply" } else { "request" }
 
             log-event "harvest_message" {
                 message_id: $id
