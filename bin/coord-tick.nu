@@ -8,13 +8,24 @@
 # FSM states (per spec §12):
 #   idle         — no work in progress; scan spool for new messages
 #   dispatching  — writing a request into the spool and queuing a subagent launch
-#   waiting      — request dispatched, awaiting reply (not yet implemented)
+#   waiting      — request dispatched, polling spool for matching reply
 #   harvesting   — new replies present; cross-check claims
 #   halted       — var/mail/HALT file exists; block until user clears it
 #
 # HALT check: one `stat var/mail/HALT` per tick entry — O(1) per spec §13.
 
 use mbox-parse.nu [parse-mbox, extract-toml, msg-id]
+
+const AGENT_CAPABILITIES = {
+    "general-purpose":          ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebFetch", "WebSearch"]
+    "feature-dev:code-architect": ["Read", "Glob", "Grep", "WebFetch", "TodoWrite"]
+    "architect":                ["Read", "Glob", "Grep", "WebFetch", "TodoWrite"]
+    "researcher":               ["Read", "Glob", "Grep", "WebFetch", "WebSearch"]
+    "security":                 ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+    "ops":                      ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+    "builder":                  ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+    "reviewer":                 ["Read", "Glob", "Grep", "WebFetch"]
+}
 
 const STATE_VERSION = "1"
 
@@ -173,6 +184,25 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
 
             # If this is an unmatched outbound request, dispatch it (first one wins).
             if $direction == "request" {
+                # §17: check tools_required against known agent capabilities
+                let tools_required = $payload | get "tools_required"? | default []
+                let agent_type     = $payload | get "agent_type"?     | default "general-purpose"
+                let capabilities   = $AGENT_CAPABILITIES | get $agent_type? | default ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+                let missing_tools  = $tools_required | where {|t| not ($t in $capabilities)}
+
+                if ($missing_tools | length) > 0 {
+                    log-event "dispatch_capability_mismatch" {
+                        task_id:       $task_id
+                        agent_type:    $agent_type
+                        tools_required: ($tools_required | str join ", ")
+                        missing_tools:  ($missing_tools | str join ", ")
+                        message_id:    $id
+                    }
+                    $new_seen = $new_seen | append $id
+                    # Skip dispatch — mark seen so we don't retry this message
+                    continue
+                }
+
                 let in_reply_to = $msg.headers | get "In-Reply-To"? | default ""
                 if $in_reply_to == "" {
                     log-event "would_dispatch" {
@@ -278,7 +308,7 @@ action = \"dispatch\"
 # halted: HALT marker is present.  Log and stop — do not recurse further.
 # Per spec §13: wait for user to rm var/mail/HALT and post a resume message.
 # We return here; the next cron/manual invocation will re-check.
-def state-halted [state: record, root: string] {
+def state-halted [state: record, root: string, spool: string] {
     let halt_path = [$root, "var", "mail", "HALT"] | path join
     let halt_info = try { open --raw $halt_path | from toml } catch { {} }
     log-event "halted" {
@@ -286,6 +316,28 @@ def state-halted [state: record, root: string] {
         info:      ($halt_info | to nuon)
         note:      "coordinator paused; rm var/mail/HALT + append resume message to unblock"
     }
+
+    # Scan spool for a pending resume message (user may have appended before rm-ing HALT)
+    if ($spool | path exists) {
+        let content  = open --raw $spool
+        let messages = parse-mbox $content
+        let resume_msg = (
+            $messages
+            | where {|m|
+                let action = $m.headers | get "X-Resume-Action"? | default ""
+                $action != ""
+            }
+            | first 1
+        )
+        if ($resume_msg | length) > 0 {
+            let action = ($resume_msg | first).headers | get "X-Resume-Action"
+            log-event "halted_resume_pending" {
+                action:  $action
+                note:    "resume message detected; will act after user removes HALT file"
+            }
+        }
+    }
+
     $state | update fsm_state "halted"
 }
 
@@ -304,7 +356,7 @@ def tick [state: record, spool: string, root: string, remaining: int] {
 
     # O(1) HALT check before every state dispatch — spec §13.
     if (halt-present $root) {
-        return (state-halted $state $root)
+        return (state-halted $state $root $spool)
     }
 
     let next_count = $state.tick_count + 1
@@ -319,7 +371,7 @@ def tick [state: record, spool: string, root: string, remaining: int] {
         "dispatching" => { state-dispatching $stamped $spool $root $remaining }
         "waiting"     => { state-waiting     $stamped $spool $root $remaining }
         "harvesting"  => { state-harvesting  $stamped $spool $root $remaining }
-        "halted"      => { state-halted      $stamped $root }
+        "halted"      => { state-halted      $stamped $root $spool }
         _             => {
             log-event "unknown_state" {fsm_state: $stamped.fsm_state}
             $stamped | update fsm_state "idle"
