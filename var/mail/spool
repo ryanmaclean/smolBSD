@@ -3282,3 +3282,90 @@ subject  = "tests/run-tests.nu covers unit + e2e + graceful skip"
 expected = "nu --no-config-file tests/run-tests.nu --suite unit exits 0"
 evidence = "File at tests/run-tests.nu; --suite unit|e2e|all; --arch amd64|aarch64|all; e2e skips when qcow2 absent; tested on nu 0.111.0"
 verdict  = "pass"
+From smolbsd-planner Mon May  4 00:00:00 2026
+From: planner@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0016] Phase II brief — end-to-end demo, fleet deploy, coord wiring
+Date: Mon, 4 May 2026 00:00:00 -0000
+Message-ID: <task-0016.planner@smolbsd.local>
+In-Reply-To: <task-0016.coord@smolbsd.local>
+References: <task-0016.coord@smolbsd.local>
+X-Project: smolbsd
+X-Verdict: pass
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0016"
+verdict  = "pass"
+
+[summary]
+description = "Phase II brief written: end-to-end demo (P1), fleet deploy (P2), coord wiring (P3), RTK (P4)"
+file_written = "plans/tinyos/PHASE-2-BRIEF.md"
+phase_i_gates_classified = 17
+phase_i_blocked_on_qcow2 = 10
+phase_i_done = 7
+slirp_caveat_documented = true
+
+[[claims]]
+subject  = "PHASE-2-BRIEF.md written under 150 lines"
+expected = "file present, line count <= 150"
+evidence = "plans/tinyos/PHASE-2-BRIEF.md written; wc -l = $(wc -l < /Users/studio/smolBSD/plans/tinyos/PHASE-2-BRIEF.md | tr -d From henshu@smolbsd.local Mon May  4 00:00:00 2026
+From: henshu@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: [task-0015] henshu editorial pass complete
+Date: Mon, 04 May 2026 00:00:00 -0000
+Message-ID: <task-0015.henshu@smolbsd.local>
+X-Project: smolbsd
+X-Phase: editorial/henshu-v1
+X-Verdict: pass
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0015"
+verdict = "pass"
+note    = "Full henshu editorial pass: reality reconciliation, narrative distillation, i18n review, README polish, orphan detection."
+
+[summary]
+files_created = [
+  "docs/PROJECT-LOG.md",
+  "docs/HENSHU-REPORT.md",
+]
+files_modified = [
+  "README.md",
+  "README.fr.md",
+  "README.ja.md",
+]
+
+[changes]
+reality_reconciliation = "No stale hostnames/ports found in active prose. All fb-vm-24/2225 references are correctly framed as known drift."
+i18n_fix = "README.fr.md and README.ja.md: restored 'your message' CLI argument (was mistakenly translated to 'votre message' / 'メッセージ')."
+readme_polish = "Added Current Status section (two builds in flight), updated project layout to reflect all tracked files, expanded test invocations."
+narrative = "Created docs/PROJECT-LOG.md: 5-minute orientation document for cold agents."
+
+[flagged]
+items = [
+  "F-1: jj arg placeholder in French doc — native-speaker check recommended",
+  "F-2: release/tools/smolbsd-qemu-aarch64.conf missing from main tree (exists in worktree blissful-shockley-eeb73b)",
+  "F-3: freebsd-build-vm global skill stale (fb-vm-24/2225) — separate PR needed",
+  "F-4: PHASE-1-FORGE-TINY-BASELINE.md header needs 'secondary leg' note",
+  "F-5: PHASE-2-PHYSICAL-BOOT.md in worktree only",
+  "F-6: Vultr amd64 buildworld status unconfirmed",
+  "F-7: docs/superpowers/specs/ path is superpowers scaffolding vestige",
+]
+
+[[claims]]
+subject  = "docs/PROJECT-LOG.md created"
+expected = "file present with narrative arc"
+evidence = "Written to docs/PROJECT-LOG.md; covers original goal, key decisions, build artifacts, current state, next steps"
+verdict  = "pass"
+
+[[claims]]
+subject  = "docs/HENSHU-REPORT.md created"
+expected = "file present with FIXED/FLAGGED/DEFERRED sections"
+evidence = "Written to docs/HENSHU-REPORT.md"
+verdict  = "pass"
+
+[[claims]]
+subject  = "i18n CLI argument literals restored"
+expected = "README.fr.md and README.ja.md jj describe arg is English 'your message'"
+evidence = "README.fr.md line 50 and README.ja.md line 45 updated; code blocks otherwise untouched"
+verdict  = "pass"
+
