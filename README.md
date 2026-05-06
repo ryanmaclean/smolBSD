@@ -17,6 +17,15 @@ with TOML bodies. The coordinator harvests replies on each tick and dispatches t
 next task. No shared conversation history is required — Just-Enough-Context (JEC)
 drops carry all necessary state between agents.
 
+## Current Status
+
+Two `buildworld` runs are in flight (as of 2026-05-04):
+
+- **aarch64** — `smolbsd-world` screen session on `fbuild`, started 2026-05-04
+  21:01:17 UTC. Native arm64 build; no cross-compile needed.
+- **amd64** — building on Vultr instance `107.191.39.47`
+  (`171abe56-fd68-4041-9376-9f235d9b9775`); KVM-native x86.
+
 ## Phase I Targets
 
 Two legs run in parallel; aarch64 is primary.
@@ -26,12 +35,13 @@ Two legs run in parallel; aarch64 is primary.
 FreeBSD 15.0-RELEASE arm64, built natively on `fbuild` (a FreeBSD 15 aarch64 VM
 hosted on an Apple Silicon Mac). HVF (Hypervisor.framework) provides near-bare-
 metal acceleration for the aarch64 guest. The 30-second time-to-login acceptance
-gate is only achievable here; amd64 emulation via TCG is 5-10x slower.
+gate is only achievable here; amd64 under TCG is 5-10x slower.
 
 ### amd64 — KVM on Vultr
 
 FreeBSD 15.0-RELEASE amd64, cross-compiled from the aarch64 fbuild host and
-deployed to a KVM-capable x86 Vultr instance for its timing gate.
+deployed to a KVM-capable x86 Vultr instance (`107.191.39.47`) for its timing
+gate.
 
 ## Build Approach
 
@@ -101,14 +111,22 @@ make -j4 -C /usr/src buildworld buildkernel \
     TARGET_ARCH=amd64
 ```
 
-### Run acceptance test
+### Run acceptance tests
 
 ```sh
+# aarch64 path (HVF, requires Apple Silicon + EDK2 firmware):
+expect tests/time-to-ready-arm64.exp
+
+# amd64 path (KVM or TCG):
 expect tests/time-to-ready.exp
+
+# Full suite via Nushell runner:
+nu tests/run-tests.nu --suite unit
+nu tests/run-tests.nu --suite e2e --arch aarch64
 ```
 
-The test measures wall-clock time from VM boot to login prompt and fails if it
-exceeds 30 seconds.
+Each test measures wall-clock time from VM boot to login prompt; fails if it
+exceeds 30 seconds. e2e tests skip gracefully when the qcow2 artifact is absent.
 
 ### Advance the coordinator
 
@@ -120,16 +138,23 @@ nu bin/coord-tick.nu
 
 ```
 bin/
-  coord-tick.nu          # coordinator actor loop
-  mbox-parse.nu          # mbox+TOML parser
+  coord-tick.nu               # coordinator actor loop
+  mbox-parse.nu               # mbox+TOML parser
 docs/
-  superpowers/specs/     # design specifications
+  superpowers/specs/          # design specifications
 plans/
-  tinyos/                # per-phase build plans
+  tinyos/                     # per-phase build plans
+release/
+  tools/smolbsd-qemu.conf     # amd64 QEMU VM release config
+sys/
+  amd64/conf/SMOLBSD          # amd64 minimal kernel config
+  arm64/conf/SMOLBSD          # arm64 minimal kernel config
 tests/
-  time-to-ready.exp      # expect script: boot-to-login timing gate
+  time-to-ready.exp           # expect script: boot-to-login timing gate (amd64)
+  time-to-ready-arm64.exp     # same gate for aarch64 HVF path
+  run-tests.nu                # Nushell test runner (unit + e2e + graceful skip)
 var/
-  mail/spool             # shared mbox — full project state in one file
+  mail/spool                  # shared mbox — full project state in one file
 ```
 
 ## Technical Inspirations
