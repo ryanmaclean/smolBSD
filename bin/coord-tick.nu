@@ -40,6 +40,7 @@ def default-state [] {
         pending_request_id: ""
         pending_task_id:    ""
         pending_to_addr:    ""
+        attempt_counts:     {}   # record keyed by task_id → int attempt count
     }
 }
 
@@ -118,12 +119,14 @@ def state-idle [state: record, spool: string, root: string, remaining: int] {
 
 # harvesting: process each unseen message; update seen_ids.
 # If an unmatched outbound request is found, set pending fields and transition to dispatching.
+# Implements D2 retry table: fail/blocked retries up to 3 attempts, then HALT.
 def state-harvesting [state: record, spool: string, root: string, remaining: int] {
     let content  = open --raw $spool
     let messages = parse-mbox $content
 
     mut new_seen       = $state.seen_ids
     mut dispatch_state = null   # set when we find a request to dispatch
+    mut current_state  = $state
 
     for msg in $messages {
         # Stop processing once we've identified a dispatch target.
@@ -161,24 +164,124 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
             }
 
             if $direction == "reply" {
-                if $verdict == "fail" or $verdict == "blocked" {
-                    let halt_path = [$root, "var", "mail", "HALT"] | path join
-                    let halt_dir  = $halt_path | path dirname
-                    if not ($halt_dir | path exists) { mkdir $halt_dir }
-                    {
-                        task_id:    $task_id
-                        verdict:    $verdict
-                        message_id: $id
-                        halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
-                    } | to toml | save --force $halt_path
-                    log-event "harvest_reply_halt" {
-                        message_id: $id
-                        task_id:    $task_id
-                        verdict:    $verdict
+                # Get current attempt count for this task
+                let attempt_n = $current_state.attempt_counts | get $task_id? | default 0
+
+                if $verdict == "pass" {
+                    # Check attestation requirement
+                    let attestation_required = $payload | get "attestation_required"? | default false
+                    let claims = $payload | get "claims"? | default []
+
+                    if $attestation_required and (($claims | length) == 0) {
+                        # Treat as MALFORMED (treat as fail for retry purposes)
+                        log-event "harvest_malformed" {
+                            message_id:  $id
+                            task_id:     $task_id
+                            reason:      "attestation_required=true but no [[claims]] block present"
+                        }
+                        if $attempt_n < 3 {
+                            $new_seen = $new_seen | append $id
+                            $dispatch_state = ($current_state
+                                | update seen_ids           $new_seen
+                                | update pending_request_id $id
+                                | update pending_task_id    $task_id
+                                | update pending_to_addr    $from_addr
+                                | update fsm_state          "dispatching")
+                            log-event "harvest_reply_retry" {message_id: $id, task_id: $task_id, verdict: "fail", attempt: $attempt_n}
+                        } else {
+                            let halt_path = [$root, "var", "mail", "HALT"] | path join
+                            if not (($halt_path | path dirname) | path exists) { mkdir ($halt_path | path dirname) }
+                            {
+                                task_id:    $task_id
+                                verdict:    $verdict
+                                message_id: $id
+                                halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+                                reason:     "retry-exhausted"
+                                attempts:   ($current_state.attempt_counts | get $task_id? | default 0)
+                            } | to toml | save --force $halt_path
+                            log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "retry-exhausted"}
+                            $new_seen = $new_seen | append $id
+                            return ($current_state | update seen_ids $new_seen | update fsm_state "idle")
+                        }
+                    } else {
+                        # pass + verified
+                        log-event "harvest_reply_pass" {message_id: $id, task_id: $task_id}
+                        let cleared_counts = $current_state.attempt_counts | reject $task_id?
+                        $new_seen = $new_seen | append $id
+                        $current_state = ($current_state | update seen_ids $new_seen | update attempt_counts $cleared_counts)
+                        continue
                     }
-                    $new_seen = $new_seen | append $id
-                    # Return early — halt on the next tick's HALT check
-                    return ($state | update seen_ids $new_seen | update fsm_state "idle")
+                } else if $verdict == "fail" {
+                    # D2 retry table: retry if attempts < 3, else HALT
+                    if $attempt_n < 3 {
+                        $new_seen = $new_seen | append $id
+                        $dispatch_state = ($current_state
+                            | update seen_ids           $new_seen
+                            | update pending_request_id $id
+                            | update pending_task_id    $task_id
+                            | update pending_to_addr    $from_addr
+                            | update fsm_state          "dispatching")
+                        log-event "harvest_reply_retry" {message_id: $id, task_id: $task_id, verdict: $verdict, attempt: $attempt_n}
+                    } else {
+                        let halt_path = [$root, "var", "mail", "HALT"] | path join
+                        if not (($halt_path | path dirname) | path exists) { mkdir ($halt_path | path dirname) }
+                        {
+                            task_id:    $task_id
+                            verdict:    $verdict
+                            message_id: $id
+                            halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+                            reason:     "retry-exhausted"
+                            attempts:   ($current_state.attempt_counts | get $task_id? | default 0)
+                        } | to toml | save --force $halt_path
+                        log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "retry-exhausted"}
+                        $new_seen = $new_seen | append $id
+                        return ($current_state | update seen_ids $new_seen | update fsm_state "idle")
+                    }
+                } else if $verdict == "blocked" {
+                    # D2 retry table: blocked_by present → retry up to 3; no blocked_by → immediate HALT
+                    let blocked_by = $payload | get "blocked_by"? | default ""
+                    if ($blocked_by | str length) > 0 {
+                        # unblocker named — retry if attempts < 3
+                        if $attempt_n < 3 {
+                            $new_seen = $new_seen | append $id
+                            $dispatch_state = ($current_state
+                                | update seen_ids           $new_seen
+                                | update pending_request_id $id
+                                | update pending_task_id    $task_id
+                                | update pending_to_addr    $from_addr
+                                | update fsm_state          "dispatching")
+                            log-event "harvest_reply_retry" {message_id: $id, task_id: $task_id, verdict: $verdict, attempt: $attempt_n}
+                        } else {
+                            let halt_path = [$root, "var", "mail", "HALT"] | path join
+                            if not (($halt_path | path dirname) | path exists) { mkdir ($halt_path | path dirname) }
+                            {
+                                task_id:    $task_id
+                                verdict:    $verdict
+                                message_id: $id
+                                halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+                                reason:     "retry-exhausted"
+                                attempts:   ($current_state.attempt_counts | get $task_id? | default 0)
+                            } | to toml | save --force $halt_path
+                            log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "retry-exhausted"}
+                            $new_seen = $new_seen | append $id
+                            return ($current_state | update seen_ids $new_seen | update fsm_state "idle")
+                        }
+                    } else {
+                        # no blocked_by — immediate HALT, no retry
+                        let halt_path = [$root, "var", "mail", "HALT"] | path join
+                        if not (($halt_path | path dirname) | path exists) { mkdir ($halt_path | path dirname) }
+                        {
+                            task_id:    $task_id
+                            verdict:    $verdict
+                            message_id: $id
+                            halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+                            reason:     "no-unblocker"
+                            attempts:   ($current_state.attempt_counts | get $task_id? | default 0)
+                        } | to toml | save --force $halt_path
+                        log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "no-unblocker"}
+                        $new_seen = $new_seen | append $id
+                        return ($current_state | update seen_ids $new_seen | update fsm_state "idle")
+                    }
                 }
             }
 
@@ -211,7 +314,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                         message_id: $id
                     }
                     $new_seen = $new_seen | append $id
-                    $dispatch_state = ($state
+                    $dispatch_state = ($current_state
                         | update seen_ids           $new_seen
                         | update pending_request_id $id
                         | update pending_task_id    $task_id
@@ -230,7 +333,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
     if $dispatch_state != null {
         tick $dispatch_state $spool $root ($remaining - 1)
     } else {
-        $state
+        $current_state
         | update seen_ids $new_seen
         | update fsm_state "idle"
     }
@@ -274,21 +377,25 @@ def state-waiting [state: record, spool: string, root: string, remaining: int] {
 }
 
 # dispatching: compose and append an outbound mbox message to the spool,
-# then transition to waiting.
+# then transition to waiting. Tracks attempt counts with retry-aware headers.
 def state-dispatching [state: record, spool: string, root: string, remaining: int] {
-    let ts        = date now | format date "%Y%m%d%H%M%S"
-    let msg_id    = $"<coord.($state.tick_count).($ts)@smolbsd.local>"
-    let to_addr   = if $state.pending_to_addr != "" { $state.pending_to_addr } else { $"($state.pending_task_id)@smolbsd.local" }
-    let from_addr = "coordinator@smolbsd.local"
+    let task_id      = $state | get pending_task_id? | default "unknown"
+    let attempt_n    = $state.attempt_counts | get $task_id? | default 0
+    let next_attempt = $attempt_n + 1
+    let ts           = date now | format date "%Y%m%d%H%M%S"
+    let msg_id       = $"<coord.($state.tick_count).r($next_attempt).($ts)@smolbsd.local>"
+    let to_addr      = if $state.pending_to_addr != "" { $state.pending_to_addr } else { $"($task_id)@smolbsd.local" }
+    let from_addr    = "coordinator@smolbsd.local"
 
     let mbox_msg = $"From ($from_addr) ($ts)
 From: ($from_addr)
 To: ($to_addr)
 Message-ID: ($msg_id)
+X-Attempt: ($next_attempt)
 Content-Type: text/toml; charset=utf-8
 In-Reply-To: ($state.pending_request_id)
 
-task_id = \"($state.pending_task_id)\"
+task_id = \"($task_id)\"
 action = \"dispatch\"
 "
 
@@ -298,11 +405,13 @@ action = \"dispatch\"
 
     log-event "dispatch_sent" {
         message_id: $msg_id
-        task_id:    $state.pending_task_id
+        task_id:    $task_id
         to:         $to_addr
+        attempt:    $next_attempt
     }
 
-    tick ($state | update fsm_state "waiting") $spool $root ($remaining - 1)
+    let updated_counts = $state.attempt_counts | insert $task_id $next_attempt
+    tick ($state | update fsm_state "waiting" | update attempt_counts $updated_counts) $spool $root ($remaining - 1)
 }
 
 # halted: HALT marker is present.  Log and stop — do not recurse further.
