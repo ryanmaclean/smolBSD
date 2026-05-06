@@ -47,7 +47,7 @@ Jujutsu). On ne passe au git brut que lorsqu'un outil externe l'exige.
 
 ```sh
 jj log --no-graph -r '@' --limit 5    # historique récent
-jj describe -m "votre message"        # mettre à jour la description de la copie de travail
+jj describe -m "your message"         # mettre à jour la description de la copie de travail
 jj new                                # ouvrir un nouveau changement
 ```
 

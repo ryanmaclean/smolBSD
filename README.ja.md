@@ -42,7 +42,7 @@ KVM対応のx86 Vultrインスタンスにデプロイして計時ゲートを�
 
 ```sh
 jj log --no-graph -r '@' --limit 5    # 最近の履歴
-jj describe -m "メッセージ"           # 作業コピーの説明を更新
+jj describe -m "your message"         # 作業コピーの説明を更新
 jj new                                # 新しい変更を開く
 ```
 
