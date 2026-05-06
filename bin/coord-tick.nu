@@ -28,6 +28,7 @@ def default-state [] {
         last_tick_at:       (date now | format date "%Y-%m-%dT%H:%M:%SZ")
         pending_request_id: ""
         pending_task_id:    ""
+        pending_to_addr:    ""
     }
 }
 
@@ -148,6 +149,28 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                 verdict:    $verdict
             }
 
+            if $direction == "reply" {
+                if $verdict == "fail" or $verdict == "blocked" {
+                    let halt_path = [$root, "var", "mail", "HALT"] | path join
+                    let halt_dir  = $halt_path | path dirname
+                    if not ($halt_dir | path exists) { mkdir $halt_dir }
+                    {
+                        task_id:    $task_id
+                        verdict:    $verdict
+                        message_id: $id
+                        halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+                    } | to toml | save --force $halt_path
+                    log-event "harvest_reply_halt" {
+                        message_id: $id
+                        task_id:    $task_id
+                        verdict:    $verdict
+                    }
+                    $new_seen = $new_seen | append $id
+                    # Return early — halt on the next tick's HALT check
+                    return ($state | update seen_ids $new_seen | update fsm_state "idle")
+                }
+            }
+
             # If this is an unmatched outbound request, dispatch it (first one wins).
             if $direction == "request" {
                 let in_reply_to = $msg.headers | get "In-Reply-To"? | default ""
@@ -162,6 +185,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                         | update seen_ids           $new_seen
                         | update pending_request_id $id
                         | update pending_task_id    $task_id
+                        | update pending_to_addr    $to_addr
                         | update fsm_state          "dispatching")
                     # break is implicit: dispatch_state != null will stop outer loop
                 }
@@ -210,6 +234,7 @@ def state-waiting [state: record, spool: string, root: string, remaining: int] {
         let next_state = $state
             | update pending_request_id ""
             | update pending_task_id    ""
+            | update pending_to_addr    ""
             | update fsm_state          "harvesting"
         tick $next_state $spool $root ($remaining - 1)
     } else {
@@ -223,7 +248,7 @@ def state-waiting [state: record, spool: string, root: string, remaining: int] {
 def state-dispatching [state: record, spool: string, root: string, remaining: int] {
     let ts        = date now | format date "%Y%m%d%H%M%S"
     let msg_id    = $"<coord.($state.tick_count).($ts)@smolbsd.local>"
-    let to_addr   = $"($state.pending_task_id)@smolbsd.local"
+    let to_addr   = if $state.pending_to_addr != "" { $state.pending_to_addr } else { $"($state.pending_task_id)@smolbsd.local" }
     let from_addr = "coordinator@smolbsd.local"
 
     let mbox_msg = $"From ($from_addr) ($ts)
