@@ -188,10 +188,11 @@ def state-waiting [state: record, spool: string, root: string, remaining: int] {
     let content   = if ($spool | path exists) { open --raw $spool } else { "" }
     let messages  = parse-mbox $content
 
-    let reply = $messages | where {|m|
+    let matching = $messages | where {|m|
         let irt = $m.headers | get "In-Reply-To"? | default ""
         $irt == $expected_irt
-    } | first?
+    }
+    let reply = if ($matching | is-empty) { null } else { $matching | first }
 
     if $reply == null {
         log-event "waiting_no_reply_yet" {waiting_for: $waiting_for}

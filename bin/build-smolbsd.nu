@@ -177,11 +177,20 @@ def preflight [
 
     # CHECK: obj disk space (FIX-5)
     # df -k returns 1K blocks; we need ~50GB = 50_000_000 KiB free
-    let df_out = (^df -k $obj | lines | last | split row -r '\s+')
-    let free_kb = try { $df_out | get 3 | into int } catch { 0 }
-    let free_gb = ($free_kb / 1_048_576.0)
-    let free_gb_str = ($free_gb | math round --precision 1)
-    if $free_kb < 20_000_000 {
+    # Use the mount point if the dir doesn't exist yet (df the parent)
+    let df_target = if ($obj | path exists) { $obj } else { "/" }
+    let df_result = (do { ^df -k $df_target } | complete)
+    let free_kb = if $df_result.exit_code == 0 {
+        let df_out = ($df_result.stdout | lines | where { |l| ($l | str trim) != "" } | last | split row -r '\s+')
+        try { $df_out | get 3 | into int } catch { 0 }
+    } else {
+        0
+    }
+    let free_gb_str = (($free_kb / 1_048_576.0) | math round --precision 1)
+    if $free_kb == 0 {
+        $warnings = ($warnings | append $"Could not check disk space for ($obj) — verify manually before building.")
+        print $"  [warn] could not check disk space for ($obj)"
+    } else if $free_kb < 20_000_000 {
         let msg = $"($obj) has only ($free_gb_str) GiB free. Minimum 20 GiB required for buildworld."
         $errors = ($errors | append $msg)
     } else if $free_kb < 50_000_000 {
@@ -460,18 +469,24 @@ def base_make_args [arch_freebsd: string arch_target: string] {
     }
 }
 
-# Run a command, tee output to log, error on non-zero exit (FIX-6)
+# Run a command, stream to stdout and append to log, error on non-zero exit (FIX-6)
+# Strategy: redirect both stdout+stderr to the log file, then tail -f the log so the
+# user sees live output. The make commands are long-running; streaming matters.
 def run_logged [cmd_args: list<string> log: string stage: string] {
     let cmd = ($cmd_args | first)
     let args = ($cmd_args | skip 1)
 
-    # Append a header to the log
+    # Append a stage header to the log
     let ts = (date now | format date "%Y-%m-%dT%H:%M:%SZ")
-    $"=== ($stage) started at ($ts) ===\n" | save --append $log
+    $"\n=== ($stage) started at ($ts) ===\n" | save --append $log
 
-    # Run and tee to log
+    print $"  Streaming output to ($log) — run 'tail -f ($log)' in another terminal"
+
+    # Use sh -c to get both stdout+stderr into the log while preserving exit code
+    # We use /usr/bin/env sh (POSIX; available on all FreeBSD/macOS)
+    let shell_cmd = ($cmd_args | str join ' ')
     let result = (do {
-        run-external $cmd ...$args out+err> $log
+        ^/usr/bin/env sh -c $"($shell_cmd) >> ($log) 2>&1"
     } | complete)
 
     if $result.exit_code != 0 {
@@ -481,7 +496,7 @@ def run_logged [cmd_args: list<string> log: string stage: string] {
     }
 }
 
-# Run a command and fail if it errors
+# Run a command and fail on non-zero exit; used for quick setup commands
 def run_or_fail [label: string cmd_args: list<string> _log: string] {
     let cmd = ($cmd_args | first)
     let args = ($cmd_args | skip 1)
