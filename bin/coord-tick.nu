@@ -15,6 +15,7 @@
 # HALT check: one `stat var/mail/HALT` per tick entry — O(1) per spec §13.
 
 use mbox-parse.nu [parse-mbox, extract-toml, msg-id]
+use coord-dispatch.nu [dispatch-subagent, agent-running?]
 
 const STATE_VERSION = "1"
 
@@ -27,6 +28,7 @@ def default-state [] {
         seen_ids:         []
         last_tick_at:     (date now | format date "%Y-%m-%dT%H:%M:%SZ")
         pending_dispatch: null   # null | record<task_id, to_role, subject, toml_body>
+        dispatch_pid:     0      # job ID of the running subagent (0 = none)
     }
 }
 
@@ -175,6 +177,13 @@ def state-waiting [state: record, spool: string, root: string, remaining: int] {
         return (tick ($state | update fsm_state "idle") $spool $root ($remaining - 1))
     }
 
+    # If the subagent job is still running, no reply can be ready yet — stay waiting.
+    let pid = $state | get dispatch_pid? | default 0
+    if $pid != 0 and (agent-running? $pid) {
+        log-event "waiting_agent_still_running" {pid: $pid, waiting_for: $waiting_for}
+        return ($state | update fsm_state "waiting")
+    }
+
     let expected_irt = $"<($waiting_for).coord@smolbsd.local>"
     let content   = if ($spool | path exists) { open --raw $spool } else { "" }
     let messages  = parse-mbox $content
@@ -225,11 +234,23 @@ def state-dispatching [state: record, spool: string, root: string, remaining: in
         bytes_appended: ($after_size - $before_size)
     }
 
-    # Clear pending_dispatch, move to waiting
+    # Launch the actual subagent to work on this task
+    let dispatch_result = dispatch-subagent $task.task_id ($task.to_role | split row "@" | first) $task.toml_body $spool
+
+    log-event "subagent_launched" {
+        task_id:  $task.task_id
+        launched: $dispatch_result.launched
+        pid:      ($dispatch_result | get pid? | default 0)
+        log_path: ($dispatch_result | get log_path? | default "")
+        error:    ($dispatch_result | get error? | default "none")
+    }
+
+    # Clear pending_dispatch, move to waiting; store job ID for liveness check
     tick ($state
         | update fsm_state "waiting"
         | update pending_dispatch null
         | upsert waiting_for $task.task_id
+        | upsert dispatch_pid ($dispatch_result | get pid? | default 0)
     ) $spool $root ($remaining - 1)
 }
 
