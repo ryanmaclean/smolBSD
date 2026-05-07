@@ -85,7 +85,9 @@ Content-Type: text/toml; charset=utf-8
     print ""
     print "▶ Step 2: Builder agent reading task and executing..."
 
-    let image_path = [$root, $"build/FreeBSD-15-($arch)-smolbsd.qcow2"] | path join
+    # Map arm64 -> aarch64 for the qcow2 filename convention
+    let file_arch = if $arch == "arm64" { "aarch64" } else { $arch }
+    let image_path = [$root, $"build/FreeBSD-15-($file_arch)-smolbsd.qcow2"] | path join
     let result = if $live and ($image_path | path exists) {
         print $"  live mode: booting ($image_path)"
         run-live-agent $arch $image_path
@@ -219,11 +221,16 @@ def run-mock-agent [task_id: string, arch: string] {
     }
 }
 
-# ── Live agent stub ──────────────────────────────────────────────────────────
+# ── Live agent ───────────────────────────────────────────────────────────────
 
-# Boot the real smolBSD qcow2 via QEMU, run commands, return output.
-# Full live boot is Phase II P1 completion; this stub scaffolds the interface
-# so the integration point is clear even before the qcow2 lands.
+# Boot the real smolBSD qcow2 via QEMU, run commands via expect(1), return output.
+#
+# The image requires a loader.env fix in the EFI partition (EFI/freebsd/loader.env
+# with boot_single="YES") so the VM enters single-user mode, bypassing the PAM
+# ownership issue with /etc/login.conf.  The fixed overlay image is at
+# build/smolbsd-fixed.qcow2 (thin qcow2 backed by the original).
+#
+# Uses port 2232 for hostfwd to avoid conflict with the time-to-ready test (2231).
 def run-live-agent [arch: string, image_path: string] {
     let qemu_bin = if $arch == "arm64" {
         "/opt/homebrew/bin/qemu-system-aarch64"
@@ -233,26 +240,92 @@ def run-live-agent [arch: string, image_path: string] {
 
     if not ($qemu_bin | path exists) {
         return {
-            mode:         "live-stub"
-            verdict:      "fail"
-            uname:        ""
+            mode:    "live"
+            verdict: "fail"
+            uname:   ""
             kern_version: ""
-            df_root:      ""
-            boot_sec:     0
-            error:        $"($qemu_bin) not found"
+            df_root: ""
+            boot_sec: 0
+            error:   $"($qemu_bin) not found"
         }
     }
 
-    # TODO (Phase II P1): implement full boot-wait-ssh-exec sequence here.
-    # The acceptance test in tests/time-to-ready-arm64.exp has the expect(1)
-    # pattern; mirror it here with Nushell + ssh subprocess.
-    # For now return a stub that marks the interface contract clearly.
+    # Prefer the fixed overlay image (has loader.env for single-user boot)
+    let image_dir   = $image_path | path dirname
+    let fixed_image = [$image_dir, "smolbsd-fixed.qcow2"] | path join
+    let boot_image  = if ($fixed_image | path exists) { $fixed_image } else { $image_path }
+    print $"  using image: ($boot_image)"
+
+    # BIOS for aarch64
+    let bios_path = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
+    let bios_flag = if $arch == "arm64" and ($bios_path | path exists) {
+        $"-bios ($bios_path)"
+    } else { "" }
+
+    # Write the expect script via Python to avoid Nushell string-escape issues
+    let exp_path = "/tmp/demo-live.exp"
+    let qemu_cmd = $"($qemu_bin) ($bios_flag) -machine virt,accel=hvf -cpu host -m 256M -smp 2 -drive file=($boot_image),format=qcow2,if=virtio -nic user,model=virtio-net-pci,hostfwd=tcp::2232-:22 -nographic"
+
+    # Write the expect script components as a list of lines (avoids Nushell escape issues)
+    # then join and save. Backslash-heavy Tcl is built line-by-line as raw strings.
+    let line_spawn    = $"spawn ($qemu_cmd)"
+    let exp_lines = [
+        "set timeout 75"
+        "set t0 [clock seconds]"
+        $line_spawn
+        'expect {'
+        '    "Enter full pathname" {'
+        '        send "/bin/sh\r"'
+        '        after 300'
+        '        expect "# "'
+        '    }'
+        '    "# " { }'
+        '    timeout { puts "TIMEOUT_BOOT=1"; exit 1 }'
+        '}'
+        'set boot_sec [expr { [clock seconds] - $t0 }]'
+        'send "uname -a\r"'
+        'set uname "unknown"'
+        'expect {'
+        '    -re {(FreeBSD [^\n\r]+)} { set uname $expect_out(1,string) }'
+        '    timeout { }'
+        '}'
+        'expect "# "'
+        'send "sysctl kern.version\r"'
+        'set kver "unknown"'
+        'expect {'
+        '    -re {(kern\.version: FreeBSD[^\n\r]+)} { set kver $expect_out(1,string) }'
+        '    timeout { }'
+        '}'
+        'expect "# "'
+        'send "halt -p\r"'
+        'expect eof'
+        'puts "BOOT_SEC=$boot_sec"'
+        'puts "UNAME=$uname"'
+        'puts "KVER=$kver"'
+    ]
+    $exp_lines | str join "\n" | save --force $exp_path
+
+    print "  spawning QEMU + expect (timeout 90s, single-user mode)..."
+    let raw_output = (do { ^timeout 90 /usr/bin/expect $exp_path } | complete | get stdout | str trim)
+
+    # Parse tagged output lines
+    let lines = $raw_output | lines
+    let boot_sec_lines = $lines | where { |l| $l | str starts-with "BOOT_SEC=" }
+    let uname_lines    = $lines | where { |l| $l | str starts-with "UNAME=" }
+    let kver_lines     = $lines | where { |l| $l | str starts-with "KVER=" }
+
+    let boot_sec  = if ($boot_sec_lines | length) > 0 { $boot_sec_lines | first | str replace "BOOT_SEC=" "" | str trim | into int } else { 0 }
+    let uname_val = if ($uname_lines    | length) > 0 { $uname_lines    | first | str replace "UNAME=" ""    | str trim } else { "unknown" }
+    let kver_val  = if ($kver_lines     | length) > 0 { $kver_lines     | first | str replace "KVER=" ""     | str trim } else { "unknown" }
+
+    let verdict = if ($uname_val | str contains "FreeBSD") { "pass" } else { "fail" }
+
     {
-        mode:         "live-stub"
-        verdict:      "pass"
-        uname:        $"FreeBSD smolbsd 15.0-RELEASE ($arch) -- live boot stub; qcow2 found at ($image_path)"
-        kern_version: "pending — Phase II P1"
-        df_root:      "pending — Phase II P1"
-        boot_sec:     0
+        mode:         "live"
+        verdict:      $verdict
+        uname:        $uname_val
+        kern_version: $kver_val
+        df_root:      "n/a"
+        boot_sec:     $boot_sec
     }
 }
