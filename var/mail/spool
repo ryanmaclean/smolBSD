@@ -4765,3 +4765,323 @@ expected = "file exists with size > 0"
 probe    = "test -s plans/tinyos/PHASE-2-PHYSICAL-BOOT.md && echo EXISTS"
 evidence = "file written at plans/tinyos/PHASE-2-PHYSICAL-BOOT.md — scope document complete"
 verdict  = "pass"
+From smolbsd-coord Wed May 06 22:50:45 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [phase-ii-release-tools-smolbsd-pi5-conf] Phase-II create release/tools/smolbsd-pi5.conf
+Date: Wed, 06 May 2026 22:50:45 -0000
+Message-ID: <phase-ii-release-tools-smolbsd-pi5-conf.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/physical-boot
+Content-Type: text/toml; charset=utf-8
+
+task_id   = "phase-ii-release-tools-smolbsd-pi5-conf"
+title     = "Create release/tools/smolbsd-pi5.conf"
+phase     = "tinyos/physical-boot"
+deadline  = "2026-05-31"
+
+[brief]
+summary = """
+Phase-II file creation task (see PHASE-2-PHYSICAL-BOOT plan, section 8).
+Purpose: Board config for Pi 5 raw image conversion
+Path: release/tools/smolbsd-pi5.conf
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-2-PHYSICAL-BOOT.md",
+]
+
+[acceptance]
+must_pass = [
+  "File release/tools/smolbsd-pi5.conf exists and is non-empty",
+  "Content matches purpose: Board config for Pi 5 raw image conversion",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+tools_required       = ["Read", "Write"]
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 40000
+From smolbsd-coord Wed May 06 22:50:45 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [phase-ii-release-tools-smolbsd-rk3588-conf] Phase-II create release/tools/smolbsd-rk3588.conf
+Date: Wed, 06 May 2026 22:50:45 -0000
+Message-ID: <phase-ii-release-tools-smolbsd-rk3588-conf.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/physical-boot
+Content-Type: text/toml; charset=utf-8
+
+task_id   = "phase-ii-release-tools-smolbsd-rk3588-conf"
+title     = "Create release/tools/smolbsd-rk3588.conf"
+phase     = "tinyos/physical-boot"
+deadline  = "2026-05-31"
+
+[brief]
+summary = """
+Phase-II file creation task (see PHASE-2-PHYSICAL-BOOT plan, section 8).
+Purpose: Board config for RK3588 raw image conversion
+Path: release/tools/smolbsd-rk3588.conf
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-2-PHYSICAL-BOOT.md",
+]
+
+[acceptance]
+must_pass = [
+  "File release/tools/smolbsd-rk3588.conf exists and is non-empty",
+  "Content matches purpose: Board config for RK3588 raw image conversion",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+tools_required       = ["Read", "Write"]
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 40000
+From smolbsd-coord Wed May 06 22:50:45 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [phase-ii-tests-time-to-ready-physical-exp] Phase-II create tests/time-to-ready-physical.exp
+Date: Wed, 06 May 2026 22:50:45 -0000
+Message-ID: <phase-ii-tests-time-to-ready-physical-exp.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/physical-boot
+Content-Type: text/toml; charset=utf-8
+
+task_id   = "phase-ii-tests-time-to-ready-physical-exp"
+title     = "Create tests/time-to-ready-physical.exp"
+phase     = "tinyos/physical-boot"
+deadline  = "2026-05-31"
+
+[brief]
+summary = """
+Phase-II file creation task (see PHASE-2-PHYSICAL-BOOT plan, section 8).
+Purpose: Serial expect script for physical time-to-login gate
+Path: tests/time-to-ready-physical.exp
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-2-PHYSICAL-BOOT.md",
+]
+
+[acceptance]
+must_pass = [
+  "File tests/time-to-ready-physical.exp exists and is non-empty",
+  "Content matches purpose: Serial expect script for physical time-to-login gate",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+tools_required       = ["Read", "Write"]
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 40000
+From smolbsd-coord Wed May 06 22:50:45 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [phase-ii-tests-crash-recovery-physical-exp] Phase-II create tests/crash-recovery-physical.exp
+Date: Wed, 06 May 2026 22:50:45 -0000
+Message-ID: <phase-ii-tests-crash-recovery-physical-exp.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/physical-boot
+Content-Type: text/toml; charset=utf-8
+
+task_id   = "phase-ii-tests-crash-recovery-physical-exp"
+title     = "Create tests/crash-recovery-physical.exp"
+phase     = "tinyos/physical-boot"
+deadline  = "2026-05-31"
+
+[brief]
+summary = """
+Phase-II file creation task (see PHASE-2-PHYSICAL-BOOT plan, section 8).
+Purpose: Power-cycle + serial recovery gate
+Path: tests/crash-recovery-physical.exp
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-2-PHYSICAL-BOOT.md",
+]
+
+[acceptance]
+must_pass = [
+  "File tests/crash-recovery-physical.exp exists and is non-empty",
+  "Content matches purpose: Power-cycle + serial recovery gate",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+tools_required       = ["Read", "Write"]
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 40000
+From smolbsd-coord Wed May 06 22:50:45 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [phase-ii-scripts-qcow2-to-board-raw-sh] Phase-II create scripts/qcow2-to-board-raw.sh
+Date: Wed, 06 May 2026 22:50:45 -0000
+Message-ID: <phase-ii-scripts-qcow2-to-board-raw-sh.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/physical-boot
+Content-Type: text/toml; charset=utf-8
+
+task_id   = "phase-ii-scripts-qcow2-to-board-raw-sh"
+title     = "Create scripts/qcow2-to-board-raw.sh"
+phase     = "tinyos/physical-boot"
+deadline  = "2026-05-31"
+
+[brief]
+summary = """
+Phase-II file creation task (see PHASE-2-PHYSICAL-BOOT plan, section 8).
+Purpose: Conversion pipeline wrapper (steps 1–6 of §4.1)
+Path: scripts/qcow2-to-board-raw.sh
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-2-PHYSICAL-BOOT.md",
+]
+
+[acceptance]
+must_pass = [
+  "File scripts/qcow2-to-board-raw.sh exists and is non-empty",
+  "Content matches purpose: Conversion pipeline wrapper (steps 1–6 of §4.1)",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+tools_required       = ["Read", "Write"]
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 40000
+From smolbsd-coord Wed May 06 22:50:45 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [phase-ii-config-pi5-config-txt] Phase-II create config/pi5/config.txt
+Date: Wed, 06 May 2026 22:50:45 -0000
+Message-ID: <phase-ii-config-pi5-config-txt.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/physical-boot
+Content-Type: text/toml; charset=utf-8
+
+task_id   = "phase-ii-config-pi5-config-txt"
+title     = "Create config/pi5/config.txt"
+phase     = "tinyos/physical-boot"
+deadline  = "2026-05-31"
+
+[brief]
+summary = """
+Phase-II file creation task (see PHASE-2-PHYSICAL-BOOT plan, section 8).
+Purpose: RPi firmware config (arm_64bit, uart, gpu_mem)
+Path: config/pi5/config.txt
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-2-PHYSICAL-BOOT.md",
+]
+
+[acceptance]
+must_pass = [
+  "File config/pi5/config.txt exists and is non-empty",
+  "Content matches purpose: RPi firmware config (arm_64bit, uart, gpu_mem)",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+tools_required       = ["Read", "Write"]
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 40000
+From smolbsd-coord Wed May 06 22:50:45 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [phase-ii-config-pi5-loader-conf-append] Phase-II create config/pi5/loader.conf.append
+Date: Wed, 06 May 2026 22:50:45 -0000
+Message-ID: <phase-ii-config-pi5-loader-conf-append.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/physical-boot
+Content-Type: text/toml; charset=utf-8
+
+task_id   = "phase-ii-config-pi5-loader-conf-append"
+title     = "Create config/pi5/loader.conf.append"
+phase     = "tinyos/physical-boot"
+deadline  = "2026-05-31"
+
+[brief]
+summary = """
+Phase-II file creation task (see PHASE-2-PHYSICAL-BOOT plan, section 8).
+Purpose: UART console lines for Pi 5 boot/loader.conf
+Path: config/pi5/loader.conf.append
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-2-PHYSICAL-BOOT.md",
+]
+
+[acceptance]
+must_pass = [
+  "File config/pi5/loader.conf.append exists and is non-empty",
+  "Content matches purpose: UART console lines for Pi 5 boot/loader.conf",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+tools_required       = ["Read", "Write"]
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 40000
+From smolbsd-coord Wed May 06 22:50:46 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [phase-ii-config-rk3588-loader-conf-append] Phase-II create config/rk3588/loader.conf.append
+Date: Wed, 06 May 2026 22:50:46 -0000
+Message-ID: <phase-ii-config-rk3588-loader-conf-append.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/physical-boot
+Content-Type: text/toml; charset=utf-8
+
+task_id   = "phase-ii-config-rk3588-loader-conf-append"
+title     = "Create config/rk3588/loader.conf.append"
+phase     = "tinyos/physical-boot"
+deadline  = "2026-05-31"
+
+[brief]
+summary = """
+Phase-II file creation task (see PHASE-2-PHYSICAL-BOOT plan, section 8).
+Purpose: UART console lines for RK3588 boot/loader.conf
+Path: config/rk3588/loader.conf.append
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-2-PHYSICAL-BOOT.md",
+]
+
+[acceptance]
+must_pass = [
+  "File config/rk3588/loader.conf.append exists and is non-empty",
+  "Content matches purpose: UART console lines for RK3588 boot/loader.conf",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+tools_required       = ["Read", "Write"]
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 40000

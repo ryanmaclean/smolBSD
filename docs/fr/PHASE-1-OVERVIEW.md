@@ -134,4 +134,86 @@ Apple Silicon.
 
 ---
 
-*Résumé produit le 2026-05-04 à partir des documents de planification smolBSD Phase I. Mis à jour le 2026-05-04 pour refléter la complétion de Phase I.*
+---
+
+## 6. Phase II — Démarrage physique
+
+> Fondé sur `plans/tinyos/PHASE-2-PHYSICAL-BOOT.md` (tâche task-0023, 2026-05-03).
+
+### 6.1 Objectif
+
+Phase II reconvertit l'artefact qcow2 produit en Phase I en image brute
+amorçable sur carte SD pour deux familles de cartes physiques : le
+**Raspberry Pi 5** (BCM2712) et les cartes **RK3588** (référence : ROCK 5B).
+L'image résultante — au format raw + table de partitions GPT — doit atteindre
+l'invite de connexion sans intervention humaine et passer les mêmes cinq
+portes d'acceptation que Phase I, avec des seuils de latence assouplis pour
+tenir compte du temps de démarrage du matériel physique.
+
+### 6.2 Profils de carte
+
+| Champ | Raspberry Pi 5 | RK3588 (ROCK 5B) |
+|-------|---------------|-----------------|
+| SoC | BCM2712 (Cortex-A76 × 4) | RK3588 (Cortex-A76 × 4 + A55 × 4) |
+| Firmware de démarrage | RPi UEFI (pftf/RPi4, branche Pi 5) | edk2-rk35xx (UEFI EDK2) |
+| Prise en charge ACPI | Oui (via UEFI RPi + tables ACPI) | Non — FDT uniquement |
+| Fichier DTB | `bcm2712-rpi-5-b.dtb` | `rk3588-rock-5b.dtb` |
+| Console UART | `/dev/uart0` — PL011, adresse `0xfe201000` | `/dev/uart2` — adresse `0xff1a0000` |
+| Stockage Phase II | Carte SD (SDHOST) | Carte SD / eMMC |
+| Porte temps jusqu'à `login:` | ≤ 60 s | ≤ 90 s (init eMMC + POST edk2 plus longs) |
+| Niveau de support FreeBSD | Tier 2 (communauté) | Tier 3 (ports tree + wiki) |
+
+Le firmware RPi UEFI (branche Pi 5) est considéré en bêta à la date de
+rédaction (2026-05). Les tables ACPI sont incomplètes, mais le chemin FDT
+fonctionne. Pour RK3588, edk2-rk35xx est préféré ; u-boot + EFI stub sert de
+repli pour les cartes sans build edk2-rk35xx disponible.
+
+### 6.3 Pipeline de conversion — `bin/qcow2-to-physical.nu`
+
+Le script `bin/qcow2-to-physical.nu` automatise les six étapes de conversion
+sur l'hôte de build FreeBSD (fbuild) :
+
+1. **Conversion en raw** — `qemu-img convert -f qcow2 -O raw` produit
+   `smolbsd-aarch64-<board>.raw`.
+2. **Montage de l'image** — `mdconfig` expose l'image raw comme `/dev/md0`
+   avec ses partitions GPT.
+3. **Injection du DTB** — le fichier DTB spécifique à la carte
+   (`bcm2712-rpi-5-b.dtb` ou `rk3588-rock-5b.dtb`) est copié dans la
+   partition ESP (FAT32).
+4. **Ajustement de `loader.conf`** — la ligne `console=uart,io,<adresse>`
+   adaptée à l'UART physique de la carte est ajoutée à
+   `/boot/loader.conf` de la partition racine UFS.
+5. **Blob firmware EFI** — pour Pi 5 uniquement : `RPI_EFI.fd` (pftf/RPi4
+   Pi 5 branch) est placé dans l'ESP. Pour RK3588, edk2-rk35xx produit
+   directement `BOOTAA64.EFI`, aucun blob séparé n'est nécessaire.
+6. **Démontage et vérification de taille** — démontage des partitions,
+   détachement de `mdconfig`, vérification que l'image est ≤ 512 Mio.
+
+Usage :
+
+```sh
+nu bin/qcow2-to-physical.nu \
+    --input  FreeBSD-15.0-RELEASE-aarch64-SMOLBSD.qcow2 \
+    --output smolbsd-aarch64-pi5.raw \
+    --board  pi5
+```
+
+L'écriture sur carte SD s'effectue ensuite via `tests/sd-write.nu`
+(voir §6.4).
+
+### 6.4 Nouveaux artefacts de test
+
+| Fichier | Rôle |
+|---------|------|
+| `tests/time-to-ready-pi5.exp` | Script expect pour la porte temps-jusqu'à-login sur Pi 5 (seuil ≤ 60 s). Connecte `cu` sur le port série USB, détecte `login:`, `Kernel panic`, et `mountroot>`. |
+| `tests/time-to-ready-rk3588.exp` | Même structure pour RK3588 (seuil ≤ 90 s). Reconnaît la bannière `EDK II` comme progression normale et continue le décompte. |
+| `tests/sd-write.nu` | Script Nushell pour écrire l'image raw sur carte SD via `dd`. Refuse d'écrire sur tout périphérique non amovible (vérification `diskutil info` sur macOS, `geom disk list` sur FreeBSD). Requiert `--yes` pour sauter la confirmation interactive. |
+| `bin/qcow2-to-physical.nu` | Pipeline de conversion complet qcow2 → raw+GPT décrit en §6.3. |
+
+Le périphérique série est configurable via la variable d'environnement
+`SMOLBSD_SERIAL` (par défaut : `/dev/ttyUSB0`). Un adaptateur USB-UART
+CP2102 3,3 V branché sur l'en-tête UART de débogage de la carte est requis.
+
+---
+
+*Résumé produit le 2026-05-04 à partir des documents de planification smolBSD Phase I. Mis à jour le 2026-05-04 pour refléter la complétion de Phase I. §6 ajouté le 2026-05-06 pour Phase II.*
