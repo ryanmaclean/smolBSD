@@ -254,9 +254,10 @@ do {
     ^rm -rf $tmp
 }
 
-print "test 8: verdict fail → HALT file created"
+print "test 8: verdict fail (first attempt) → retry dispatched, waiting state"
 do {
-    # Harvesting a fail-verdict reply creates var/mail/HALT in the temp root.
+    # First fail: attempt_n=0 < 3, so coordinator retries via dispatching → waiting.
+    # No global HALT file should be created on the first failure.
     let tmp = make-temp-dir
     let state_rel = "var/run/coord-state.toml"
     let state_abs = [$tmp, $state_rel] | path join
@@ -270,8 +271,14 @@ do {
 
     run-tick $tmp $state_rel $spool_rel
 
+    let state = read-state $state_abs
+    # Retry dispatched → should be in waiting, not halted
+    assert equal $state.fsm_state "waiting"
+    # attempt_counts must record one attempt for t3
+    assert equal ($state.attempt_counts | get "t3"? | default 0) 1
+    # Global HALT must NOT be created on first failure
     let halt_path = [$tmp, "var", "mail", "HALT"] | path join
-    assert ($halt_path | path exists)
+    assert equal ($halt_path | path exists) false
 
     ^rm -rf $tmp
 }
@@ -293,7 +300,7 @@ do {
 
     let state = read-state $state_abs
     # attempt_counts should have an entry for t-retry (value >= 1)
-    assert ($state | get -i attempt_counts | default {} | get -i t-retry | default 0) >= 1
+    assert (($state.attempt_counts | get "t-retry"? | default 0) >= 1)
     # retry should have been dispatched → waiting
     assert equal $state.fsm_state "waiting"
 
@@ -385,7 +392,7 @@ do {
     let state = read-state $state_abs
     # pass without claims → MALFORMED → retry → waiting
     assert equal $state.fsm_state "waiting"
-    assert ($state | get -i attempt_counts | default {} | get -i t-attest | default 0) >= 1
+    assert (($state.attempt_counts | get "t-attest"? | default 0) >= 1)
 
     ^rm -rf $tmp
 }
@@ -412,7 +419,7 @@ do {
 
     # No retry should have been attempted (attempt_counts for t-block == 0 or absent)
     let state = read-state $state_abs
-    let attempt = $state | get -i attempt_counts | default {} | get -i t-block | default 0
+    let attempt = $state.attempt_counts | get "t-block"? | default 0
     assert equal $attempt 0
 
     ^rm -rf $tmp
@@ -518,7 +525,7 @@ do {
 
     let st = read-state $state_abs
     # halted_tasks must no longer contain t15 after retry resume.
-    let halted = $st | get -i halted_tasks | default []
+    let halted = $st.halted_tasks
     assert (not ("t15" in $halted))
     # Per-task HALT file must have been removed.
     let halt_task_path = [$tmp, "var", "mail", "HALT.t15"] | path join
@@ -583,7 +590,7 @@ do {
     # abort does not re-dispatch: fsm_state must not be "waiting".
     assert ($st.fsm_state != "waiting")
     # Task remains halted (still in halted_tasks or state is halted).
-    let halted = $st | get -i halted_tasks | default []
+    let halted = $st.halted_tasks
     let task_still_halted = ("t15" in $halted) or ($st.fsm_state == "halted")
     assert $task_still_halted
 
