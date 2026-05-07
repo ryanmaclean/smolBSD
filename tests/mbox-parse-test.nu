@@ -4,7 +4,7 @@
 # Run from repo root:
 #   nu tests/mbox-parse-test.nu
 
-use ../bin/mbox-parse.nu [parse-mbox, extract-toml, msg-id]
+use mbox-parse.nu [parse-mbox, extract-toml, msg-id]
 
 # Inline assert helpers — avoids std library version sensitivity.
 def "assert equal" [left: any, right: any] {
