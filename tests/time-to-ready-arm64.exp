@@ -1,0 +1,22 @@
+#!/usr/bin/env expect
+# tests/time-to-ready-arm64.exp
+# Acceptance gate for aarch64 smolBSD image: time-to-login <= 30s
+# Run on: macOS arm64 (Apple Silicon) with QEMU HVF acceleration
+#
+# Authoring chain: tester@smolbsd.local <task-0013.tester@smolbsd.local>
+#
+set timeout 120
+set t0 [clock seconds]
+spawn /opt/homebrew/bin/qemu-system-aarch64 \
+  -machine virt,accel=hvf \
+  -cpu host \
+  -m 256M -smp 2 \
+  -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd \
+  -drive file=build/FreeBSD-15-aarch64-smolbsd.qcow2,format=qcow2,if=virtio \
+  -nic user,model=virtio-net-pci,hostfwd=tcp::2231-:22 \
+  -nographic
+expect {
+  "login:" { puts "TIME_TO_LOGIN=[expr {[clock seconds] - $t0}]s" }
+  timeout  { puts "TIMEOUT"; exit 1 }
+}
+# Acceptance: TIME_TO_LOGIN <= 30s

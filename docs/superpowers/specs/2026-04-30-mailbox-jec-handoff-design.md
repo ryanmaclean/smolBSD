@@ -504,6 +504,20 @@ case — fallback failure is logged, not fatal. This caveat is just the
 explicit network-context assumption an agent dropped in cold needs to
 recognize before debugging "why did the IRC fallback silently no-op".
 
+### 18.6 Gitea host is i9-zfs-pop:3001, not gitea.local:3000
+
+`gitea.local` (per CLAUDE.md fleet DNS) resolves to `10.0.3.210` (QNAS) but
+Gitea actually runs on `i9-zfs-pop` at `10.0.2.230:3001`. Port 3000 on that
+host is TensorZero. The CLAUDE.md fleet hostname table is stale for this entry.
+
+**Tunnel from Tailscale (conference / remote):**
+```sh
+ssh -fN -L 3001:10.0.2.230:3001 home@100.93.79.79   # minim4-16 jump
+# then: jj git remote add gitea http://localhost:3001/studio/smolBSD.git
+```
+
+**Direct from LAN:** `http://10.0.2.230:3001/`
+
 ## 14. Caveats and known limits
 
 1. **No `sequential-thinking` MCP server is loaded** in this Claude Code instance. Stepwise reasoning happens in-prompt, not via that MCP. If the user installs it later, the protocol doesn't change — it's an internal-to-coordinator concern.
