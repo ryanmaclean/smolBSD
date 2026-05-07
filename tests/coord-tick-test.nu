@@ -480,7 +480,7 @@ do {
 
     # Write state with t15 in halted_tasks.
     let mail_dir = [$tmp, "var", "mail"] | path join
-    mkdir mail_dir
+    mkdir $mail_dir
     let state_dir = [$tmp, "var", "run"] | path join
     mkdir $state_dir
     (

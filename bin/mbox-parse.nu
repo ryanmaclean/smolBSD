@@ -20,16 +20,15 @@ export def parse-mbox [content: string] {
         | each {|entry|
             # The very first segment starts with "From " (intact); subsequent
             # items had the "From " prefix consumed by the split delimiter.
-            let raw = if $entry.index == 0 {
+            if $entry.index == 0 {
                 if ($entry.item | str starts-with "From ") {
-                    $entry.item | str replace "From " ""
+                    ($entry.item | str replace "From " "")
                 } else {
                     $entry.item
                 }
             } else {
                 $entry.item   # separator already consumed by split
             }
-            $raw
         }
         | where {|s| ($s | str trim | str length) > 0 }
     )
@@ -53,10 +52,10 @@ export def parse-mbox [content: string] {
             let blank_idx = if ($blank_lines | length) == 0 {
                 $lines | length
             } else {
-                ($blank_lines | first).index
+                ($blank_lines | first).index | into int
             }
 
-            let header_lines = $lines | skip 1 | first ([$blank_idx - 1, 0] | math max)
+            let header_lines = $lines | skip 1 | first ([($blank_idx - 1), 0] | math max)
             let body_lines   = if ($blank_idx + 1) < ($lines | length) {
                 $lines | skip ($blank_idx + 1)
             } else {

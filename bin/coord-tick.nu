@@ -130,7 +130,7 @@ resume_tag        = \"($resume_tag)\"
 reason            = \"($reason)\"
 last_verdict      = \"($verdict)\"
 attempts          = ($attempts)
-proposed_actions  = [($proposed_actions | each {|a| $"\"($a)\""} | str join ', ')]
+proposed_actions  = [($proposed_actions | each {|a| ('"' + $a + '"')} | str join ', ')]
 "
     $mbox_msg | save --append $spool
 }
@@ -208,12 +208,13 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
     let messages = parse-mbox $content
 
     mut new_seen       = $state.seen_ids
-    mut dispatch_state = null   # set when we find a request to dispatch
+    mut dispatch_state = $state   # overwritten when a dispatch target is found
+    mut has_dispatch   = false
     mut current_state  = $state
 
     for msg in $messages {
         # Stop processing once we've identified a dispatch target.
-        if $dispatch_state != null { break }
+        if $has_dispatch { break }
 
         let id = msg-id $msg
         if $id == "" or ($id in $new_seen) { continue }
@@ -248,7 +249,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
 
             if $direction == "reply" {
                 # Get current attempt count for this task
-                let attempt_n = $current_state.attempt_counts | get $task_id? | default 0
+                let attempt_n = $current_state.attempt_counts | get -o $task_id | default 0
 
                 if $verdict == "pass" {
                     # Check attestation requirement
@@ -270,6 +271,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                                 | update pending_task_id    $task_id
                                 | update pending_to_addr    $from_addr
                                 | update fsm_state          "dispatching")
+                            $has_dispatch = true
                             log-event "harvest_reply_retry" {message_id: $id, task_id: $task_id, verdict: "fail", attempt: $attempt_n}
                         } else {
                             let _ = write-halt-marker $root $task_id "retry-exhausted" $verdict $id $attempt_n
@@ -283,7 +285,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                     } else {
                         # pass + verified
                         log-event "harvest_reply_pass" {message_id: $id, task_id: $task_id}
-                        let cleared_counts = $current_state.attempt_counts | reject $task_id?
+                        let cleared_counts = if $task_id in $current_state.attempt_counts { $current_state.attempt_counts | reject $task_id } else { $current_state.attempt_counts }
                         $new_seen = $new_seen | append $id
                         $current_state = ($current_state | update seen_ids $new_seen | update attempt_counts $cleared_counts)
                         continue
@@ -298,6 +300,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                             | update pending_task_id    $task_id
                             | update pending_to_addr    $from_addr
                             | update fsm_state          "dispatching")
+                        $has_dispatch = true
                         log-event "harvest_reply_retry" {message_id: $id, task_id: $task_id, verdict: $verdict, attempt: $attempt_n}
                     } else {
                         let _ = write-halt-marker $root $task_id "retry-exhausted" $verdict $id $attempt_n
@@ -321,6 +324,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                                 | update pending_task_id    $task_id
                                 | update pending_to_addr    $from_addr
                                 | update fsm_state          "dispatching")
+                            $has_dispatch = true
                             log-event "harvest_reply_retry" {message_id: $id, task_id: $task_id, verdict: $verdict, attempt: $attempt_n}
                         } else {
                             let _ = write-halt-marker $root $task_id "retry-exhausted" $verdict $id $attempt_n
@@ -356,7 +360,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                 # §17: check tools_required against known agent capabilities
                 let tools_required = $payload | get "tools_required"? | default []
                 let agent_type     = $payload | get "agent_type"?     | default "general-purpose"
-                let capabilities   = $AGENT_CAPABILITIES | get $agent_type? | default ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+                let capabilities   = $AGENT_CAPABILITIES | get -o $agent_type | default ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
                 let missing_tools  = $tools_required | where {|t| not ($t in $capabilities)}
 
                 if ($missing_tools | length) > 0 {
@@ -386,17 +390,18 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                         | update pending_task_id    $task_id
                         | update pending_to_addr    $to_addr
                         | update fsm_state          "dispatching")
-                    # break is implicit: dispatch_state != null will stop outer loop
+                    $has_dispatch = true
+                    # break is implicit: has_dispatch will stop outer loop
                 }
             }
         }
 
-        if $dispatch_state == null {
+        if not $has_dispatch {
             $new_seen = $new_seen | append $id
         }
     }
 
-    if $dispatch_state != null {
+    if $has_dispatch {
         tick $dispatch_state $spool $root ($remaining - 1)
     } else {
         $current_state
@@ -476,7 +481,7 @@ failure_reason = \"timeout: no reply within 300s\"
 # then transition to waiting. Tracks attempt counts with retry-aware headers.
 def state-dispatching [state: record, spool: string, root: string, remaining: int] {
     let task_id      = $state | get pending_task_id? | default "unknown"
-    let attempt_n    = $state.attempt_counts | get $task_id? | default 0
+    let attempt_n    = $state.attempt_counts | get -o $task_id | default 0
     let next_attempt = $attempt_n + 1
     let ts           = date now | format date "%Y%m%d%H%M%S"
     let msg_id       = $"<coord.($state.tick_count).r($next_attempt).($ts)@smolbsd.local>"

@@ -69,8 +69,8 @@ val = 2"
 
 let multi_msgs = parse-mbox $multi_mbox
 assert equal ($multi_msgs | length) 2
-assert equal ($multi_msgs | get 0 | msg-id) "<msg.one@host>"
-assert equal ($multi_msgs | get 1 | msg-id) "<msg.two@host>"
+assert equal (msg-id ($multi_msgs | get 0)) "<msg.one@host>"
+assert equal (msg-id ($multi_msgs | get 1)) "<msg.two@host>"
 
 # ---------------------------------------------------------------------------
 # Test: msg-id helper
