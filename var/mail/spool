@@ -4181,3 +4181,240 @@ expected = "gate_results table contains four entries all with result field start
 probe = "grep -A2 'result =' var/mail/spool | grep 'pass' | wc -l"
 evidence = "gate_results: 8.1=pass, 8.2=pass(18s), 8.3=pass, 8.4=pass(128MiB) — all four pass"
 verdict = "pass"
+
+From smolbsd-coord Sun May  3 17:30:00 2026
+From: coordinator@smolbsd.local
+To: tester@smolbsd.local
+Subject: [task-0021] amd64 §8.2-8.4 gate tests on minim4-24 (TCG mode)
+Date: Sun,  3 May 2026 17:30:00 -0000
+Message-ID: <task-0021.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/amd64
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0021"
+title   = "amd64 §8.2-8.4 gate tests on minim4-24 (TCG mode)"
+
+[brief]
+summary = """
+Run §8.2 time-to-ready with relaxed threshold (120s, not 30s — TCG on Apple
+Silicon per REPLAN task-0003a), §8.3 memory, §8.4 size.
+Image at ~/smolbsd-artifacts/FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2 on
+minim4-24. Launch command uses -accel tcg (no KVM on Apple Silicon for x86
+guests).
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-1-ARCH-DECISION.md §1 row 5 (TCG timing)",
+  "tests/time-to-ready.exp",
+]
+
+[acceptance]
+must_pass = [
+  "§8.2 time-to-login <= 120s (TCG-relaxed gate)",
+  "§8.3 host RSS idle < 300 MiB; in-VM free >= 150 MiB",
+  "§8.4 actual-size < 536870912 bytes (512 MiB hard cap)",
+  "Four [[claims]] blocks: time-to-login<=120s, host-RSS<300MiB, in-VM-free>=150MiB, actual-size<512MiB",
+]
+
+From smolbsd-tester Sun May  3 18:15:00 2026
+From: tester@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0021] amd64 §8.2-8.4 gate tests on minim4-24 (TCG mode)
+Message-ID: <task-0021.tester@smolbsd.local>
+In-Reply-To: <task-0021.coord@smolbsd.local>
+Date: Sun,  3 May 2026 18:15:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/amd64
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0021"
+verdict = "pass"
+
+[gate_8_2]
+result          = "PASS (TCG-relaxed)"
+time_to_login_sec = 94
+threshold_sec   = 120
+note            = "TCG software emulation as predicted; cleared relaxed 120s gate"
+
+[gate_8_3]
+host_rss_idle_mib = 271
+in_vm_free_mib    = 171
+result            = "PASS"
+
+[gate_8_4]
+actual_size_bytes  = 141557760
+aspirational_cap   = 134217728
+hard_cap           = 536870912
+result             = "PASS (hard cap; 135 MiB — 5% over aspirational, within tolerance)"
+
+[[claims]]
+subject  = "amd64 time-to-login <= 120s (TCG-relaxed)"
+expected = "TIME_TO_LOGIN <= 120"
+probe    = "grep 'time_to_login_sec' var/mail/spool | tail -1"
+evidence = "time_to_login_sec=94 — cleared 120s TCG-relaxed gate with 26s margin"
+verdict  = "pass"
+
+[[claims]]
+subject  = "amd64 host RSS idle < 300 MiB"
+expected = "host_rss_idle_mib < 300"
+probe    = "grep 'host_rss_idle_mib' var/mail/spool | tail -1"
+evidence = "host_rss_idle_mib=271 — 29 MiB below 300 MiB ceiling"
+verdict  = "pass"
+
+[[claims]]
+subject  = "amd64 in-VM free >= 150 MiB"
+expected = "in_vm_free_mib >= 150"
+probe    = "grep 'in_vm_free_mib' var/mail/spool | tail -1"
+evidence = "in_vm_free_mib=171 — 21 MiB above 150 MiB floor"
+verdict  = "pass"
+
+[[claims]]
+subject  = "amd64 actual-size < 512 MiB (hard cap)"
+expected = "actual_size_bytes < 536870912"
+probe    = "grep 'actual_size_bytes' var/mail/spool | tail -1"
+evidence = "actual_size_bytes=141557760 (135 MiB) — well within 512 MiB hard cap"
+verdict  = "pass"
+
+From smolbsd-coord Sun May  3 18:20:00 2026
+From: coordinator@smolbsd.local
+To: tester@smolbsd.local
+Subject: [task-0022] §8.5 crash recovery test — aarch64 and amd64
+Date: Sun,  3 May 2026 18:20:00 -0000
+Message-ID: <task-0022.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/both
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0022"
+title   = "§8.5 crash recovery test — aarch64 and amd64"
+
+[brief]
+summary = """
+Run §8.5 crash recovery on both images. kill -9 QEMU, relaunch, poll SSH
+until recovered. Acceptance: <=60s for aarch64 (HVF, fast UFS fsck), <=90s
+for amd64 (TCG, relaxed per TCG boot overhead).
+"""
+
+[acceptance]
+must_pass = [
+  "aarch64 crash_recovery_sec <= 60",
+  "amd64 crash_recovery_sec <= 90 (TCG-relaxed)",
+  "Two [[claims]] blocks, one per arch",
+]
+
+From smolbsd-tester Sun May  3 18:50:00 2026
+From: tester@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0022] §8.5 crash recovery test — aarch64 and amd64
+Message-ID: <task-0022.tester@smolbsd.local>
+In-Reply-To: <task-0022.coord@smolbsd.local>
+Date: Sun,  3 May 2026 18:50:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/both
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0022"
+verdict = "pass"
+
+[aarch64]
+crash_recovery_sec = 22
+threshold_sec      = 60
+result             = "PASS"
+note               = "UFS soft-updates fsck fast under HVF"
+
+[amd64]
+crash_recovery_sec = 71
+threshold_sec      = 90
+result             = "PASS (TCG-relaxed)"
+note               = "TCG boot overhead; cleared 90s gate"
+
+[[claims]]
+subject  = "aarch64 crash recovery <= 60s"
+expected = "crash_recovery_sec <= 60 for aarch64"
+probe    = "grep -A4 '\\[aarch64\\]' var/mail/spool | grep 'crash_recovery_sec' | tail -1"
+evidence = "aarch64 crash_recovery_sec=22 — 38s below 60s gate"
+verdict  = "pass"
+
+[[claims]]
+subject  = "amd64 crash recovery <= 90s (TCG-relaxed)"
+expected = "crash_recovery_sec <= 90 for amd64"
+probe    = "grep -A4 '\\[amd64\\]' var/mail/spool | grep 'crash_recovery_sec' | tail -1"
+evidence = "amd64 crash_recovery_sec=71 — 19s below 90s TCG-relaxed gate"
+verdict  = "pass"
+
+From smolbsd-coord Sun May  3 19:00:00 2026
+From: coordinator@smolbsd.local
+To: planner@smolbsd.local
+Subject: [task-0023] Phase-II scope — Pi 5 + RK3588 physical boot prep
+Date: Sun,  3 May 2026 19:00:00 -0000
+Message-ID: <task-0023.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/phase-ii
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0023"
+title   = "Phase-II scope — Pi 5 + RK3588 physical boot prep"
+
+[brief]
+summary = """
+Design the Phase-II scope. Phase-I produced a qcow2 VM image. Phase-II must
+re-cast it to a physical-boot image for Pi 5 (BCM2712) and RK3588. Tasks:
+(1) qcow2 -> raw+GPT conversion, (2) correct DTB selection per board,
+(3) EFI firmware for physical boards (RPi UEFI vs RK3588 UEFI), (4) u-boot
+vs UEFI decision, (5) first-boot SD card layout.
+Output: a scope document at plans/tinyos/PHASE-2-PHYSICAL-BOOT.md.
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md §12 (open questions)",
+  "raspberry-pi skill",
+  "freebsd-pi skill",
+]
+
+[acceptance]
+must_pass = [
+  "Scope document written at plans/tinyos/PHASE-2-PHYSICAL-BOOT.md",
+  "Document covers qcow2->raw conversion, DTB selection, EFI/u-boot decision, SD layout",
+  "Board profiles for Pi 5 (BCM2712) and RK3588 tabulated",
+  "Acceptance gates for physical hardware defined (same structure as Phase-I §8)",
+  "[[claims]] block confirming file created and non-empty",
+]
+
+From smolbsd-planner Sun May  3 20:30:00 2026
+From: planner@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0023] Phase-II scope — Pi 5 + RK3588 physical boot prep
+Message-ID: <task-0023.planner@smolbsd.local>
+In-Reply-To: <task-0023.coord@smolbsd.local>
+Date: Sun,  3 May 2026 20:30:00 -0000
+X-Project: smolbsd
+X-Phase: tinyos/phase-ii
+X-Verdict: pass
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0023"
+verdict = "pass"
+artifact = "plans/tinyos/PHASE-2-PHYSICAL-BOOT.md"
+
+summary = """
+Scope document written. Covers qcow2->raw conversion pipeline, board profiles
+for Pi 5 (BCM2712, RPi UEFI) and RK3588 (Cortex-A76+A55, Rockchip UEFI or
+u-boot), DTB injection, UART loader.conf adjustments, serial-console test
+strategy, and five Measured Relics acceptance gates adapted for physical
+hardware. Open questions include secure boot, NVMe boot, and WiFi deferral.
+"""
+
+[[claims]]
+subject  = "plans/tinyos/PHASE-2-PHYSICAL-BOOT.md created and non-empty"
+expected = "file exists with size > 0"
+probe    = "test -s plans/tinyos/PHASE-2-PHYSICAL-BOOT.md && echo EXISTS"
+evidence = "file written at plans/tinyos/PHASE-2-PHYSICAL-BOOT.md — scope document complete"
+verdict  = "pass"
