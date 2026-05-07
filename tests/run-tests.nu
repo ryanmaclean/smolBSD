@@ -175,9 +175,9 @@ def run-e2e-test [arch: string, script: string, qcow2: string] {
 
     let secs = $match.capture0 | into int
     if $secs <= 30 {
-        {name: $name, status: "pass", detail: $"TIME_TO_LOGIN=($secs)s (<= 30s)"}
+        {name: $name, status: "pass", detail: $"TIME_TO_LOGIN=($secs)s — gate: <=30s PASS"}
     } else {
-        {name: $name, status: "fail", detail: $"TIME_TO_LOGIN=($secs)s (> 30s acceptance threshold)"}
+        {name: $name, status: "fail", detail: $"TIME_TO_LOGIN=($secs)s — gate: <=30s FAIL"}
     }
 }
 
@@ -195,10 +195,10 @@ def main [
     # E2E tests (require real qcow2 images)
     if $suite == "all" or $suite == "e2e" {
         if $arch == "all" or $arch == "amd64" {
-            $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready.exp" "FreeBSD-15-amd64-smolbsd.qcow2")
+            $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready.exp" "build/FreeBSD-15-amd64-smolbsd.qcow2")
         }
         if $arch == "all" or $arch == "aarch64" {
-            $results = $results | append (run-e2e-test "aarch64" "tests/time-to-ready-arm64.exp" "FreeBSD-15-aarch64-smolbsd.qcow2")
+            $results = $results | append (run-e2e-test "aarch64" "tests/time-to-ready-arm64.exp" "build/FreeBSD-15-aarch64-smolbsd.qcow2")
         }
     }
 

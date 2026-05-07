@@ -12,9 +12,9 @@ spawn /opt/homebrew/bin/qemu-system-aarch64 \
   -cpu host \
   -m 256M -smp 2 \
   -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd \
-  -drive file=FreeBSD-15-aarch64-smolbsd.qcow2,format=qcow2,if=virtio \
+  -drive file=build/FreeBSD-15-aarch64-smolbsd.qcow2,format=qcow2,if=virtio \
   -nic user,model=virtio-net-pci,hostfwd=tcp::2231-:22 \
-  -serial stdio -nographic
+  -nographic
 expect {
   "login:" { puts "TIME_TO_LOGIN=[expr {[clock seconds] - $t0}]s" }
   timeout  { puts "TIMEOUT"; exit 1 }
