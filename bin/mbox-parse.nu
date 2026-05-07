@@ -37,35 +37,37 @@ export def parse-mbox [content: string] {
     $raw_messages | each {|msg_body|
         # First line is the mbox "From " envelope line (sender + timestamp).
         let lines = $msg_body | lines
-        if ($lines | length) == 0 { return null }
-
-        let from_line = $"From ($lines | first)"
-
-        # Headers end at the first blank line; body is everything after.
-        let blank_idx_result = (
-            $lines
-            | enumerate
-            | skip 1               # skip the from_line we already captured
-            | where {|e| ($e.item | str trim) == ""}
-            | first
-        )
-
-        # Guard against messages with no blank line (malformed — skip body).
-        let blank_idx = $blank_idx_result | get index? | default ($lines | length)
-
-        let header_lines = $lines | skip 1 | first ([$blank_idx - 1, 0] | math max)
-        let body_lines   = if ($blank_idx + 1) < ($lines | length) {
-            $lines | skip ($blank_idx + 1)
+        if ($lines | length) == 0 {
+            null
         } else {
-            []
+            let from_line = $"From ($lines | first)"
+
+            # Headers end at the first blank line; body is everything after.
+            let blank_idx_result = (
+                $lines
+                | enumerate
+                | skip 1               # skip the from_line we already captured
+                | where {|e| ($e.item | str trim) == ""}
+                | get 0?
+            )
+
+            # Guard against messages with no blank line (malformed — skip body).
+            let blank_idx = $blank_idx_result | get index? | default ($lines | length)
+
+            let header_lines = $lines | skip 1 | first ([$blank_idx - 1, 0] | math max)
+            let body_lines   = if ($blank_idx + 1) < ($lines | length) {
+                $lines | skip ($blank_idx + 1)
+            } else {
+                []
+            }
+
+            let headers = parse-headers $header_lines
+            let body    = $body_lines | str join "\n"
+
+            {from_line: $from_line, headers: $headers, body: $body}
         }
-
-        let headers = parse-headers $header_lines
-        let body    = $body_lines | str join "\n"
-
-        {from_line: $from_line, headers: $headers, body: $body}
     }
-    | where {|r| $r != null }
+    | compact
 }
 
 # Parse RFC822 header lines into a flat record.
