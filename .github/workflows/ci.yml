@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ── Nushell unit + integration tests ────────────────────────────────────────
+  nu-tests:
+    name: Nu tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Nushell
+        uses: hustcer/setup-nu@v3
+        with:
+          version: '*'
+
+      # openssl -timeout flag and nc -w are used by try-irc-dm in coord-tick.nu.
+      # Both are pre-installed on macOS runners; Linux needs netcat-openbsd.
+      - name: Install netcat-openbsd (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y --no-install-recommends netcat-openbsd
+
+      - name: Show Nushell version
+        run: nu --version
+
+      # mbox-parse-test.nu: pure unit tests, no subprocess calls.
+      - name: mbox-parse unit tests
+        run: nu --no-config-file tests/mbox-parse-test.nu
+
+      # coord-tick-test.nu: integration tests — spawns `nu bin/coord-tick.nu`
+      # as a subprocess, writes temp files via mktemp, exercises all FSM states.
+      # IRC tests expect the host to be unreachable and assert clean exit code.
+      - name: coord-tick integration tests
+        run: nu --no-config-file tests/coord-tick-test.nu
+
+  # ── Shell script linting ─────────────────────────────────────────────────────
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint shell scripts
+        run: shellcheck bin/coord-run.sh tests/run-all.sh
