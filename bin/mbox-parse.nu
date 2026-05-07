@@ -22,7 +22,7 @@ export def parse-mbox [content: string] {
             # items had the "From " prefix consumed by the split delimiter.
             let raw = if $entry.index == 0 {
                 if ($entry.item | str starts-with "From ") {
-                    $entry.item | str substring 5..   # strip leading "From "
+                    $entry.item | str replace "From " ""
                 } else {
                     $entry.item
                 }
@@ -43,16 +43,16 @@ export def parse-mbox [content: string] {
             let from_line = $"From ($lines | first)"
 
             # Headers end at the first blank line; body is everything after.
-            let blank_idx_result = (
+            # Guard against messages with no blank line (malformed).
+            let blank_idx = (
                 $lines
                 | enumerate
                 | skip 1               # skip the from_line we already captured
                 | where {|e| ($e.item | str trim) == ""}
                 | get 0?
+                | default {index: ($lines | length)}
+                | get index
             )
-
-            # Guard against messages with no blank line (malformed — skip body).
-            let blank_idx = $blank_idx_result | get index? | default ($lines | length)
 
             let header_lines = $lines | skip 1 | first ([$blank_idx - 1, 0] | math max)
             let body_lines   = if ($blank_idx + 1) < ($lines | length) {
@@ -88,10 +88,10 @@ def parse-headers [lines: list<string>] {
             if $current_key != "" {
                 $pairs = $pairs | append {key: $current_key, val: $current_val}
             }
-            let colon_pos = $line | str index-of ":"
-            if $colon_pos > 0 {
-                $current_key = $line | str substring ..($colon_pos - 1) | str trim
-                $current_val = $line | str substring ($colon_pos + 1).. | str trim
+            if ($line | str contains ":") {
+                let parts = $line | split row ":"
+                $current_key = $parts | first | str trim
+                $current_val = $parts | skip 1 | str join ":" | str trim
             } else {
                 $current_key = ""
                 $current_val = ""
