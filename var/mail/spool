@@ -3369,3 +3369,266 @@ expected = "README.fr.md and README.ja.md jj describe arg is English 'your messa
 evidence = "README.fr.md line 50 and README.ja.md line 45 updated; code blocks otherwise untouched"
 verdict  = "pass"
 
+
+From harvester Mon May  4 00:00:00 2026
+From: harvester@smolbsd.local
+To: builder@smolbsd.local
+Subject: [task-0014] aarch64 buildworld+release pipeline check — FAILED
+Date: Mon, 04 May 2026 00:00:00 -0000
+Message-ID: <task-0014b.harvester@smolbsd.local>
+X-Project: smolbsd
+X-Task: task-0014
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0014"
+verdict  = "fail"
+
+[result]
+status        = "failed"
+qcow2_present = false
+qcow2_path    = ""
+qcow2_sha256  = ""
+
+[log_tail]
+lines = """
+--- X86FoldTablesEmitter.o ---
+[...LLVM cross-tools build, X86 emitters compiling for arm64.aarch64 toolchain...]
+--- llvm-tblgen.full ---
+[link step completed successfully]
+--- llvm-tblgen.debug ---
+objcopy --only-keep-debug llvm-tblgen.full llvm-tblgen.debug
+--- llvm-tblgen ---
+objcopy --strip-debug --add-gnu-debuglink=llvm-tblgen.debug  llvm-tblgen.full llvm-tblgen
+--- _proginstall ---
+sh /usr/src/tools/install.sh  -s -o root -g wheel -m 555   llvm-tblgen /usr/obj/usr/src/arm64.aarch64/tmp/legacy/usr/bin/llvm-tblgen
+--- _debuginstall ---
+sh /usr/src/tools/install.sh  -o root -g wheel -m 444  llvm-tblgen.debug /usr/obj/usr/src/arm64.aarch64/tmp/legacy/usr/lib/debug/usr/bin/llvm-tblgen.debug
+       57.38 real       210.75 user        12.76 sys
+mkdir -p /usr/obj/usr/src/arm64.aarch64/tmp/usr /usr/obj/usr/src/arm64.aarch64/tmp/lib/geom /usr/obj/usr/src/arm64.aarch64/tmp/bin
+mtree -deUW -f /usr/src/etc/mtree/BSD.usr.dist  -p /usr/obj/usr/src/arm64.aarch64/tmp/usr >/dev/null
+mtree -deUW -f /usr/src/etc/mtree/BSD.include.dist  -p /usr/obj/usr/src/arm64.aarch64/tmp/usr/include >/dev/null
+mkdir -p /usr/obj/usr/src/arm64.aarch64/tmp/usr/include/arm
+mkdir: /usr/obj/usr/src/arm64.aarch64/tmp/usr/include/arm: Permission denied
+make[1]: stopped making "buildworld" in /usr/src
+make: stopped making "buildworld" in /usr/src
+"""
+
+[failure_analysis]
+stage      = "buildworld — post-LLVM toolchain, mtree/mkdir phase"
+error      = "mkdir: /usr/obj/usr/src/arm64.aarch64/tmp/usr/include/arm: Permission denied"
+obj_path   = "/usr/obj/usr/src/arm64.aarch64/tmp/usr/include/arm"
+disk_usage = "49G used / 67G total on /dev/gpt/rootfs (80%)"
+screen     = "no active screen sessions"
+kernel     = "not present"
+
+[next_steps]
+action = "Manual intervention required. Likely cause: obj tree owned by root or wrong user after a previous partial build. On VM: chown -R builder /usr/obj/usr/src/arm64.aarch64 then re-run buildworld."
+
+[[claims]]
+subject  = "aarch64 buildworld+release exit status"
+expected = "exit=0 in log or qcow2 present"
+probe    = "tail -5 /var/tmp/smolbsd-world.log"
+evidence = "make: stopped making 'buildworld' in /usr/src — mkdir Permission denied on /usr/obj/usr/src/arm64.aarch64/tmp/usr/include/arm"
+verdict  = "fail"
+From smolbsd-harvester Sun May 04 2026 00:00:00 +0000
+From: harvester@smolbsd.local
+To: operator@smolbsd.local
+Subject: [task-0008] amd64 buildworld check — SSH unreachable
+Date: Sun, 04 May 2026 00:00:00 +0000
+Message-ID: <task-0008e.harvester@smolbsd.local>
+X-Project: smolbsd
+X-Phase: build/amd64
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0008"
+verdict  = "fail"
+
+[result]
+status              = "ssh-unreachable"
+qcow2_present       = false
+instance_terminated = false
+bw_exit_code        = "unknown"
+release_started     = false
+
+[instance]
+id         = "171abe56-fd68-4041-9376-9f235d9b9775"
+ip         = "107.191.39.47"
+power      = "running"
+server_state = "ok"
+label      = "smolbsd-buildworld"
+created    = "2026-05-04T20:51:41+00:00"
+
+[ssh_probe]
+attempt_1 = "ssh root@107.191.39.47 — Connection refused (port 22)"
+attempt_2 = "ssh root@107.191.39.47 -v — Connection refused at TCP level"
+port_22   = "Connection refused"
+port_2222 = "Connection refused"
+port_80   = "Connection refused"
+known_host_key = "ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoKy7He9FPQkgeqLi+GKKnMJchQ+seOESEP5mce5kdl (present)"
+
+[diagnosis]
+summary = "Instance reports power=running/server_state=ok via Vultr API, but sshd is not accepting connections on port 22. TCP connection is actively refused (not filtered/timed out). Instance was created 2026-05-04 and has been running 3+ days — not an early-boot delay. Most likely cause: sshd daemon crashed or OOM-killed while buildworld was consuming all 4GB RAM. Screen sessions and build progress unknown."
+
+[constraints_observed]
+ssh_calls_used = 2
+no_reboot_issued = true
+reason = "Rebooting would kill in-progress buildworld screen session and lose all build progress. Not acceptable without user authorization."
+
+[next_steps]
+recommended = [
+  "Use Vultr KVM/noVNC console (URL in Vultr dashboard) to check sshd status and restart it: 'service sshd restart'",
+  "If OOM: check /var/log/messages for OOM kills, then restart sshd and retry",
+  "Alternative: snapshot the instance now, then check build status via console",
+  "Do NOT reboot — would kill smolbsd-bw screen session",
+]
+kvm_url_available = true
+
+[[claims]]
+subject  = "amd64 buildworld exit status"
+expected = "exit=0 in /var/tmp/smolbsd-bw.log"
+probe    = "tail -3 /var/tmp/smolbsd-bw.log"
+evidence = "Could not probe — SSH refused. Vultr instance active but sshd not responding."
+verdict  = "in-progress"
+
+From builder Wed May  6 22:48:20 2026
+From: builder@smolbsd.local
+To: operator@smolbsd.local
+Subject: [task-0014c] aarch64 obj ownership fix + buildworld restart
+Date: Wed, 06 May 2026 22:48:20 +0000
+Message-ID: <task-0014c.builder@smolbsd.local>
+X-Project: smolbsd
+X-Phase: build/aarch64
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0014c"
+verdict  = "pass"
+
+[fix]
+root_cause  = "obj tree owned by root from prior sudo make run"
+fix_applied = "sudo /usr/sbin/chown -R builder /usr/obj/usr/src/arm64.aarch64"
+note        = "FreeBSD builder gid is wheel (0), not builder — chown user-only (no :group) used"
+
+[build]
+screen_session = "smolbsd-world2"
+log_path       = "/var/tmp/smolbsd-world2.log"
+started        = true
+harvest_cmd    = "ssh -J 100.91.236.29 -p 2222 builder@localhost 'tail -30 /var/tmp/smolbsd-world2.log; find /usr/obj -name \"*.qcow2\" 2>/dev/null'"
+
+[[claims]]
+subject  = "ownership fixed"
+expected = "ls -la /usr/obj/usr/src/ shows builder wheel for arm64.aarch64"
+evidence = "drwxrwxr-x  5 builder wheel 512 May  4 21:01 arm64.aarch64"
+verdict  = "pass"
+
+[[claims]]
+subject  = "smolbsd-world2 screen session started"
+expected = "screen -ls shows smolbsd-world2 (Detached)"
+evidence = "22982.smolbsd-world2\t(05/06/26 22:48:17)\t(Detached)"
+verdict  = "pass"
+
+[[claims]]
+subject  = "buildworld pipeline running"
+expected = "World build started message in log"
+evidence = ">>> World build started on Wed May  6 22:48:18 UTC 2026"
+verdict  = "pass"
+
+From builder Wed May  6 23:09:00 2026
+From: builder@smolbsd.local
+To: operator@smolbsd.local
+Subject: [task-0008f] amd64 buildworld instance OOM recovery — reprovision 8GB
+Date: Wed, 06 May 2026 23:09:00 +0000
+Message-ID: <task-0008f.builder@smolbsd.local>
+X-Project: smolbsd
+X-Phase: build/amd64
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0008f"
+verdict  = "pass"
+
+[old_instance]
+id            = "171abe56-fd68-4041-9376-9f235d9b9775"
+ip            = "107.191.39.47"
+plan          = "vc2-2c-4gb"
+fate          = "deleted"
+reason        = "buildworld exited with exit=2 (OOM during LLVM bootstrap); screen session gone after soft reboot; /var/tmp/smolbsd-bw.log confirmed failure"
+
+[new_instance]
+id            = "0c7c4607-e05c-4d6e-864d-6b846b9703cc"
+ip            = "140.82.9.132"
+plan          = "vc2-4c-8gb"
+region        = "ewr"
+os            = "FreeBSD 15 x64 (ID 2720)"
+label         = "smolbsd-buildworld-8gb"
+ssh_key_added = "mbp-m1-ed25519 (5518413b-0d1c-4d16-a858-40e172586380)"
+
+[build]
+screen_session = "smolbsd-bw"
+log_path       = "/var/tmp/smolbsd-bw.log"
+started        = true
+pipeline       = "buildworld → buildkernel SMOLBSD → vm-image qcow2"
+harvest_cmd    = "ssh -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 root@140.82.9.132 'tail -30 /var/tmp/smolbsd-bw.log; find /usr/obj -name \"*.qcow2\" 2>/dev/null'"
+
+[[claims]]
+subject  = "old instance deleted"
+expected = "instance 171abe56 no longer exists"
+evidence = "vultr instance delete returned: Instance has been deleted"
+verdict  = "pass"
+
+[[claims]]
+subject  = "new 8GB instance provisioned and ready"
+expected = "server_status=ok, main_ip assigned"
+evidence = "id=0c7c4607-e05c-4d6e-864d-6b846b9703cc ip=140.82.9.132 status=ok"
+verdict  = "pass"
+
+[[claims]]
+subject  = "smolbsd-bw screen session started"
+expected = "screen -ls shows smolbsd-bw (Detached)"
+evidence = "2401.smolbsd-bw (05/06/26 23:08:51) (Detached)"
+verdict  = "pass"
+
+[[claims]]
+subject  = "buildworld pipeline running"
+expected = "buildworld start line in log"
+evidence = "--- buildworld start: Wed May  6 23:08:51 UTC 2026"
+verdict  = "pass"
+
+From smolbsd-harvester Sun May  4 00:00:00 2026
+From: harvester@smolbsd.local
+To: builder@smolbsd.local
+Subject: [task-0017] aarch64 smolBSD build status — FAILED
+Date: Sun, 04 May 2026 00:00:00 -0000
+Message-ID: <task-0017.harvester@smolbsd.local>
+X-Project: smolbsd
+X-Phase: build/aarch64
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0017"
+verdict  = "fail"
+
+[result]
+build_status      = "failed"
+qcow2_present     = false
+qcow2_local       = false
+qcow2_path        = ""
+qcow2_sha256      = ""
+time_to_login_sec = 0
+acceptance_gate   = "skip"
+
+[failure]
+stage   = "vm-image / create-source-packages"
+error_1 = "git detected dubious ownership at /usr/src — 'git config --global --add safe.directory /usr/src' not set for builder user"
+error_2 = "/usr/obj at 98% capacity (60G/67G used, 1.4G free) — insufficient space for vm-image target"
+screen  = "no screen session running — build has stopped"
+
+[[claims]]
+subject  = "aarch64 buildworld+release exit=0"
+expected = "exit=0 lines in /var/tmp/smolbsd-world2.log"
+evidence = "Build failed at make vm-image: 'Error code 128' from git safe.directory check; no screen session active; only mkimg test fixtures found in /usr/obj (not a release qcow2)"
+verdict  = "fail"
+
+[[claims]]
+subject  = "time-to-login <= 30s on aarch64 HVF"
+expected = "TIME_TO_LOGIN <= 30"
+evidence = "skipped — no release qcow2 available to boot"
+verdict  = "skip"
+
