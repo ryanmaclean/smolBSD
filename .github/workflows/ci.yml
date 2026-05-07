@@ -33,8 +33,9 @@ jobs:
         run: nu --version
 
       # Capture module parse result and post to PR for diagnosis.
+      # Runs even if earlier steps (including setup-nu) failed.
       - name: Parse-check and report
-        if: github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
