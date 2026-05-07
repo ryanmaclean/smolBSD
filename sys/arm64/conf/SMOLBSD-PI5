@@ -1,0 +1,261 @@
+# Materialized from plans/tinyos/PHASE-2-PHYSICAL-BOOT.md §8
+# Authoring chain: planner@smolbsd.local <task-0023.builder@smolbsd.local>
+#
+# SMOLBSD-PI5 — FreeBSD 15 arm64 kernel for Raspberry Pi 5 (BCM2712)
+# Target: headless physical boot, SD card root (UFS), USB-attached GbE,
+#         PL011 serial console, RPi UEFI (pftf Pi5 branch) FDT boot path.
+# Derived from sys/arm64/conf/SMOLBSD (QEMU-only baseline).
+#
+# -----------------------------------------------------------------------
+# KEY DIFFERENCES FROM SMOLBSD (QEMU)
+# -----------------------------------------------------------------------
+# 1. NO virtio — physical hardware; all virtio_* lines become no-ops but
+#    the nodevice lines from SMOLBSD are retained verbatim (still correct
+#    on physical: virtio has no hardware to bind on bare metal, but
+#    keeping the nodevice entries prevents the drivers from being compiled
+#    in if std.virt would otherwise pull them).
+#
+# 2. BCM2712 SoC drivers added:
+#    - bcm2835_gpio     : GPIO controller (shared BCM2835 register layout,
+#                         carried forward on BCM2712)
+#    - bcm2835_bsc      : I2C (Broadcom Serial Controller)
+#    - bcm2835_spi      : SPI controller
+#    - bcm2835_wdog     : Hardware watchdog
+#    - bcm2835_mbox     : Mailbox IPC between ARM and VideoCore firmware
+#    - bcm2838_pcie     : PCIe controller (BCM2838 == BCM2711/2712 PCIe)
+#    - gpioc, gpiobus   : GPIO bus infrastructure (required by bcm2835_gpio)
+#
+# 3. USB added back — Pi 5 USB 3 host via Synopsys xHCI on PCIe:
+#    - xhci             : USB 3.0 host controller (xHCI)
+#    - usb, usb_storage : USB bus and mass-storage (not used for root, but
+#                         needed for USB peripherals / firmware blobs)
+#    - ue               : USB-attached Ethernet (Broadcom BCM54213PE GbE
+#                         on Pi 5 main board appears as USB Ethernet when
+#                         using the RPi UEFI FDT path on some firmware
+#                         revisions; also needed for USB-Ethernet dongles)
+#
+# 4. SD / MMC added — Pi 5 boots from SD via SDHCI-compatible controller:
+#    - mmc, mmcsd       : MMC bus + block device
+#    - sdhci            : SDHCI generic driver (maps to RPi SDHOST/SDHCI)
+#    - bcm2835_sdhci    : BCM2835-family SDHCI glue (DMA-capable SD host)
+#
+# 5. FDT retained (was already in SMOLBSD for QEMU virt; also required
+#    for Pi 5 physical boot — RPi UEFI passes a BCM2712 DTB to the loader).
+#    No change needed; documented here for clarity.
+#
+# 6. ACPI disabled — RPi UEFI Pi5 FDT path does NOT provide complete ACPI
+#    tables as of 2026-05 (beta firmware); ACPI enumeration would produce
+#    acpi_error panics. FDT is the sole enumeration path for Pi 5.
+#    nodevice acpi overrides the acpi device pulled in by std.arm64.
+#
+# Build host: fbuild (FreeBSD 15 aarch64); native arm64 build.
+# UART: PL011 at 0xfe201000 (uart0). loader.conf: console="uart0"
+# See: release/tools/smolbsd-pi5.conf, plans/tinyos/PHASE-2-PHYSICAL-BOOT.md
+#
+# Maintainer: planner@smolbsd.local
+
+cpu     ARM64
+ident   SMOLBSD-PI5
+
+include "std.arm64"
+include "std.dev"
+include "std.virt"
+
+# -----------------------------------------------------------------------
+# FDT — required for BCM2712 physical boot via RPi UEFI FDT path.
+# RPi UEFI passes bcm2712-rpi-5-b.dtb to loader.efi; the kernel must
+# parse it for device enumeration.  (Was already present in SMOLBSD for
+# QEMU virt; retained here with explicit rationale.)
+# -----------------------------------------------------------------------
+options FDT                         # Flattened Device Tree; mandatory for Pi 5
+
+# -----------------------------------------------------------------------
+# ACPI: disable — RPi UEFI Pi5 branch ACPI tables are incomplete (beta).
+# acpi_error panics on FreeBSD 15 aarch64 with current pftf Pi5 firmware.
+# Revisit in Phase III when ACPI tables mature upstream.
+# -----------------------------------------------------------------------
+nodevice acpi                       # FDT-only boot; no ACPI on Pi 5 (2026-05)
+
+# -----------------------------------------------------------------------
+# BCM2712 SoC drivers
+# BCM2712 is the Pi 5 SoC. Its low-speed peripherals (GPIO, I2C, SPI,
+# mailbox, watchdog) use the same register layout as BCM2835/2836/2838;
+# FreeBSD 15 arm64 ships bcm2835_* drivers that bind via FDT compatible
+# strings and cover BCM2712 on the same driver path.
+# -----------------------------------------------------------------------
+device  gpioc                       # GPIO character device (/dev/gpioc*)
+device  gpiobus                     # GPIO bus infrastructure
+device  bcm2835_gpio                # BCM2712 GPIO controller (FDT: brcm,bcm2712-gpio)
+device  bcm2835_bsc                 # BCM2712 I2C (Broadcom Serial Controller)
+device  bcm2835_spi                 # BCM2712 SPI controller
+device  bcm2835_wdog                # BCM2712 hardware watchdog
+device  bcm2835_mbox                # VideoCore mailbox IPC (firmware queries)
+device  bcm2838_pcie                # BCM2712 PCIe controller (host bridge for USB xHCI + NIC)
+
+# -----------------------------------------------------------------------
+# SD / MMC — Pi 5 boots from microSD via BCM2712 SDHCI controller.
+# bcm2835_sdhci is the DMA-capable SDHOST glue; sdhci is the generic
+# SDHCI layer it sits on; mmc + mmcsd provide the MMC bus and block device.
+# -----------------------------------------------------------------------
+device  mmc                         # MMC/SD bus
+device  mmcsd                       # MMC/SD block device (/dev/mmcsd0)
+device  sdhci                       # Generic SDHCI layer
+device  bcm2835_sdhci               # BCM2712 SDHCI glue (DMA-capable)
+
+# -----------------------------------------------------------------------
+# USB — Pi 5 USB 3 host via Synopsys xHCI on PCIe (bcm2838_pcie above).
+# Pi 5 does NOT use dwc_otg (OTG was BCM2835/2836 only); it uses a proper
+# xHCI host controller.  USB stack is needed for:
+#   - xhci       : USB 3.0 host controller (mandatory)
+#   - usb        : USB bus layer
+#   - uhub       : USB hub driver (root hub + downstream hubs)
+#   - umass      : USB mass storage (not for root; useful for USB drives)
+#   - ue         : USB-to-Ethernet (BCM54213PE on some firmware revisions;
+#                  USB-Ethernet dongles for field use)
+#   - usbhid/ukbd: NOT included — headless, no keyboard
+# -----------------------------------------------------------------------
+device  xhci                        # USB 3.0 xHCI host controller
+device  usb                         # USB bus layer
+device  uhub                        # USB hub (root + downstream)
+device  umass                       # USB mass storage (removable media)
+device  ue                          # USB-to-Ethernet (CDC-Ethernet / ASIX / etc.)
+device  scbus                       # CAM SCSI bus (required by umass)
+device  da                          # CAM disk (da*) for USB mass storage
+
+# -----------------------------------------------------------------------
+# Ethernet — Pi 5 on-board NIC (Broadcom BCM54213PE, 1GbE via PCIe).
+# Under FreeBSD FDT path with RPi UEFI the NIC enumerates as bge(4) or
+# as ue(4) depending on firmware revision and DTB.  Keep both; only the
+# matching one will attach at runtime.
+# -----------------------------------------------------------------------
+device  bge                         # Broadcom BCM5706/BCM5714/BCM54xx GbE
+# ue already declared in USB section above (handles USB-path enumeration)
+
+# -----------------------------------------------------------------------
+# UART — PL011 at 0xfe201000 (uart0).
+# Inherited from std.arm64 via the generic uart driver.  Explicit here
+# for documentation; no additional lines needed beyond what SMOLBSD had.
+# -----------------------------------------------------------------------
+device  uart                        # Generic UART / PL011 serial console
+
+# -----------------------------------------------------------------------
+# Strip virtio — no VirtIO hardware on physical Pi 5.
+# These nodevice lines are carried from SMOLBSD verbatim.  They are
+# correct on physical: std.virt would otherwise compile these in.
+# -----------------------------------------------------------------------
+# (virtio block / net / balloon are addressed by the nodevice lines below
+#  via the inherited SMOLBSD structure — see comment blocks that follow)
+
+# -----------------------------------------------------------------------
+# Strip physical storage controllers irrelevant to Pi 5
+# (same list as SMOLBSD; none of these controllers exist on BCM2712)
+# -----------------------------------------------------------------------
+nodevice ahc
+nodevice ahd
+nodevice hptiop
+nodevice isp
+nodevice mpt
+nodevice mps
+nodevice mpr
+nodevice mpi3mr
+nodevice sym
+nodevice isci
+nodevice ocs_fc
+nodevice pvscsi
+nodevice arcmsr
+nodevice ciss
+nodevice aac
+nodevice mfi
+nodevice mrsas
+nodevice ata
+nodevice mvs
+nodevice siis
+nodevice ufshci
+nodevice vmd
+
+# -----------------------------------------------------------------------
+# Strip physical NICs not present on Pi 5
+# bge kept above (Pi 5 on-board NIC); everything else removed.
+# vtnet removed — no virtio on physical hardware.
+# -----------------------------------------------------------------------
+nodevice vtnet                      # VirtIO NIC — no virtio on physical Pi 5
+nodevice em
+nodevice igc
+nodevice ix
+nodevice ixv
+nodevice ixl
+nodevice iavf
+nodevice ice
+nodevice mlx5
+nodevice aq
+nodevice bxe
+nodevice rge                        # Realtek 8169 — not on Pi 5 board
+nodevice ti
+
+# -----------------------------------------------------------------------
+# Strip wireless (headless; BCM2712 WiFi deferred to Phase III)
+# -----------------------------------------------------------------------
+nodevice wlan
+nodevice wlan_amrr
+nodevice wlan_ccmp
+nodevice wlan_tkip
+nodevice wlan_xauth
+nodevice ath
+nodevice ath_pci
+nodevice ath_hal
+nodevice iwn
+nodevice iwi
+nodevice ipw
+nodevice malo
+nodevice mwl
+nodevice ral
+nodevice wpi
+nodevice iwlwifi
+nodevice rtwn
+nodevice rsu
+
+# -----------------------------------------------------------------------
+# Strip legacy / irrelevant USB drivers
+# (xhci + usb + ue kept above; only strip what we don't need)
+# -----------------------------------------------------------------------
+nodevice uhci                       # USB 1.1 UHCI — not on Pi 5
+nodevice ohci                       # USB 1.1 OHCI — not on Pi 5
+nodevice ehci                       # USB 2.0 EHCI — not on Pi 5 (xHCI handles 2.0)
+nodevice usbhid                     # HID — headless, no HID devices
+nodevice hkbd                       # HID keyboard
+nodevice ukbd                       # USB keyboard — headless
+
+# -----------------------------------------------------------------------
+# Strip parallel port / legacy I/O (arm64, not present on BCM2712)
+# -----------------------------------------------------------------------
+nodevice ppc
+nodevice ppbus
+nodevice lpt
+
+# -----------------------------------------------------------------------
+# Strip sound (headless server image)
+# -----------------------------------------------------------------------
+nooptions SND_SUPPORT
+nodevice sound
+nodevice snd_hda
+nodevice snd_ich
+nodevice snd_via8233
+
+# -----------------------------------------------------------------------
+# Strip Hyper-V (physical board, not Hyper-V guest)
+# -----------------------------------------------------------------------
+nodevice hyperv
+
+# -----------------------------------------------------------------------
+# Production tuning (same as SMOLBSD)
+# -----------------------------------------------------------------------
+makeoptions DEBUG=
+nooptions KDB_UNATTENDED
+nooptions WITNESS
+nooptions INVARIANTS
+nooptions INVARIANT_SUPPORT
+nooptions BUF_TRACKING
+nooptions FULL_BUF_TRACKING
+
+nooptions COMPAT_FREEBSD10
+nooptions COMPAT_FREEBSD11

@@ -354,6 +354,187 @@ def state-halted [state: record, root: string] {
     $state | update fsm_state "halted"
 }
 
+# ── Phase-II batch dispatch ───────────────────────────────────────────────────
+
+# Parse the §8 files-to-create markdown table from PHASE-2-PHYSICAL-BOOT.md.
+# Returns a list of records: {path: string, purpose: string, status: string}.
+# Rows with a backtick-quoted path cell are handled; leading/trailing spaces trimmed.
+def parse-phase-ii-table [doc_path: string] {
+    if not ($doc_path | path exists) {
+        error make {msg: $"Phase-II plan not found: ($doc_path)"}
+    }
+
+    let raw = open --raw $doc_path
+
+    # Isolate the §8 block: everything from "## 8." up to the next "---" separator.
+    let after_s8 = $raw | split row "## 8." | last
+    let section  = $after_s8 | split row "\n---" | first
+
+    # Extract pipe-delimited data rows (skip the header and separator rows).
+    # A data row: starts with '|', has at least 3 cells, does NOT consist solely
+    # of pipes and dashes (separator row).
+    let rows = (
+        $section
+        | lines
+        | where {|ln|
+            let t        = $ln | str trim
+            # Keep rows that start with "|" and are not pure separator lines
+            # (separator rows contain only |, -, and spaces after stripping).
+            let stripped = $t | str replace --all "|" "" | str replace --all "-" "" | str replace --all " " ""
+            ($t | str starts-with "|") and (not ($stripped | is-empty))
+        }
+        | skip 1   # skip the header row (| Path | Purpose | Status |)
+        | each {|ln|
+            # Split on "|", drop first and last empty segments from leading/trailing "|".
+            let cells = $ln | split row "|" | skip 1 | drop 1 | each {|c| $c | str trim}
+            if ($cells | length) < 3 {
+                null
+            } else {
+                # Strip surrounding backticks from path cell.
+                let raw_path = $cells | get 0
+                let path     = $raw_path | str replace --all "`" ""
+                let purpose  = $cells | get 1
+                let status   = $cells | get 2 | str downcase | str trim
+                {path: $path, purpose: $purpose, status: $status}
+            }
+        }
+        | where {|r| $r != null}
+    )
+
+    $rows
+}
+
+# Build a slug suitable for use in a Message-ID / task_id from a file path.
+# e.g. "release/tools/smolbsd-pi5.conf" -> "release-tools-smolbsd-pi5-conf"
+def path-to-slug [p: string] {
+    $p
+    | str replace --all "/" "-"
+    | str replace --all "." "-"
+    | str replace --all "_" "-"
+}
+
+# Emit one coordinator dispatch mbox message to the spool for a Phase-II file task.
+# Returns the Message-ID string emitted.
+def emit-dispatch [spool: string, task_id: string, path: string, purpose: string] {
+    let env_ts  = date now | format date "%a %b %d %H:%M:%S %Y"
+    let hdr_ts  = date now | format date "%a, %d %b %Y %H:%M:%S -0000"
+    let msg_id  = $"<($task_id).coord@smolbsd.local>"
+    let to_addr = "builder@smolbsd.local"
+    let from_addr = "coordinator@smolbsd.local"
+    let subject = $"[($task_id)] Phase-II create ($path)"
+
+    # Build TOML body line-by-line to avoid Nushell string-interpolation
+    # conflicts with bracket characters and filenames containing dots.
+    let lines = [
+        $"task_id   = \"($task_id)\""
+        $"title     = \"Create ($path)\""
+        "phase     = \"tinyos/physical-boot\""
+        "deadline  = \"2026-05-31\""
+        ""
+        "[brief]"
+        "summary = \"\"\""
+        "Phase-II file creation task (see PHASE-2-PHYSICAL-BOOT plan, section 8)."
+        $"Purpose: ($purpose)"
+        $"Path: ($path)"
+        "\"\"\""
+        ""
+        "[context_pointers]"
+        "read = ["
+        "  \"plans/tinyos/PHASE-2-PHYSICAL-BOOT.md\","
+        "]"
+        ""
+        "[acceptance]"
+        "must_pass = ["
+        $"  \"File ($path) exists and is non-empty\","
+        $"  \"Content matches purpose: ($purpose)\","
+        "]"
+        ""
+        "[reply_contract]"
+        "output_to            = \"coordinator@smolbsd.local\""
+        "output_format        = \"mbox+toml-v1\""
+        "attestation_required = true"
+        "tools_required       = [\"Read\", \"Write\"]"
+        "tools_allowed        = [\"Read\", \"Write\", \"Edit\", \"Bash\", \"Grep\", \"Glob\"]"
+        "budget_tokens        = 40000"
+    ]
+    let body = $lines | str join "\n"
+
+    let envelope = $"From smolbsd-coord ($env_ts)
+From: ($from_addr)
+To: ($to_addr)
+Subject: ($subject)
+Date: ($hdr_ts)
+Message-ID: ($msg_id)
+X-Project: smolbsd
+X-Phase: tinyos/physical-boot
+Content-Type: text/toml; charset=utf-8
+
+($body)
+"
+    # Ensure spool directory exists.
+    let spool_dir = $spool | path dirname
+    if not ($spool_dir | path exists) {
+        mkdir $spool_dir
+    }
+
+    $envelope | save --append $spool
+
+    $msg_id
+}
+
+# Read PHASE-2-PHYSICAL-BOOT.md §8, emit a coordinator dispatch mbox message
+# to the spool for each row whose status is "pending".
+# Returns {dispatched: int, skipped: int}.
+export def dispatch-phase-ii [
+    --spool: string = "var/mail/spool"   # path to mbox spool
+    --root:  string = "."                # project root
+] {
+    let abs_root  = $root | path expand
+    let abs_spool = [$abs_root, $spool] | path join
+    let doc_path  = [$abs_root, "plans", "tinyos", "PHASE-2-PHYSICAL-BOOT.md"] | path join
+
+    log-event "phase_ii_dispatch_start" {doc: $doc_path, spool: $abs_spool}
+
+    let rows = parse-phase-ii-table $doc_path
+
+    mut dispatched = 0
+    mut skipped    = 0
+
+    for row in $rows {
+        if ($row.status != "pending") {
+            log-event "phase_ii_dispatch" {
+                action:  "skipped"
+                path:    $row.path
+                status:  $row.status
+                reason:  "not pending"
+            }
+            $skipped = $skipped + 1
+            continue
+        }
+
+        let slug    = path-to-slug $row.path
+        let task_id = $"phase-ii-($slug)"
+        let msg_id  = emit-dispatch $abs_spool $task_id $row.path $row.purpose
+
+        log-event "phase_ii_dispatch" {
+            action:    "dispatched"
+            task_id:   $task_id
+            path:      $row.path
+            purpose:   $row.purpose
+            message_id: $msg_id
+            spool:     $abs_spool
+        }
+
+        $dispatched = $dispatched + 1
+    }
+
+    let summary = {dispatched: $dispatched, skipped: $skipped}
+
+    log-event "phase_ii_dispatch_done" $summary
+
+    $summary
+}
+
 # ── Tail-recursive dispatch core ──────────────────────────────────────────────
 
 # The coordinator FSM.  Each call is one state transition.
@@ -396,20 +577,29 @@ def tick [state: record, spool: string, root: string, remaining: int] {
 
 # Run one coordinator tick.
 #
-# --state-file  path to the persistent TOML state file (created if absent)
-# --spool       path to the mbox spool file
-# --max-ticks   maximum FSM transitions in this invocation (budget guard)
-# --root        project root directory (default: current working directory)
+# --state-file       path to the persistent TOML state file (created if absent)
+# --spool            path to the mbox spool file
+# --max-ticks        maximum FSM transitions in this invocation (budget guard)
+# --root             project root directory (default: current working directory)
+# --dispatch-phase-ii  emit Phase-II §8 pending tasks to spool then exit (no FSM tick)
 export def main [
-    --state-file: string = "var/run/coord-state.toml"
-    --spool:      string = "var/mail/spool"
-    --max-ticks:  int    = 100
-    --root:       string = "."
+    --state-file:       string = "var/run/coord-state.toml"
+    --spool:            string = "var/mail/spool"
+    --max-ticks:        int    = 100
+    --root:             string = "."
+    --dispatch-phase-ii              # emit Phase-II §8 pending-file tasks to spool
 ] {
     # Resolve all paths relative to --root so the binary works from any cwd.
     let abs_root       = $root | path expand
     let abs_state_file = [$abs_root, $state_file] | path join
     let abs_spool      = [$abs_root, $spool]      | path join
+
+    # --dispatch-phase-ii: batch-emit Phase-II tasks then return; skip FSM tick.
+    if $dispatch_phase_ii {
+        let summary = dispatch-phase-ii --spool $spool --root $root
+        print ($summary | to toml)
+        return
+    }
 
     log-event "coord_tick_start" {
         state_file: $abs_state_file
