@@ -40,6 +40,7 @@ def default-state [] {
         pending_request_id: ""
         pending_task_id:    ""
         pending_to_addr:    ""
+        dispatched_at:      ""
         attempt_counts:     {}   # record keyed by task_id → int attempt count
         halted_tasks:       []
     }
@@ -397,10 +398,41 @@ def state-waiting [state: record, spool: string, root: string, remaining: int] {
             | update pending_request_id ""
             | update pending_task_id    ""
             | update pending_to_addr    ""
+            | update dispatched_at      ""
             | update fsm_state          "harvesting"
         tick $next_state $spool $root ($remaining - 1)
     } else {
         log-event "waiting_no_reply" {pending_request_id: $state.pending_request_id}
+
+        # Timeout: treat no-reply > 300s as a fail (triggers D2 retry table on next harvest)
+        if $state.dispatched_at != "" {
+            let elapsed = (date now) - ($state.dispatched_at | into datetime)
+            if ($elapsed | into int) > 300_000_000_000 {   # 300s in nanoseconds
+                log-event "waiting_timeout" {
+                    pending_request_id: $state.pending_request_id
+                    pending_task_id:    $state.pending_task_id
+                    dispatched_at:      $state.dispatched_at
+                }
+                # Inject a synthetic fail reply into the spool so the next harvest triggers retry
+                let ts = date now | format date "%Y%m%d%H%M%S"
+                let synth_id = $"<timeout.($state.pending_task_id).($ts)@smolbsd.local>"
+                let synth_msg = $"From coordinator@smolbsd.local ($ts)
+From: coordinator@smolbsd.local
+To: coordinator@smolbsd.local
+Message-ID: ($synth_id)
+In-Reply-To: ($state.pending_request_id)
+Content-Type: text/toml; charset=utf-8
+
+task_id = \"($state.pending_task_id)\"
+verdict = \"fail\"
+failure_reason = \"timeout: no reply within 300s\"
+"
+                let existing = if ($spool | path exists) { open --raw $spool } else { "" }
+                $"($existing)($synth_msg)" | save --force $spool
+                return ($state | update fsm_state "idle" | update dispatched_at "")
+            }
+        }
+
         $state
     }
 }
@@ -440,7 +472,12 @@ action = \"dispatch\"
     }
 
     let updated_counts = $state.attempt_counts | insert $task_id $next_attempt
-    tick ($state | update fsm_state "waiting" | update attempt_counts $updated_counts) $spool $root ($remaining - 1)
+    tick ($state
+        | update fsm_state          "waiting"
+        | update attempt_counts     $updated_counts
+        | update pending_request_id $msg_id
+        | update dispatched_at      (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+    ) $spool $root ($remaining - 1)
 }
 
 # halted: global HALT marker is present or all tasks failed.
@@ -466,10 +503,23 @@ def state-halted [state: record, root: string, spool: string] {
                 let matched = $state.halted_tasks | where {|t| $"resume-($t)" == $resume_tag }
                 if ($matched | length) > 0 {
                     let task = $matched | first
-                    log-event "halted_resume_pending" {
+                    let action_hdr = $msg.headers | get "X-Resume-Action"? | default "retry"
+                    log-event "halted_resume_action" {
                         task_id:    $task
                         resume_tag: $resume_tag
-                        action:     "resume message found; clear per-task HALT marker to unblock"
+                        action:     $action_hdr
+                    }
+                    if $action_hdr == "retry" or $action_hdr == "edit" {
+                        # Remove from halted_tasks; delete per-task HALT marker
+                        let per_halt = [$root, "var", "mail", $"HALT.($task)"] | path join
+                        if ($per_halt | path exists) { rm $per_halt }
+                        # Return state with task removed from halted_tasks, back to idle for re-dispatch
+                        return ($state
+                            | update halted_tasks ($state.halted_tasks | where {|t| $t != $task})
+                            | update fsm_state "idle")
+                    } else {
+                        # abort — keep halted, do nothing
+                        log-event "halted_abort" {task_id: $task}
                     }
                 }
             }
