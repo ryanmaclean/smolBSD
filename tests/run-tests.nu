@@ -9,6 +9,7 @@
 #   nu tests/run-tests.nu --arch aarch64     # e2e for aarch64 only
 
 use ../bin/mbox-parse.nu [parse-mbox, extract-toml, msg-id]
+use coord-fsm-tests.nu [run-coord-fsm-tests]
 
 # Minimal two-message mbox fixture used by unit tests.
 const FIXTURE_MBOX = "From agent1 Mon May  4 10:00:00 2026
@@ -190,6 +191,7 @@ def main [
     # Unit tests
     if $suite == "all" or $suite == "unit" {
         $results = $results | append (run-unit-tests)
+        $results = $results | append (run-coord-fsm-tests)
     }
 
     # E2E tests (require real qcow2 images)
