@@ -10,7 +10,7 @@
 #   dispatching  — writing a request into the spool and queuing a subagent launch
 #   waiting      — request dispatched, polling spool for matching reply
 #   harvesting   — new replies present; cross-check claims
-#   halted       — var/mail/HALT file exists; block until user clears it
+#   halted       — global var/mail/HALT present OR all tasks failed; clears per-task on resume
 #
 # HALT check: one `stat var/mail/HALT` per tick entry — O(1) per spec §13.
 
@@ -41,6 +41,7 @@ def default-state [] {
         pending_task_id:    ""
         pending_to_addr:    ""
         attempt_counts:     {}   # record keyed by task_id → int attempt count
+        halted_tasks:       []
     }
 }
 
@@ -83,6 +84,55 @@ def log-event [event: string, payload: record] {
 def halt-present [root: string] {
     let halt_path = [$root, "var", "mail", "HALT"] | path join
     $halt_path | path exists
+}
+
+# Write a per-task HALT marker. Returns the path written.
+def write-halt-marker [root: string, task_id: string, reason: string, verdict: string, message_id: string, attempts: int] {
+    let halt_path = [$root, "var", "mail", $"HALT.($task_id)"] | path join
+    let halt_dir  = $halt_path | path dirname
+    if not ($halt_dir | path exists) { mkdir $halt_dir }
+    {
+        task_id:    $task_id
+        verdict:    $verdict
+        message_id: $message_id
+        halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        reason:     $reason
+        attempts:   $attempts
+        halt_msgid: $"<halt-($task_id).coord@smolbsd.local>"
+        resume_tag: $"resume-($task_id)"
+    } | to toml | save --force $halt_path
+    $halt_path
+}
+
+# Append a spec-compliant HALT mbox message to the spool.
+def append-halt-message [spool: string, task_id: string, reason: string, verdict: string, attempts: int, proposed_actions: list<string>] {
+    let ts        = date now | format date "%Y%m%d%H%M%S"
+    let halt_msgid = $"<halt-($task_id).coord@smolbsd.local>"
+    let resume_tag = $"resume-($task_id)"
+    let x_halt_reason = match $reason {
+        "retry-exhausted"  => "retry-exhausted"
+        "no-unblocker"     => "claim-verification-failed"
+        _                  => $reason
+    }
+    let mbox_msg = $"From coordinator@smolbsd.local ($ts)
+From: coordinator@smolbsd.local
+To: user@smolbsd.local
+Subject: [HALT] ($task_id) — ($reason)
+Message-ID: ($halt_msgid)
+X-Halt-Reason: ($x_halt_reason)
+X-Resume-Tag: ($resume_tag)
+Content-Type: text/toml; charset=utf-8
+
+task_id           = \"($task_id)\"
+halt_msgid        = \"($halt_msgid)\"
+resume_tag        = \"($resume_tag)\"
+reason            = \"($reason)\"
+last_verdict      = \"($verdict)\"
+attempts          = ($attempts)
+proposed_actions  = [($proposed_actions | each {|a| $"\"($a)\""} | str join ', ')]
+"
+    let existing = if ($spool | path exists) { open --raw $spool } else { "" }
+    $"($existing)($mbox_msg)" | save --force $spool
 }
 
 # ── FSM states ────────────────────────────────────────────────────────────────
@@ -189,16 +239,9 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                                 | update fsm_state          "dispatching")
                             log-event "harvest_reply_retry" {message_id: $id, task_id: $task_id, verdict: "fail", attempt: $attempt_n}
                         } else {
-                            let halt_path = [$root, "var", "mail", "HALT"] | path join
-                            if not (($halt_path | path dirname) | path exists) { mkdir ($halt_path | path dirname) }
-                            {
-                                task_id:    $task_id
-                                verdict:    $verdict
-                                message_id: $id
-                                halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
-                                reason:     "retry-exhausted"
-                                attempts:   ($current_state.attempt_counts | get $task_id? | default 0)
-                            } | to toml | save --force $halt_path
+                            let _ = write-halt-marker $root $task_id "retry-exhausted" $verdict $id $attempt_n
+                            append-halt-message $spool $task_id "retry-exhausted" $verdict $attempt_n ["retry", "abort"]
+                            $current_state = ($current_state | update halted_tasks ($current_state.halted_tasks | append $task_id))
                             log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "retry-exhausted"}
                             $new_seen = $new_seen | append $id
                             return ($current_state | update seen_ids $new_seen | update fsm_state "idle")
@@ -223,16 +266,9 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                             | update fsm_state          "dispatching")
                         log-event "harvest_reply_retry" {message_id: $id, task_id: $task_id, verdict: $verdict, attempt: $attempt_n}
                     } else {
-                        let halt_path = [$root, "var", "mail", "HALT"] | path join
-                        if not (($halt_path | path dirname) | path exists) { mkdir ($halt_path | path dirname) }
-                        {
-                            task_id:    $task_id
-                            verdict:    $verdict
-                            message_id: $id
-                            halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
-                            reason:     "retry-exhausted"
-                            attempts:   ($current_state.attempt_counts | get $task_id? | default 0)
-                        } | to toml | save --force $halt_path
+                        let _ = write-halt-marker $root $task_id "retry-exhausted" $verdict $id $attempt_n
+                        append-halt-message $spool $task_id "retry-exhausted" $verdict $attempt_n ["retry", "abort"]
+                        $current_state = ($current_state | update halted_tasks ($current_state.halted_tasks | append $task_id))
                         log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "retry-exhausted"}
                         $new_seen = $new_seen | append $id
                         return ($current_state | update seen_ids $new_seen | update fsm_state "idle")
@@ -252,32 +288,18 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                                 | update fsm_state          "dispatching")
                             log-event "harvest_reply_retry" {message_id: $id, task_id: $task_id, verdict: $verdict, attempt: $attempt_n}
                         } else {
-                            let halt_path = [$root, "var", "mail", "HALT"] | path join
-                            if not (($halt_path | path dirname) | path exists) { mkdir ($halt_path | path dirname) }
-                            {
-                                task_id:    $task_id
-                                verdict:    $verdict
-                                message_id: $id
-                                halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
-                                reason:     "retry-exhausted"
-                                attempts:   ($current_state.attempt_counts | get $task_id? | default 0)
-                            } | to toml | save --force $halt_path
+                            let _ = write-halt-marker $root $task_id "retry-exhausted" $verdict $id $attempt_n
+                            append-halt-message $spool $task_id "retry-exhausted" $verdict $attempt_n ["retry", "abort"]
+                            $current_state = ($current_state | update halted_tasks ($current_state.halted_tasks | append $task_id))
                             log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "retry-exhausted"}
                             $new_seen = $new_seen | append $id
                             return ($current_state | update seen_ids $new_seen | update fsm_state "idle")
                         }
                     } else {
                         # no blocked_by — immediate HALT, no retry
-                        let halt_path = [$root, "var", "mail", "HALT"] | path join
-                        if not (($halt_path | path dirname) | path exists) { mkdir ($halt_path | path dirname) }
-                        {
-                            task_id:    $task_id
-                            verdict:    $verdict
-                            message_id: $id
-                            halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
-                            reason:     "no-unblocker"
-                            attempts:   ($current_state.attempt_counts | get $task_id? | default 0)
-                        } | to toml | save --force $halt_path
+                        let _ = write-halt-marker $root $task_id "no-unblocker" $verdict $id $attempt_n
+                        append-halt-message $spool $task_id "no-unblocker" $verdict $attempt_n ["abort", "edit"]
+                        $current_state = ($current_state | update halted_tasks ($current_state.halted_tasks | append $task_id))
                         log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "no-unblocker"}
                         $new_seen = $new_seen | append $id
                         return ($current_state | update seen_ids $new_seen | update fsm_state "idle")
@@ -287,6 +309,13 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
 
             # If this is an unmatched outbound request, dispatch it (first one wins).
             if $direction == "request" {
+                # Skip tasks that are already halted.
+                if $task_id in $current_state.halted_tasks {
+                    log-event "dispatch_skipped_halted" {task_id: $task_id, message_id: $id}
+                    $new_seen = $new_seen | append $id
+                    continue
+                }
+
                 # §17: check tools_required against known agent capabilities
                 let tools_required = $payload | get "tools_required"? | default []
                 let agent_type     = $payload | get "agent_type"?     | default "general-purpose"
@@ -414,35 +443,35 @@ action = \"dispatch\"
     tick ($state | update fsm_state "waiting" | update attempt_counts $updated_counts) $spool $root ($remaining - 1)
 }
 
-# halted: HALT marker is present.  Log and stop — do not recurse further.
+# halted: global HALT marker is present or all tasks failed.
 # Per spec §13: wait for user to rm var/mail/HALT and post a resume message.
 # We return here; the next cron/manual invocation will re-check.
 def state-halted [state: record, root: string, spool: string] {
     let halt_path = [$root, "var", "mail", "HALT"] | path join
     let halt_info = try { open --raw $halt_path | from toml } catch { {} }
     log-event "halted" {
-        halt_file: $halt_path
-        info:      ($halt_info | to nuon)
-        note:      "coordinator paused; rm var/mail/HALT + append resume message to unblock"
+        halt_file:    $halt_path
+        info:         ($halt_info | to nuon)
+        halted_tasks: ($state.halted_tasks | str join ", ")
+        note:         "coordinator paused; rm var/mail/HALT + append resume message to unblock"
     }
 
-    # Scan spool for a pending resume message (user may have appended before rm-ing HALT)
+    # Scan spool for resume messages matching tasks in halted_tasks.
     if ($spool | path exists) {
         let content  = open --raw $spool
         let messages = parse-mbox $content
-        let resume_msg = (
-            $messages
-            | where {|m|
-                let action = $m.headers | get "X-Resume-Action"? | default ""
-                $action != ""
-            }
-            | first 1
-        )
-        if ($resume_msg | length) > 0 {
-            let action = ($resume_msg | first).headers | get "X-Resume-Action"
-            log-event "halted_resume_pending" {
-                action:  $action
-                note:    "resume message detected; will act after user removes HALT file"
+        for msg in $messages {
+            let resume_tag = $msg.headers | get "X-Resume-Tag"? | default ""
+            if $resume_tag != "" {
+                let matched = $state.halted_tasks | where {|t| $"resume-($t)" == $resume_tag }
+                if ($matched | length) > 0 {
+                    let task = $matched | first
+                    log-event "halted_resume_pending" {
+                        task_id:    $task
+                        resume_tag: $resume_tag
+                        action:     "resume message found; clear per-task HALT marker to unblock"
+                    }
+                }
             }
         }
     }
