@@ -146,7 +146,8 @@ def run-unit-tests [] {
 
 # Run a single e2e test via expect(1).
 # Returns a {name, status, detail} record.
-def run-e2e-test [arch: string, script: string, qcow2: string] {
+# extra_args: optional list of args to pass to the expect script (e.g. ["tcg"] or ["kvm"])
+def run-e2e-test [arch: string, script: string, qcow2: string, ...extra_args: string] {
     let name = $"e2e-($arch)"
 
     if not ($qcow2 | path exists) {
@@ -155,7 +156,7 @@ def run-e2e-test [arch: string, script: string, qcow2: string] {
 
     # Run the expect script; capture combined output.
     let result = try {
-        ^expect $script | complete
+        ^expect $script $qcow2 ...$extra_args | complete
     } catch {|err|
         return {name: $name, status: "fail", detail: $"failed to run expect: ($err.msg)"}
     }
@@ -168,7 +169,13 @@ def run-e2e-test [arch: string, script: string, qcow2: string] {
         return {name: $name, status: "fail", detail: $"expect exited ($exit_code): ($last_line)"}
     }
 
-    # Parse TIME_TO_LOGIN=Ns from output.
+    # CONDITIONAL_PASS: bootloader reached (amd64 TCG on Apple Silicon)
+    if ($output | str contains "CONDITIONAL_PASS") {
+        let verdict_line = $output | lines | where {|l| $l | str contains "VERDICT:"} | first | default ""
+        return {name: $name, status: "pass", detail: $"($verdict_line)"}
+    }
+
+    # Parse TIME_TO_LOGIN=Ns from output (KVM / aarch64 HVF paths).
     let match = $output | parse --regex "TIME_TO_LOGIN=(\\d+)s" | first | default null
     if $match == null {
         return {name: $name, status: "fail", detail: $"TIME_TO_LOGIN not found in output"}
@@ -197,7 +204,14 @@ def main [
     # E2E tests (require real qcow2 images)
     if $suite == "all" or $suite == "e2e" {
         if $arch == "all" or $arch == "amd64" {
-            $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready.exp" "build/FreeBSD-15-amd64-smolbsd.qcow2")
+            # On Apple Silicon: use TCG bootloader-reachability test (no KVM for x86 guests).
+            # On x86 KVM host: set AMD64_ACCEL=kvm to run full login gate via time-to-ready.exp.
+            let accel = ($env | get AMD64_ACCEL? | default "tcg")
+            if $accel == "kvm" {
+                $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready.exp" "build/FreeBSD-15-amd64-smolbsd.qcow2")
+            } else {
+                $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready-amd64-tcg.exp" "build/FreeBSD-15-amd64-smolbsd.qcow2" "tcg")
+            }
         }
         if $arch == "all" or $arch == "aarch64" {
             $results = $results | append (run-e2e-test "aarch64" "tests/time-to-ready-arm64.exp" "build/FreeBSD-15-aarch64-smolbsd.qcow2")
