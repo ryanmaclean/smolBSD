@@ -14,7 +14,7 @@
 #
 # HALT check: one `stat var/mail/HALT` per tick entry — O(1) per spec §13.
 
-use mbox-parse.nu [parse-mbox, extract-toml, msg-id]
+use ./mbox-parse.nu [parse-mbox, extract-toml, msg-id]
 
 const AGENT_CAPABILITIES = {
     "general-purpose":          ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebFetch", "WebSearch"]

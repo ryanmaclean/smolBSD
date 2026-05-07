@@ -35,11 +35,12 @@ jobs:
       - name: Show Nushell version
         run: nu --version
 
-      # mbox-parse-test.nu uses `use ../bin/mbox-parse.nu` (relative to the test
-      # file). Nushell resolves this relative to the script file's directory, so
-      # running from repo root is correct.
+      # mbox-parse-test.nu uses `use ../bin/mbox-parse.nu`. Running from the
+      # tests/ directory ensures CWD-relative and file-relative resolution
+      # both resolve to bin/mbox-parse.nu regardless of Nushell version.
       - name: mbox-parse unit tests
-        run: nu tests/mbox-parse-test.nu
+        working-directory: tests
+        run: nu mbox-parse-test.nu
 
       # coord-tick-test.nu: integration tests — spawns `nu bin/coord-tick.nu`
       - name: coord-tick integration tests
