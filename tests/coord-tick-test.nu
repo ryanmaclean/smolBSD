@@ -254,9 +254,11 @@ do {
     ^rm -rf $tmp
 }
 
-print "test 8: verdict fail → HALT file created"
+print "test 8: verdict fail on first attempt → retry dispatched, no global HALT"
 do {
-    # Harvesting a fail-verdict reply creates var/mail/HALT in the temp root.
+    # On the first fail (attempt_n = 0 < 3) the coordinator must retry:
+    # it should transition dispatching → waiting and increment the attempt count.
+    # A global var/mail/HALT file must NOT be created on the first failure.
     let tmp = make-temp-dir
     let state_rel = "var/run/coord-state.toml"
     let state_abs = [$tmp, $state_rel] | path join
@@ -270,8 +272,14 @@ do {
 
     run-tick $tmp $state_rel $spool_rel
 
+    let state = read-state $state_abs
+    # Retry should have been dispatched → waiting
+    assert equal $state.fsm_state "waiting"
+    # Attempt count for t3 should have been incremented
+    assert (($state | get -i attempt_counts | default {} | get -i t3 | default 0) >= 1)
+    # No global HALT file should exist on the first failure
     let halt_path = [$tmp, "var", "mail", "HALT"] | path join
-    assert ($halt_path | path exists)
+    assert (not ($halt_path | path exists))
 
     ^rm -rf $tmp
 }
