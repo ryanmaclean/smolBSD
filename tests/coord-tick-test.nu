@@ -268,4 +268,146 @@ do {
     ^rm -rf $tmp
 }
 
+print "test 9: attempt counter increments on fail"
+do {
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    let msg_id = "<fail.1@host>"
+    let body = "verdict = \"fail\"\ntask_id = \"t-retry\""
+    let msg = make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $msg_id $body
+    write-spool $spool_abs $msg
+
+    run-tick $tmp $state_rel $spool_rel
+
+    let state = read-state $state_abs
+    # attempt_counts should have an entry for t-retry (value >= 1)
+    assert ($state | get -i attempt_counts | default {} | get -i t-retry | default 0) >= 1
+    # retry should have been dispatched → waiting
+    assert equal $state.fsm_state "waiting"
+
+    ^rm -rf $tmp
+}
+
+print "test 10: retry exhausted → HALT file created"
+do {
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    # Seed spool dir so HALT can be written
+    let spool_dir = [$tmp, "var", "mail"] | path join
+    mkdir $spool_dir
+
+    # Manually write state with attempt_counts = {t-exhaust: 3}
+    let state_dir = [$tmp, "var", "run"] | path join
+    mkdir $state_dir
+    (
+        "version = \"1\"\n" +
+        "tick_count = 0\n" +
+        "fsm_state = \"idle\"\n" +
+        "seen_ids = []\n" +
+        "last_tick_at = \"2026-01-01T00:00:00Z\"\n" +
+        "pending_request_id = \"\"\n" +
+        "pending_task_id = \"\"\n" +
+        "pending_to_addr = \"\"\n\n" +
+        "[attempt_counts]\n" +
+        "t-exhaust = 3\n"
+    ) | save --force $state_abs
+
+    let msg_id = "<fail.exhaust@host>"
+    let body = "verdict = \"fail\"\ntask_id = \"t-exhaust\""
+    let msg = make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $msg_id $body
+    write-spool $spool_abs $msg
+
+    run-tick $tmp $state_rel $spool_rel
+
+    # Accept either per-task HALT or bare HALT
+    let halt1 = [$tmp, "var", "mail", "HALT.t-exhaust"] | path join
+    let halt2 = [$tmp, "var", "mail", "HALT"] | path join
+    assert (($halt1 | path exists) or ($halt2 | path exists))
+
+    ^rm -rf $tmp
+}
+
+print "test 11: capability mismatch → message skipped, no dispatch"
+do {
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    let msg_id = "<cap.mismatch.t-cap@host>"
+    let body = "task_id = \"t-cap\"\nagent_type = \"reviewer\"\ntools_required = [\"Write\", \"Bash\"]"
+    # outbound request (not to coordinator)
+    let msg = make-msg "coordinator@smolbsd.local" "reviewer@smolbsd.local" $msg_id $body
+    write-spool $spool_abs $msg
+
+    run-tick $tmp $state_rel $spool_rel
+
+    let state = read-state $state_abs
+    # reviewer lacks Write/Bash → skipped, no dispatch → idle
+    assert equal $state.fsm_state "idle"
+    assert ($msg_id in $state.seen_ids)
+
+    ^rm -rf $tmp
+}
+
+print "test 12: attestation fail → treated as retry"
+do {
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    let msg_id = "<attest.fail.t-attest@host>"
+    let body = "verdict = \"pass\"\ntask_id = \"t-attest\"\nattestation_required = true"
+    let msg = make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $msg_id $body
+    write-spool $spool_abs $msg
+
+    run-tick $tmp $state_rel $spool_rel
+
+    let state = read-state $state_abs
+    # pass without claims → MALFORMED → retry → waiting
+    assert equal $state.fsm_state "waiting"
+    assert ($state | get -i attempt_counts | default {} | get -i t-attest | default 0) >= 1
+
+    ^rm -rf $tmp
+}
+
+print "test 13: blocked+no-unblocker → immediate HALT, no retry"
+do {
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    let msg_id = "<blocked.no-unblocker.t-block@host>"
+    let body = "verdict = \"blocked\"\ntask_id = \"t-block\""
+    let msg = make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $msg_id $body
+    write-spool $spool_abs $msg
+
+    run-tick $tmp $state_rel $spool_rel
+
+    # HALT file must exist
+    let halt1 = [$tmp, "var", "mail", "HALT.t-block"] | path join
+    let halt2 = [$tmp, "var", "mail", "HALT"] | path join
+    assert (($halt1 | path exists) or ($halt2 | path exists))
+
+    # No retry should have been attempted (attempt_counts for t-block == 0 or absent)
+    let state = read-state $state_abs
+    let attempt = $state | get -i attempt_counts | default {} | get -i t-block | default 0
+    assert equal $attempt 0
+
+    ^rm -rf $tmp
+}
+
 print "all tests passed"
