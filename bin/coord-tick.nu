@@ -257,7 +257,7 @@ def state-waiting [state: record, spool: string, root: string, remaining: int] {
     # Clear pending and mark the reply as seen; hand off to harvesting.
     $state
     | update seen_ids ($state.seen_ids | append $reply_id)
-    | update pending  {}
+    | upsert pending  {}
     | update fsm_state "harvesting"
 }
 
@@ -334,7 +334,7 @@ def state-dispatching [state: record, spool: string, root: string, remaining: in
 
     let next_state = $state
         | update pending_dispatch null
-        | update pending          $pending_record
+        | upsert pending          $pending_record
         | update fsm_state        "waiting"
 
     tick $next_state $spool $root ($remaining - 1)

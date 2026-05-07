@@ -285,3 +285,10 @@ nooptions FULL_BUF_TRACKING
 
 nooptions COMPAT_FREEBSD10
 nooptions COMPAT_FREEBSD11
+
+# -----------------------------------------------------------------------
+# TPM 2.0 support
+# RK3588 has no discrete TPM; device tpm enables bhyve swtpm testing and
+# future fTPM via firmware.
+# -----------------------------------------------------------------------
+device tpm              # TPM 2.0 (CRB + FIFO interfaces)
