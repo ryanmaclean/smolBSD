@@ -132,8 +132,7 @@ last_verdict      = \"($verdict)\"
 attempts          = ($attempts)
 proposed_actions  = [($proposed_actions | each {|a| $"\"($a)\""} | str join ', ')]
 "
-    let existing = if ($spool | path exists) { open --raw $spool } else { "" }
-    $"($existing)($mbox_msg)" | save --force $spool
+    $mbox_msg | save --append $spool
 }
 
 # Best-effort IRC DM to operator per spec §13.
@@ -147,7 +146,7 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
     let result = try {
         # TLS attempt on 6697 — pipe IRC NICK/USER/PRIVMSG/QUIT sequence
         let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
-        let out = $irc_cmds | ^openssl s_client -connect $"($irc_host):6697" -quiet 2>/dev/null
+        let out = $irc_cmds | ^openssl s_client -connect $"($irc_host):6697" -quiet -timeout 10 2>/dev/null
         "tls-ok"
     } catch {
         # Plain fallback on 6667
@@ -464,8 +463,7 @@ task_id = \"($state.pending_task_id)\"
 verdict = \"fail\"
 failure_reason = \"timeout: no reply within 300s\"
 "
-                let existing = if ($spool | path exists) { open --raw $spool } else { "" }
-                $"($existing)($synth_msg)" | save --force $spool
+                $synth_msg | save --append $spool
                 return ($state | update fsm_state "idle" | update dispatched_at "")
             }
         }
@@ -498,8 +496,7 @@ action = \"dispatch\"
 "
 
     # Append the message to the spool file.
-    let existing = if ($spool | path exists) { open --raw $spool } else { "" }
-    $"($existing)($mbox_msg)" | save --force $spool
+    $mbox_msg | save --append $spool
 
     log-event "dispatch_sent" {
         message_id: $msg_id
