@@ -21,11 +21,13 @@ const STATE_VERSION = "1"
 # Default state for a fresh coordinator with no prior history.
 def default-state [] {
     {
-        version:      $STATE_VERSION
-        tick_count:   0
-        fsm_state:    "idle"
-        seen_ids:     []
-        last_tick_at: (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        version:          $STATE_VERSION
+        tick_count:       0
+        fsm_state:        "idle"
+        seen_ids:         []
+        last_tick_at:     (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        pending_dispatch: null
+        waiting_for_id:   ""
     }
 }
 
@@ -101,7 +103,7 @@ def state-idle [state: record, spool: string, root: string, remaining: int] {
 }
 
 # harvesting: process each unseen message; update seen_ids.
-# Scaffolding: logs what would be dispatched; actual subagent launch is future phase.
+# Queues the first unmatched REQUEST found for dispatch (transitions to dispatching).
 def state-harvesting [state: record, spool: string, root: string, remaining: int] {
     let content  = open --raw $spool
     let messages = parse-mbox $content
@@ -140,17 +142,30 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                 verdict:    $verdict
             }
 
-            # Scaffolding: if this looks like an unmatched request, log what WOULD
-            # be dispatched.  A real dispatch would spawn a subagent here.
+            # If this looks like an unmatched request (no In-Reply-To, not yet seen),
+            # queue it for dispatch by transitioning to dispatching.
             if $direction == "request" {
                 let in_reply_to = $msg.headers | get "In-Reply-To"? | default ""
                 if $in_reply_to == "" {
-                    log-event "would_dispatch" {
+                    log-event "queue_dispatch" {
                         task_id:    $task_id
                         to_role:    $to_addr
                         message_id: $id
-                        note:       "scaffolding — actual subagent launch is a future phase"
                     }
+                    # Record this id as seen before we break out, so it is not
+                    # re-queued on the next tick while we are still in dispatching.
+                    $new_seen = $new_seen | append $id
+                    # Persist seen_ids and queue the pending_dispatch, then hand off.
+                    let dispatch_state = $state
+                        | update seen_ids $new_seen
+                        | update fsm_state "dispatching"
+                        | update pending_dispatch {
+                            task_id:    $task_id
+                            to_addr:    $to_addr
+                            message_id: $id
+                            body:       $msg.body
+                        }
+                    return (tick $dispatch_state $spool $root ($remaining - 1))
                 }
             }
         }
@@ -163,17 +178,166 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
     | update fsm_state "idle"
 }
 
-# waiting: a request has been dispatched; we are polling for a reply.
-# Scaffolding only — transitions back to idle to re-check the spool.
+# waiting: a request has been dispatched; poll the spool for a reply.
+# Checks state.pending for a msg_id to wait on.
+# If a reply is found, logs reply_received, clears pending, and transitions to harvesting.
+# If no reply yet, logs waiting_no_reply with elapsed time and stays in waiting.
+# If state.pending is absent/empty, logs waiting_no_pending and returns to idle.
 def state-waiting [state: record, spool: string, root: string, remaining: int] {
-    log-event "waiting_check" {note: "scaffolding — polling not yet implemented, returning idle"}
-    tick ($state | update fsm_state "idle") $spool $root ($remaining - 1)
+    # Read the pending field safely — may be absent in older state files.
+    let pending = $state | get pending? | default {}
+
+    let pending_msg_id = $pending | get msg_id? | default ""
+
+    if $pending_msg_id == "" {
+        log-event "waiting_no_pending" {note: "state.pending missing or has no msg_id; returning to idle"}
+        return ($state | update fsm_state "idle")
+    }
+
+    if not ($spool | path exists) {
+        log-event "waiting_no_reply" {
+            pending_msg_id: $pending_msg_id
+            reason:         "spool absent"
+        }
+        return $state
+    }
+
+    let content  = open --raw $spool
+    let messages = parse-mbox $content
+
+    # Look for a message whose In-Reply-To matches our dispatched msg_id
+    # and whose own Message-ID has not yet been seen.
+    let replies = (
+        $messages
+        | where {|m|
+            let in_reply_to = $m.headers | get "In-Reply-To"? | default ""
+            let id          = msg-id $m
+            $in_reply_to == $pending_msg_id and $id != "" and not ($id in $state.seen_ids)
+        }
+        | first 1
+    )
+
+    if ($replies | length) == 0 {
+        # No reply yet — compute elapsed time and stay in waiting.
+        let dispatched_at = $pending | get dispatched_at? | default ""
+        let elapsed_note = if $dispatched_at != "" {
+            try {
+                let dispatched_dt = $dispatched_at | into datetime
+                let now_dt        = date now
+                let elapsed_secs  = ($now_dt - $dispatched_dt) / 1sec
+                $"($elapsed_secs | into int)s"
+            } catch {
+                "unknown"
+            }
+        } else {
+            "unknown"
+        }
+
+        log-event "waiting_no_reply" {
+            pending_msg_id: $pending_msg_id
+            elapsed:        $elapsed_note
+        }
+        return $state
+    }
+
+    # Reply found — extract details and transition to harvesting.
+    let reply_msg = $replies | first
+    let reply_id  = msg-id $reply_msg
+    let payload   = extract-toml $reply_msg
+    let verdict   = $payload | get "verdict"? | default "none"
+    let task_id   = $pending | get task_id? | default "unknown"
+
+    log-event "reply_received" {
+        task_id:        $task_id
+        pending_msg_id: $pending_msg_id
+        reply_id:       $reply_id
+        verdict:        $verdict
+    }
+
+    # Clear pending and mark the reply as seen; hand off to harvesting.
+    $state
+    | update seen_ids ($state.seen_ids | append $reply_id)
+    | update pending  {}
+    | update fsm_state "harvesting"
 }
 
-# dispatching: scaffolding placeholder.
+# dispatching: detect the most recent coordinator dispatch with no matching reply,
+# record it in state.pending, and transition to waiting.
+# For now (no real subagent launch infrastructure) this means: scan the spool,
+# find the first coordinator→agent message that has no In-Reply-To pointing at it,
+# and write that as a pending record in state.
 def state-dispatching [state: record, spool: string, root: string, remaining: int] {
-    log-event "dispatching_tick" {note: "scaffolding — dispatch logic not yet implemented"}
-    tick ($state | update fsm_state "waiting") $spool $root ($remaining - 1)
+    let pd = $state | get pending_dispatch? | default null
+
+    if $pd == null {
+        log-event "dispatching_no_pending" {note: "pending_dispatch absent; returning to idle"}
+        return ($state | update fsm_state "idle")
+    }
+
+    if not ($spool | path exists) {
+        log-event "dispatching_spool_absent" {note: "spool absent; cannot scan for unmatched dispatch"}
+        return ($state | update fsm_state "idle")
+    }
+
+    let content  = open --raw $spool
+    let messages = parse-mbox $content
+
+    # Build a set of all In-Reply-To values across the entire spool,
+    # so we can check which coordinator messages have no reply yet.
+    let all_in_reply_to = (
+        $messages
+        | each {|m| $m.headers | get "In-Reply-To"? | default ""}
+        | where {|s| $s != ""}
+    )
+
+    # Find the first coordinator message (From: coordinator@) that has no
+    # matching reply (no other message has In-Reply-To == its Message-ID).
+    let unmatched = (
+        $messages
+        | where {|m|
+            let from_addr = $m.headers | get "From"? | default ""
+            let id        = msg-id $m
+            ($from_addr | str contains "coordinator@") and $id != "" and not ($id in $all_in_reply_to)
+        }
+        | first 1
+    )
+
+    # Use the pending_dispatch queued by harvesting, or the first unmatched spool message.
+    let task_id    = $pd.task_id
+    let message_id = $pd.message_id
+
+    let now_ts = date now | format date "%Y-%m-%dT%H:%M:%SZ"
+
+    let pending_record = {
+        task_id:       $task_id
+        msg_id:        $message_id
+        dispatched_at: $now_ts
+    }
+
+    log-event "dispatch_registered" {
+        task_id:    $task_id
+        msg_id:     $message_id
+        dispatched_at: $now_ts
+    }
+
+    # Also log whether we found an unmatched spool entry (informational).
+    if ($unmatched | length) > 0 {
+        let u = $unmatched | first
+        let u_id = msg-id $u
+        if $u_id != $message_id {
+            log-event "dispatching_unmatched_found" {
+                unmatched_msg_id: $u_id
+                note: "spool has additional unmatched coordinator dispatch"
+            }
+        }
+    }
+
+    let next_state = $state
+        | update pending_dispatch null
+        | update pending          $pending_record
+        | update fsm_state        "waiting"
+
+    tick $next_state $spool $root ($remaining - 1)
 }
 
 # halted: HALT marker is present.  Log and stop — do not recurse further.
