@@ -105,7 +105,11 @@ def parse-headers [lines: list<string>] {
 
     # Convert list of {key,val} pairs to a record.
     # Duplicate header names: last one wins (RFC 2822 is lenient here).
-    $pairs | reduce --fold {} {|pair, acc| $acc | insert $pair.key $pair.val}
+    mut result = {}
+    for pair in $pairs {
+        $result = $result | insert $pair.key $pair.val
+    }
+    $result
 }
 
 # Parse the TOML body of a message record.

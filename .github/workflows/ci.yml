@@ -32,15 +32,20 @@ jobs:
       - name: Show Nushell version
         run: nu --version
 
+      # Verify the module parses cleanly before running tests.
+      - name: Parse-check mbox-parse module
+        run: nu -c "use bin/mbox-parse.nu; print 'module ok'"
+
       # mbox-parse-test.nu: pure unit tests, no subprocess calls.
+      # Note: no --no-config-file so that the std library is accessible.
       - name: mbox-parse unit tests
-        run: nu --no-config-file tests/mbox-parse-test.nu
+        run: nu tests/mbox-parse-test.nu
 
       # coord-tick-test.nu: integration tests — spawns `nu bin/coord-tick.nu`
       # as a subprocess, writes temp files via mktemp, exercises all FSM states.
       # IRC tests expect the host to be unreachable and assert clean exit code.
       - name: coord-tick integration tests
-        run: nu --no-config-file tests/coord-tick-test.nu
+        run: nu tests/coord-tick-test.nu
 
   # ── Shell script linting ─────────────────────────────────────────────────────
   shellcheck:
