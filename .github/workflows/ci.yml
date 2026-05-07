@@ -21,7 +21,9 @@ jobs:
       - name: Set up Nushell
         uses: hustcer/setup-nu@v3
         with:
-          version: '0.96.1'
+          version: '0.96.0'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # openssl -timeout flag and nc -w are used by try-irc-dm in coord-tick.nu.
       # Both are pre-installed on macOS runners; Linux needs netcat-openbsd.
@@ -32,20 +34,16 @@ jobs:
       - name: Show Nushell version
         run: nu --version
 
-      # Capture module parse result and post to PR for diagnosis.
-      # Runs even if earlier steps (including setup-nu) failed.
-      - name: Parse-check and report
-        if: always() && github.event_name == 'pull_request'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          RUNNER_OS_NAME: ${{ runner.os }}
+      # Capture diagnostic output regardless of earlier step failures.
+      - name: Diagnostics (always)
+        if: always()
         run: |
-          NU_VER=$(nu --version 2>&1 || echo "nu not found")
-          PARSE_OUT=$(nu -c "use bin/mbox-parse.nu; print 'module ok'" 2>&1 || true)
-          TEST_OUT=$(nu tests/mbox-parse-test.nu 2>&1 || true)
-          BODY="## CI Diagnostics (${RUNNER_OS_NAME})\n\`\`\`\nNu version: ${NU_VER}\n\nParse-check:\n${PARSE_OUT}\n\nTest output:\n${TEST_OUT}\n\`\`\`"
-          gh pr comment "$PR_NUMBER" --body "$(printf '%b' "$BODY")"
+          echo "=== Nu version ==="
+          nu --version 2>&1 || echo "nu not found or failed"
+          echo "=== Parse-check ==="
+          nu -c "use bin/mbox-parse.nu; print 'module ok'" 2>&1 || true
+          echo "=== Unit test ==="
+          nu tests/mbox-parse-test.nu 2>&1 || true
         continue-on-error: true
 
       # mbox-parse-test.nu: pure unit tests, no subprocess calls.
