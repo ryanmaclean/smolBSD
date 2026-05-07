@@ -16,20 +16,19 @@ jobs:
         os: [ubuntu-latest, macos-latest]
 
     # NU_LIB_DIRS tells Nushell where to find modules by name.
-    # Both tests/mbox-parse-test.nu and bin/coord-tick.nu import mbox-parse.nu
-    # by name (no path prefix), so Nushell searches NU_LIB_DIRS.
     env:
       NU_LIB_DIRS: ${{ github.workspace }}/bin
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Nushell
-        uses: hustcer/setup-nu@v3
-        with:
-          version: '0.96.0'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Nushell (Linux — apt)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y nushell
+
+      - name: Install Nushell (macOS — brew)
+        if: runner.os == 'macOS'
+        run: brew install nushell
 
       # openssl -timeout flag and nc -w are used by try-irc-dm in coord-tick.nu.
       # Both are pre-installed on macOS runners; Linux needs netcat-openbsd.
@@ -39,20 +38,6 @@ jobs:
 
       - name: Show Nushell version
         run: nu --version
-
-      # Capture diagnostic output regardless of earlier step failures.
-      - name: Diagnostics (always)
-        if: always()
-        run: |
-          echo "=== Nu version ==="
-          nu --version 2>&1 || echo "nu not found or failed"
-          echo "=== NU_LIB_DIRS ==="
-          echo "${NU_LIB_DIRS}"
-          echo "=== Parse-check ==="
-          nu -c "use mbox-parse.nu; print 'module ok'" 2>&1 || true
-          echo "=== Unit test ==="
-          nu tests/mbox-parse-test.nu 2>&1 || true
-        continue-on-error: true
 
       # mbox-parse-test.nu: pure unit tests, no subprocess calls.
       - name: mbox-parse unit tests
