@@ -15,10 +15,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
 
-    # NU_LIB_DIRS tells Nushell where to find modules by name.
-    env:
-      NU_LIB_DIRS: ${{ github.workspace }}/bin
-
     steps:
       - uses: actions/checkout@v4
 
@@ -39,7 +35,9 @@ jobs:
       - name: Show Nushell version
         run: nu --version
 
-      # mbox-parse-test.nu: pure unit tests, no subprocess calls.
+      # mbox-parse-test.nu uses `use ../bin/mbox-parse.nu` (relative to the test
+      # file). Nushell resolves this relative to the script file's directory, so
+      # running from repo root is correct.
       - name: mbox-parse unit tests
         run: nu tests/mbox-parse-test.nu
 
