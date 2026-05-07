@@ -410,4 +410,176 @@ do {
     ^rm -rf $tmp
 }
 
+print "test 14: dispatch → reply round-trip (pending_request_id fix)"
+do {
+    # Validates that after dispatching, pending_request_id is set to the coordinator's
+    # outgoing <coord.N.rM.TS@...> message ID, enabling state-waiting to match replies.
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    # Tick 1: seed spool with an outbound request (not to coordinator, no In-Reply-To).
+    let req_msg = make-msg "user@smolbsd.local" "builder@smolbsd.local" "<orig.req.14@host>" (
+        "task_id = \"t14\""
+    )
+    write-spool $spool_abs $req_msg
+
+    run-tick $tmp $state_rel $spool_rel
+
+    # After tick 1: idle → harvesting → dispatching → waiting.
+    let st1 = read-state $state_abs
+    assert equal $st1.fsm_state "waiting"
+    # pending_request_id must now be the coordinator's outgoing message ID.
+    assert ($st1.pending_request_id | str starts-with "<coord.")
+
+    let coord_msg_id = $st1.pending_request_id
+
+    # Tick 2: append a reply addressed to coordinator with In-Reply-To = coord_msg_id.
+    let reply_msg = (make-msg "builder@smolbsd.local" "coordinator@smolbsd.local" "<reply.14@host>"
+        "task_id = \"t14\"\nverdict = \"pass\""
+        --in-reply-to $coord_msg_id)
+    $reply_msg | save --append $spool_abs
+
+    run-tick $tmp $state_rel $spool_rel
+
+    # After tick 2: waiting → harvesting → idle; reply is in seen_ids.
+    let st2 = read-state $state_abs
+    assert equal $st2.fsm_state "idle"
+    assert ("<reply.14@host>" in $st2.seen_ids)
+
+    ^rm -rf $tmp
+}
+
+print "test 15: resume action — retry clears halted task"
+do {
+    # Validates that state-halted processes a retry resume message:
+    # removes the task from halted_tasks and deletes var/mail/HALT.<task_id>.
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    # Write state with t15 in halted_tasks.
+    let mail_dir = [$tmp, "var", "mail"] | path join
+    mkdir mail_dir
+    let state_dir = [$tmp, "var", "run"] | path join
+    mkdir $state_dir
+    (
+        "version = \"1\"\n" +
+        "tick_count = 0\n" +
+        "fsm_state = \"idle\"\n" +
+        "seen_ids = []\n" +
+        "last_tick_at = \"2026-01-01T00:00:00Z\"\n" +
+        "pending_request_id = \"\"\n" +
+        "pending_task_id = \"\"\n" +
+        "pending_to_addr = \"\"\n" +
+        "dispatched_at = \"\"\n" +
+        "halted_tasks = [\"t15\"]\n\n" +
+        "[attempt_counts]\n"
+    ) | save --force $state_abs
+
+    # Create HALT (global) and per-task HALT.t15 markers.
+    "" | save --force ([$mail_dir, "HALT"] | path join)
+    (
+        "task_id = \"t15\"\n" +
+        "reason = \"retry-exhausted\"\n"
+    ) | save --force ([$mail_dir, "HALT.t15"] | path join)
+
+    # Seed spool with a resume message using action = retry.
+    let resume_msg = (make-msg "user@smolbsd.local" "coordinator@smolbsd.local" "<resume.t15@host>"
+        "task_id = \"t15\"\naction = \"retry\"")
+    # Add X-Resume-Tag and X-Resume-Action headers manually via raw string.
+    let resume_raw = (
+        "From user@smolbsd.local Mon Jan  1 00:00:00 2026\n" +
+        "From: user@smolbsd.local\n" +
+        "To: coordinator@smolbsd.local\n" +
+        "Message-ID: <resume.t15@host>\n" +
+        "X-Resume-Tag: resume-t15\n" +
+        "X-Resume-Action: retry\n" +
+        "Content-Type: text/toml; charset=utf-8\n" +
+        "\n" +
+        "task_id = \"t15\"\n" +
+        "action = \"retry\"\n"
+    )
+    write-spool $spool_abs $resume_raw
+
+    run-tick $tmp $state_rel $spool_rel
+
+    let st = read-state $state_abs
+    # halted_tasks must no longer contain t15 after retry resume.
+    let halted = $st | get -i halted_tasks | default []
+    assert (not ("t15" in $halted))
+    # Per-task HALT file must have been removed.
+    let halt_task_path = [$tmp, "var", "mail", "HALT.t15"] | path join
+    assert (not ($halt_task_path | path exists))
+
+    ^rm -rf $tmp
+}
+
+print "test 16: abort resume keeps task halted"
+do {
+    # Validates that state-halted with action=abort logs and leaves the task halted
+    # (does not re-dispatch; state is consistent without error).
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    let mail_dir = [$tmp, "var", "mail"] | path join
+    mkdir $mail_dir
+    let state_dir = [$tmp, "var", "run"] | path join
+    mkdir $state_dir
+    (
+        "version = \"1\"\n" +
+        "tick_count = 0\n" +
+        "fsm_state = \"idle\"\n" +
+        "seen_ids = []\n" +
+        "last_tick_at = \"2026-01-01T00:00:00Z\"\n" +
+        "pending_request_id = \"\"\n" +
+        "pending_task_id = \"\"\n" +
+        "pending_to_addr = \"\"\n" +
+        "dispatched_at = \"\"\n" +
+        "halted_tasks = [\"t15\"]\n\n" +
+        "[attempt_counts]\n"
+    ) | save --force $state_abs
+
+    "" | save --force ([$mail_dir, "HALT"] | path join)
+    (
+        "task_id = \"t15\"\n" +
+        "reason = \"retry-exhausted\"\n"
+    ) | save --force ([$mail_dir, "HALT.t15"] | path join)
+
+    # Seed spool with an abort resume message.
+    let abort_raw = (
+        "From user@smolbsd.local Mon Jan  1 00:00:00 2026\n" +
+        "From: user@smolbsd.local\n" +
+        "To: coordinator@smolbsd.local\n" +
+        "Message-ID: <abort.t15@host>\n" +
+        "X-Resume-Tag: resume-t15\n" +
+        "X-Resume-Action: abort\n" +
+        "Content-Type: text/toml; charset=utf-8\n" +
+        "\n" +
+        "task_id = \"t15\"\n" +
+        "action = \"abort\"\n"
+    )
+    write-spool $spool_abs $abort_raw
+
+    run-tick $tmp $state_rel $spool_rel
+
+    # Tick must complete without error; state file must be readable.
+    let st = read-state $state_abs
+    # abort does not re-dispatch: fsm_state must not be "waiting".
+    assert ($st.fsm_state != "waiting")
+    # Task remains halted (still in halted_tasks or state is halted).
+    let halted = $st | get -i halted_tasks | default []
+    let task_still_halted = ("t15" in $halted) or ($st.fsm_state == "halted")
+    assert $task_still_halted
+
+    ^rm -rf $tmp
+}
+
 print "all tests passed"
