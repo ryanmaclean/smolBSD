@@ -4,7 +4,8 @@
 - Build host: fbuild (FreeBSD 15.0-RELEASE-p5 arm64, QEMU on minim4-24)
 - Kernel: VIRT-MINIMAL (SMOLBSD config), exit=0, 12MB staged
 - Buildworld + release: exit=0 (dist stage complete 2026-05-07)
-- qcow2 sha256: 709fbab6c327e6026b0aa4fd197965ccfcaa0c6f0c2c377f7afbd6ff8a0b292f
+- qcow2 sha256 (pre-boot/canonical): 709fbab6c327e6026b0aa4fd197965ccfcaa0c6f0c2c377f7afbd6ff8a0b292f
+- qcow2 sha256 (post-boot local): 82d7870e2e83d20b24a8cce7150dce39e1c4eb26b297559aec5e15834a25ac3c
 - qcow2 size: 1.41 GiB (1509359616 bytes), virtual 4 GiB sparse
 - qcow2 path (fbuild): /tmp/smolbsd-out/FreeBSD-15-aarch64-smolbsd.qcow2
 - qcow2 path (local): build/FreeBSD-15-aarch64-smolbsd.qcow2
