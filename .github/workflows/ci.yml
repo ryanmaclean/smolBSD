@@ -15,6 +15,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
 
+    # NU_LIB_DIRS tells Nushell where to find modules by name.
+    # Both tests/mbox-parse-test.nu and bin/coord-tick.nu import mbox-parse.nu
+    # by name (no path prefix), so Nushell searches NU_LIB_DIRS.
+    env:
+      NU_LIB_DIRS: ${{ github.workspace }}/bin
+
     steps:
       - uses: actions/checkout@v4
 
@@ -40,8 +46,10 @@ jobs:
         run: |
           echo "=== Nu version ==="
           nu --version 2>&1 || echo "nu not found or failed"
+          echo "=== NU_LIB_DIRS ==="
+          echo "${NU_LIB_DIRS}"
           echo "=== Parse-check ==="
-          nu -c "use bin/mbox-parse.nu; print 'module ok'" 2>&1 || true
+          nu -c "use mbox-parse.nu; print 'module ok'" 2>&1 || true
           echo "=== Unit test ==="
           nu tests/mbox-parse-test.nu 2>&1 || true
         continue-on-error: true
