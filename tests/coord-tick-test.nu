@@ -254,10 +254,11 @@ do {
     ^rm -rf $tmp
 }
 
-print "test 8: verdict fail (first attempt) → retry dispatched, waiting state"
+print "test 8: verdict fail on first attempt → retry dispatched, no global HALT"
 do {
-    # First fail: attempt_n=0 < 3, so coordinator retries via dispatching → waiting.
-    # No global HALT file should be created on the first failure.
+    # On the first fail (attempt_n = 0 < 3) the coordinator must retry:
+    # it should transition dispatching → waiting and increment the attempt count.
+    # A global var/mail/HALT file must NOT be created on the first failure.
     let tmp = make-temp-dir
     let state_rel = "var/run/coord-state.toml"
     let state_abs = [$tmp, $state_rel] | path join
@@ -272,13 +273,13 @@ do {
     run-tick $tmp $state_rel $spool_rel
 
     let state = read-state $state_abs
-    # Retry dispatched → should be in waiting, not halted
+    # Retry should have been dispatched → waiting
     assert equal $state.fsm_state "waiting"
-    # attempt_counts must record one attempt for t3
+    # Attempt count for t3 should have been incremented
     assert equal ($state.attempt_counts | get "t3"? | default 0) 1
-    # Global HALT must NOT be created on first failure
+    # No global HALT file should exist on the first failure
     let halt_path = [$tmp, "var", "mail", "HALT"] | path join
-    assert equal ($halt_path | path exists) false
+    assert (not ($halt_path | path exists))
 
     ^rm -rf $tmp
 }
