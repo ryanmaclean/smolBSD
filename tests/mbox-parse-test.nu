@@ -144,7 +144,7 @@ let subject_val = $folded_m.headers | get "Subject"
 # The folded continuation must be joined — no literal newline in the value
 assert equal ($subject_val | str contains "\n") false
 # The continuation content should be present in the joined value
-assert ($subject_val | str length | $in > 0)
+assert (($subject_val | str length) > 0)
 
 # ---------------------------------------------------------------------------
 # Test: seen_ids guard — msg-id is stable across duplicate Message-IDs
