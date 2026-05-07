@@ -53,7 +53,7 @@ export def parse-mbox [content: string] {
         # Guard against messages with no blank line (malformed — skip body).
         let blank_idx = $blank_idx_result | get index? | default ($lines | length)
 
-        let header_lines = $lines | skip 1 | first ([$blank_idx - 1, 0] | math max)
+        let header_lines = $lines | skip 1 | first ([($blank_idx - 1), 0] | math max)
         let body_lines   = if ($blank_idx + 1) < ($lines | length) {
             $lines | skip ($blank_idx + 1)
         } else {
@@ -88,7 +88,7 @@ def parse-headers [lines: list<string>] {
             }
             let colon_pos = $line | str index-of ":"
             if $colon_pos > 0 {
-                $current_key = $line | str substring ..$colon_pos | str trim
+                $current_key = $line | str substring 0..($colon_pos - 1) | str trim
                 $current_val = $line | str substring ($colon_pos + 1).. | str trim
             } else {
                 $current_key = ""

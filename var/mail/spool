@@ -2644,6 +2644,353 @@ recommended = [
 
 
 
+From smolbsd-coord Thu Apr 30 22:30:00 2026
+From: coordinator@smolbsd.local
+To: harvester@smolbsd.local
+Subject: [task-0004] buildkernel harvest — SMOLBSD/amd64
+Date: Thu, 30 Apr 2026 22:30:00 -0000
+Message-ID: <task-0004.coord@smolbsd.local>
+References: <task-0003c.builder@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/build
+X-Spec-Version: v1.1
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "task-0004"
+title    = "Harvest amd64 buildkernel result from fbuild smolkernel screen session"
+deadline = "2026-04-30"
+
+[brief]
+summary = """
+task-0003c kicked off a detached screen session 'smolkernel' inside the
+fbuild VM on minim4-24 to run buildkernel KERNCONF=SMOLBSD. That task
+returned immediately without waiting for completion (~20-30 min build).
+This task harvests the result:
+  1. SSH into fbuild VM (via minim4-24 jump, port 2222)
+  2. Check if screen session 'smolkernel' is still running (screen -ls)
+  3. If running: tail /var/tmp/smolkernel.log, report progress, do NOT wait
+  4. If exited: check exit status (tail for 'exit=N' in log)
+  5. Report kernel binary: ls -lh /usr/obj/usr/src/amd64.amd64/sys/SMOLBSD/kernel
+  6. Tail last 20 lines of /var/tmp/smolkernel.log
+Report verdict pass/fail based on exit_code == 0 and kernel binary present.
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-1-FORGE-TINY-BASELINE.md",
+  "sys/amd64/conf/SMOLBSD",
+  "/Users/studio/.claude/skills/freebsd-build-vm/SKILL.md",
+]
+prior_msgids = [
+  "<task-0003c.builder@smolbsd.local>",
+]
+
+[acceptance]
+must_pass = [
+  "SSH into fbuild VM confirmed (via minim4-24 jump, port 2222)",
+  "buildkernel exit status reported (exit=0 = pass, exit!=0 = fail)",
+  "kernel binary size reported in bytes and human-readable form",
+  "Last 20 lines of /var/tmp/smolkernel.log captured in reply",
+  "verdict field set to 'pass' or 'fail' based on actual exit code",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+skills_recommended   = ["freebsd-build-vm", "freebsd"]
+tools_allowed        = ["Read", "Bash", "Grep"]
+budget_tokens        = 40000
+reply_msgid          = "<task-0004.harvester@smolbsd.local>"
+
+From smolbsd-coord Thu Apr 30 22:35:00 2026
+From: coordinator@smolbsd.local
+To: planner@smolbsd.local
+Subject: [task-0005] PHASE-1-AARCH64 plan + arm64 kernel config
+Date: Thu, 30 Apr 2026 22:35:00 -0000
+Message-ID: <task-0005.coord@smolbsd.local>
+References: <task-0003a.researcher@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/aarch64
+X-Spec-Version: v1.1
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "task-0005"
+title    = "Write PHASE-1-AARCH64-TINY-BASELINE.md plan and sys/arm64/conf/SMOLBSD kernel config"
+deadline = "2026-05-01"
+
+[brief]
+summary = """
+task-0003a REPLAN selected Option C: run BOTH amd64 and aarch64 Phase-I
+pipelines in parallel. The amd64 pipeline is running (buildkernel in
+smolkernel screen session). This task materializes the aarch64 side:
+
+  1. Write plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md — a sibling to
+     the existing PHASE-1-FORGE-TINY-BASELINE.md, covering the aarch64
+     build pipeline. Key deltas vs amd64:
+       - native arm64 build on fbuild (FreeBSD 15 aarch64 VM, HVF-accelerated)
+       - QEMU: qemu-system-aarch64, -machine virt,accel=hvf, -bios AAVMF
+       - kernel: FDT + UART console (not COM1)
+       - Vultr: aarch64 bare-metal or VC2 instance (native BSD)
+  2. Write sys/arm64/conf/SMOLBSD — mirror of sys/amd64/conf/SMOLBSD but
+     for arm64. Start from ARM64 GENERIC, strip same set of drivers removed
+     in the amd64 config, add FDT + virtio-mmio, remove ISA/ACPI-only options.
+
+Do NOT execute any builds. Design + write artifacts only.
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-1-FORGE-TINY-BASELINE.md",
+  "plans/tinyos/PHASE-1-ARCH-DECISION.md",
+  "sys/amd64/conf/SMOLBSD",
+  "/Users/studio/.claude/skills/freebsd-build-vm/SKILL.md",
+  "/Users/studio/.claude/skills/freebsd/SKILL.md",
+]
+prior_msgids = [
+  "<task-0003a.researcher@smolbsd.local>",
+  "<task-0001.architect@smolbsd.local>",
+]
+
+[acceptance]
+must_pass = [
+  "plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md written (non-empty, references arm64 specifics)",
+  "sys/arm64/conf/SMOLBSD written (non-empty, valid kernel config format)",
+  "arm64 config includes FDT and virtio-mmio device support",
+  "plan covers QEMU boot command for aarch64 with HVF acceleration",
+  "plan covers Vultr aarch64 deployment path",
+  "No build commands executed — design only",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+skills_recommended   = ["freebsd", "freebsd-build-vm", "qemu-fleet"]
+tools_allowed        = ["Read", "Write", "Edit", "Grep", "Glob", "Bash"]
+budget_tokens        = 80000
+reply_msgid          = "<task-0005.planner@smolbsd.local>"
+
+From smolbsd-coord Thu Apr 30 22:36:00 2026
+From: coordinator@smolbsd.local
+To: coder@smolbsd.local
+Subject: [task-0006] Nushell actor coordinator skeleton
+Date: Thu, 30 Apr 2026 22:36:00 -0000
+Message-ID: <task-0006.coord@smolbsd.local>
+References: <design-d1.security@smolbsd.local> <design-d2.reviewer@smolbsd.local> <design-d3.ops@smolbsd.local>
+X-Project: smolbsd
+X-Phase: coord/actor
+X-Spec-Version: v1.1
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "task-0006"
+title    = "Write bin/coord-tick.nu (tail-recursive FSM coordinator) and bin/mbox-parse.nu (mbox parser)"
+deadline = "2026-05-01"
+
+[brief]
+summary = """
+Per design spec sections 10-13 (mailbox+JEC handoff design doc), the
+coordinator loop must be implemented as a Nushell tail-recursive FSM.
+Two files needed:
+
+  bin/coord-tick.nu — the coordinator actor:
+    - States: idle | dispatching | waiting | harvesting | halted
+    - On each tick: check var/mail/HALT (O(1) halt-check per spec section 13)
+    - Read var/mail/spool via mbox-parse.nu, find undispatched tasks
+    - Dispatch next pending task (write coord message to spool)
+    - Check for replies, verify claims, update var/run/coord-state.toml
+    - Tail-recurse to next state; sleep between ticks
+    - All I/O structured (TOML in/out); no prose parsing
+
+  bin/mbox-parse.nu — the mbox parser:
+    - Parse var/mail/spool into structured records
+    - Extract: envelope, headers (From/To/Subject/Date/Message-ID/In-Reply-To),
+      TOML body
+    - Return as Nushell table for downstream pipeline use
+    - Handle missing/malformed messages gracefully (skip, log, continue)
+
+Both files must be syntactically valid Nushell (nu --no-config-file check).
+"""
+
+[context_pointers]
+read = [
+  "docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.md",
+  "/Users/studio/.claude/CLAUDE.md",
+  "bin/",
+]
+prior_msgids = [
+  "<design-d1.security@smolbsd.local>",
+  "<design-d2.reviewer@smolbsd.local>",
+  "<design-d3.ops@smolbsd.local>",
+]
+note = "Use Nushell idioms throughout. No ZSH or Python. Shebang: #!/usr/bin/env nu. def main [...] entry point."
+
+[acceptance]
+must_pass = [
+  "bin/coord-tick.nu created and passes nu --no-config-file syntax check",
+  "bin/mbox-parse.nu created and passes same syntax check",
+  "coord-tick.nu implements at least: idle, dispatching, waiting, harvesting states",
+  "coord-tick.nu checks var/mail/HALT before each tick (O(1) halt check)",
+  "mbox-parse.nu returns structured records (not raw strings) per Nushell pipeline convention",
+  "State persisted between ticks to var/run/coord-state.toml",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+skills_recommended   = []
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
+budget_tokens        = 80000
+reply_msgid          = "<task-0006.coder@smolbsd.local>"
+
+From smolbsd-coord Thu Apr 30 22:37:00 2026
+From: coordinator@smolbsd.local
+To: harvester@smolbsd.local
+Subject: [task-0007] aarch64 buildkernel harvest
+Date: Thu, 30 Apr 2026 22:37:00 -0000
+Message-ID: <task-0007.coord@smolbsd.local>
+References: <task-0005.planner@smolbsd.local> <task-0004.harvester@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/aarch64
+X-Spec-Version: v1.1
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "task-0007"
+title    = "Harvest aarch64 buildkernel result from fbuild; kick off native arm64 buildkernel if not started"
+deadline = "2026-05-01"
+
+[brief]
+summary = """
+task-0005 produced sys/arm64/conf/SMOLBSD and the aarch64 plan. This task
+operates on the fbuild VM (FreeBSD 15 aarch64, running natively on minim4-24
+via HVF) to build or harvest the arm64 kernel:
+
+  1. SSH into fbuild VM (via minim4-24 jump, port 2222)
+  2. Confirm VM architecture: uname -m must show 'aarch64' (fbuild IS the
+     arm64 VM — no cross-compile needed)
+  3. Check if a buildkernel screen session 'smolkernel-arm64' already exists
+  4. If NOT running: place sys/arm64/conf/SMOLBSD into /usr/src/sys/arm64/conf/
+     and kick off:
+       screen -dmS smolkernel-arm64 sh -c '
+         cd /usr/src && time make -j4 buildkernel KERNCONF=SMOLBSD \
+           TARGET=arm64 TARGET_ARCH=aarch64 \
+           > /var/tmp/smolkernel-arm64.log 2>&1
+         echo "exit=$?" >> /var/tmp/smolkernel-arm64.log
+       '
+     Return immediately after starting.
+  5. If running or already exited: harvest result — tail log, check exit code,
+     report kernel binary at /usr/obj/usr/src/arm64.aarch64/sys/SMOLBSD/kernel
+Report verdict pass/fail based on exit_code == 0 (or 'started' if still running).
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md",
+  "sys/arm64/conf/SMOLBSD",
+  "/Users/studio/.claude/skills/freebsd-build-vm/SKILL.md",
+]
+prior_msgids = [
+  "<task-0005.planner@smolbsd.local>",
+  "<task-0004.harvester@smolbsd.local>",
+]
+
+[acceptance]
+must_pass = [
+  "fbuild VM confirmed as aarch64 (uname -m = aarch64)",
+  "arm64 kernel config placed in /usr/src/sys/arm64/conf/SMOLBSD",
+  "buildkernel started OR result harvested (screen session name reported)",
+  "exit status reported if build completed (exit=0 = pass)",
+  "kernel binary path and size reported if build completed",
+  "last 20 lines of /var/tmp/smolkernel-arm64.log captured",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+skills_recommended   = ["freebsd-build-vm", "freebsd"]
+tools_allowed        = ["Read", "Bash", "Grep"]
+budget_tokens        = 50000
+reply_msgid          = "<task-0007.harvester@smolbsd.local>"
+
+From smolbsd-coord Thu Apr 30 22:38:00 2026
+From: coordinator@smolbsd.local
+To: planner@smolbsd.local
+Subject: [task-0008] Vultr amd64 buildworld execution plan
+Date: Thu, 30 Apr 2026 22:38:00 -0000
+Message-ID: <task-0008.coord@smolbsd.local>
+References: <task-0003a.researcher@smolbsd.local> <task-0004.harvester@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/amd64
+X-Spec-Version: v1.1
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "task-0008"
+title    = "Design and document the Vultr amd64 buildworld execution plan"
+deadline = "2026-05-01"
+
+[brief]
+summary = """
+task-0003a REPLAN Option C selected Vultr as the amd64 buildworld platform
+(native FreeBSD 15 x86_64 instance). task-0004 confirmed the amd64 buildkernel
+passed in fbuild. Now design the full buildworld + release pipeline on Vultr:
+
+  1. Document the Vultr instance spec: OS, vCPU, RAM, disk, region
+  2. Document the provisioning sequence (cloud-init or manual bootstrap)
+  3. Document the buildworld command sequence:
+       make -jN buildworld KERNCONF=SMOLBSD TARGET=amd64 TARGET_ARCH=amd64
+       make -jN buildkernel KERNCONF=SMOLBSD TARGET=amd64 TARGET_ARCH=amd64
+       make installworld DESTDIR=/mnt/smolbsd ... (or nanobsd/mkimg pipeline)
+  4. Document how to retrieve artifacts (scp/rsync from Vultr to local)
+  5. Estimate wall-clock time and cost ($/hr x hours)
+  6. Write to plans/tinyos/PHASE-2-PHYSICAL-BOOT.md (or a Vultr-specific annex)
+
+DO NOT provision any Vultr instance. Design only.
+Consult docs BEFORE improvising: cloud-init gotchas, FreeBSD Vultr support
+notes, mkimg vs nanobsd decision. Use fleet_ledger / WebFetch if needed.
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-1-FORGE-TINY-BASELINE.md",
+  "plans/tinyos/PHASE-1-ARCH-DECISION.md",
+  "sys/amd64/conf/SMOLBSD",
+  "/Users/studio/.claude/CLAUDE.md",
+  "/Users/studio/.claude/skills/freebsd/SKILL.md",
+  "/Users/studio/.claude/skills/freebsd-build-vm/SKILL.md",
+]
+prior_msgids = [
+  "<task-0003a.researcher@smolbsd.local>",
+  "<task-0004.harvester@smolbsd.local>",
+]
+note = "Vultr is the ONLY cloud target (per user MEMORY). Do not document Hetzner, AWS, or other providers."
+
+[acceptance]
+must_pass = [
+  "plans/tinyos/PHASE-2-PHYSICAL-BOOT.md written (or Vultr annex appended to existing plan)",
+  "Vultr instance spec named concretely (type, region, OS version)",
+  "buildworld + buildkernel + install command sequence documented",
+  "artifact retrieval method documented (scp/rsync commands or equivalent)",
+  "wall-clock time estimate provided with rationale",
+  "cost estimate provided ($/hr x estimated hours)",
+  "No Vultr instance provisioned — design only",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+skills_recommended   = ["freebsd", "freebsd-build-vm"]
+tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch"]
+budget_tokens        = 80000
+reply_msgid          = "<task-0008.planner@smolbsd.local>"
+
 From smolbsd-harvester Thu May  1 00:15:00 2026
 From: harvester@smolbsd.local
 To: coordinator@smolbsd.local
