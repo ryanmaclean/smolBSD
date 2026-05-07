@@ -44,15 +44,17 @@ export def parse-mbox [content: string] {
 
             # Headers end at the first blank line; body is everything after.
             # Guard against messages with no blank line (malformed).
-            let blank_idx = (
+            let blank_lines = (
                 $lines
                 | enumerate
                 | skip 1               # skip the from_line we already captured
                 | where {|e| ($e.item | str trim) == ""}
-                | get 0?
-                | default {index: ($lines | length)}
-                | get index
             )
+            let blank_idx = if ($blank_lines | length) == 0 {
+                $lines | length
+            } else {
+                ($blank_lines | first).index
+            }
 
             let header_lines = $lines | skip 1 | first ([$blank_idx - 1, 0] | math max)
             let body_lines   = if ($blank_idx + 1) < ($lines | length) {
@@ -107,7 +109,7 @@ def parse-headers [lines: list<string>] {
     # Duplicate header names: last one wins (RFC 2822 is lenient here).
     mut result = {}
     for pair in $pairs {
-        $result = $result | insert $pair.key $pair.val
+        $result = $result | upsert $pair.key $pair.val
     }
     $result
 }

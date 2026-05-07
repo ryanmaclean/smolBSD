@@ -1,7 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # coord-tick-test.nu — integration tests for bin/coord-tick.nu FSM
 
-use std assert
+# Inline assert helpers — avoids std library version sensitivity.
+def "assert equal" [left: any, right: any] {
+    if $left != $right {
+        error make {msg: $"assert equal failed\n  left:  ($left | to nuon)\n  right: ($right | to nuon)"}
+    }
+}
+def assert [cond: bool] {
+    if not $cond { error make {msg: "assert failed"} }
+}
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

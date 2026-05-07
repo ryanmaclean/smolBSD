@@ -5,7 +5,16 @@
 #   nu tests/mbox-parse-test.nu
 
 use ../bin/mbox-parse.nu [parse-mbox, extract-toml, msg-id]
-use std assert
+
+# Inline assert helpers — avoids std library version sensitivity.
+def "assert equal" [left: any, right: any] {
+    if $left != $right {
+        error make {msg: $"assert equal failed\n  left:  ($left | to nuon)\n  right: ($right | to nuon)"}
+    }
+}
+def assert [cond: bool] {
+    if not $cond { error make {msg: "assert failed"} }
+}
 
 # ---------------------------------------------------------------------------
 # Test: single message — structural shape check
