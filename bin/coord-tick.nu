@@ -136,6 +136,39 @@ proposed_actions  = [($proposed_actions | each {|a| $"\"($a)\""} | str join ', '
     $"($existing)($mbox_msg)" | save --force $spool
 }
 
+# Best-effort IRC DM to operator per spec §13.
+# One TLS attempt on 6697, one plain fallback on 6667, then give up.
+# Result is logged but never fatal — HALT proceeds regardless.
+def try-irc-dm [task_id: string, reason: string, root: string] {
+    let msg = $"HALT ($task_id): ($reason)"
+    let irc_host = "10.0.3.203"
+    let halt_path = [$root, "var", "mail", $"HALT.($task_id)"] | path join
+
+    let result = try {
+        # TLS attempt on 6697 — pipe IRC NICK/USER/PRIVMSG/QUIT sequence
+        let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
+        let out = $irc_cmds | ^openssl s_client -connect $"($irc_host):6697" -quiet 2>/dev/null
+        "tls-ok"
+    } catch {
+        # Plain fallback on 6667
+        try {
+            let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
+            let out = $irc_cmds | ^nc -w 5 $irc_host 6667 2>/dev/null
+            "plain-ok"
+        } catch {
+            "no-route"
+        }
+    }
+
+    # Record outcome in the HALT marker file
+    try {
+        let existing = try { open --raw $halt_path | from toml } catch { {} }
+        ($existing | insert fallback_fired true | insert fallback_status $result) | to toml | save --force $halt_path
+    } catch {}
+
+    log-event "irc_fallback" {task_id: $task_id, status: $result}
+}
+
 # ── FSM states ────────────────────────────────────────────────────────────────
 
 # idle: scan spool for new messages not in seen_ids.
@@ -242,6 +275,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                         } else {
                             let _ = write-halt-marker $root $task_id "retry-exhausted" $verdict $id $attempt_n
                             append-halt-message $spool $task_id "retry-exhausted" $verdict $attempt_n ["retry", "abort"]
+                            try-irc-dm $task_id "retry-exhausted" $root
                             $current_state = ($current_state | update halted_tasks ($current_state.halted_tasks | append $task_id))
                             log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "retry-exhausted"}
                             $new_seen = $new_seen | append $id
@@ -269,6 +303,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                     } else {
                         let _ = write-halt-marker $root $task_id "retry-exhausted" $verdict $id $attempt_n
                         append-halt-message $spool $task_id "retry-exhausted" $verdict $attempt_n ["retry", "abort"]
+                        try-irc-dm $task_id "retry-exhausted" $root
                         $current_state = ($current_state | update halted_tasks ($current_state.halted_tasks | append $task_id))
                         log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "retry-exhausted"}
                         $new_seen = $new_seen | append $id
@@ -291,6 +326,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                         } else {
                             let _ = write-halt-marker $root $task_id "retry-exhausted" $verdict $id $attempt_n
                             append-halt-message $spool $task_id "retry-exhausted" $verdict $attempt_n ["retry", "abort"]
+                            try-irc-dm $task_id "retry-exhausted" $root
                             $current_state = ($current_state | update halted_tasks ($current_state.halted_tasks | append $task_id))
                             log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "retry-exhausted"}
                             $new_seen = $new_seen | append $id
@@ -300,6 +336,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                         # no blocked_by — immediate HALT, no retry
                         let _ = write-halt-marker $root $task_id "no-unblocker" $verdict $id $attempt_n
                         append-halt-message $spool $task_id "no-unblocker" $verdict $attempt_n ["abort", "edit"]
+                        try-irc-dm $task_id "no-unblocker" $root
                         $current_state = ($current_state | update halted_tasks ($current_state.halted_tasks | append $task_id))
                         log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "no-unblocker"}
                         $new_seen = $new_seen | append $id

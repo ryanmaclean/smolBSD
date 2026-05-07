@@ -582,4 +582,58 @@ do {
     ^rm -rf $tmp
 }
 
+print "test 17: IRC fallback — coordinator halts cleanly when IRC is unreachable"
+do {
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    # Create required directories
+    let mail_dir  = [$tmp, "var", "mail"] | path join
+    let state_dir = [$tmp, "var", "run"]  | path join
+    mkdir $mail_dir
+    mkdir $state_dir
+
+    # Seed state with attempt_counts = {t17: 3} — already at MAX_ATTEMPTS
+    (
+        "version = \"1\"\n" +
+        "tick_count = 0\n" +
+        "fsm_state = \"idle\"\n" +
+        "seen_ids = []\n" +
+        "last_tick_at = \"2026-01-01T00:00:00Z\"\n" +
+        "pending_request_id = \"\"\n" +
+        "pending_task_id = \"\"\n" +
+        "pending_to_addr = \"\"\n" +
+        "dispatched_at = \"\"\n" +
+        "halted_tasks = []\n\n" +
+        "[attempt_counts]\n" +
+        "t17 = 3\n"
+    ) | save --force $state_abs
+
+    # Seed a fail reply for t17 into the spool
+    let msg_id = "<t17.fail.agent@smolbsd.local>"
+    let body   = "verdict = \"fail\"\ntask_id = \"t17\""
+    let msg    = make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $msg_id $body
+    write-spool $spool_abs $msg
+
+    # Run coord-tick — must exit 0 even though IRC host is unreachable
+    let exit_code = try { run-tick $tmp $state_rel $spool_rel; 0 } catch { 1 }
+    assert equal $exit_code 0
+
+    # HALT marker must have been written
+    let halt1 = [$tmp, "var", "mail", "HALT.t17"] | path join
+    let halt2 = [$tmp, "var", "mail", "HALT"]      | path join
+    assert (($halt1 | path exists) or ($halt2 | path exists))
+
+    # If task-specific HALT file exists, verify fallback_fired = true
+    if ($halt1 | path exists) {
+        let hinfo = open --raw $halt1 | from toml
+        assert equal $hinfo.fallback_fired true
+    }
+
+    ^rm -rf $tmp
+}
+
 print "all tests passed"
