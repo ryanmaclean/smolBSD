@@ -21,7 +21,8 @@ jobs:
       - name: Install Nushell
         run: |
           NU_VERSION="0.112.2"
-          ARCH=$(uname -m)
+          # uname -m returns "arm64" on Apple Silicon; Nushell releases use "aarch64"
+          ARCH=$(uname -m | sed 's/arm64/aarch64/')
           case "$(uname -s)" in
             Linux)  TRIPLE="${ARCH}-unknown-linux-musl" ;;
             Darwin) TRIPLE="${ARCH}-apple-darwin" ;;
