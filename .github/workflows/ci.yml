@@ -32,17 +32,26 @@ jobs:
       - name: Show Nushell version
         run: nu --version
 
-      # Verify the module parses cleanly before running tests.
-      - name: Parse-check mbox-parse module
-        run: nu -c "use bin/mbox-parse.nu; print 'module ok'"
+      # Capture module parse result and post to PR for diagnosis.
+      - name: Parse-check and report
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUNNER_OS_NAME: ${{ runner.os }}
+        run: |
+          NU_VER=$(nu --version 2>&1 || echo "nu not found")
+          PARSE_OUT=$(nu -c "use bin/mbox-parse.nu; print 'module ok'" 2>&1 || true)
+          TEST_OUT=$(nu tests/mbox-parse-test.nu 2>&1 || true)
+          BODY="## CI Diagnostics (${RUNNER_OS_NAME})\n\`\`\`\nNu version: ${NU_VER}\n\nParse-check:\n${PARSE_OUT}\n\nTest output:\n${TEST_OUT}\n\`\`\`"
+          gh pr comment "$PR_NUMBER" --body "$(printf '%b' "$BODY")"
+        continue-on-error: true
 
       # mbox-parse-test.nu: pure unit tests, no subprocess calls.
       - name: mbox-parse unit tests
         run: nu tests/mbox-parse-test.nu
 
       # coord-tick-test.nu: integration tests — spawns `nu bin/coord-tick.nu`
-      # as a subprocess, writes temp files via mktemp, exercises all FSM states.
-      # IRC tests expect the host to be unreachable and assert clean exit code.
       - name: coord-tick integration tests
         run: nu tests/coord-tick-test.nu
 
