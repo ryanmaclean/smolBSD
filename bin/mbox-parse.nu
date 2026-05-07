@@ -73,7 +73,7 @@ export def parse-mbox [content: string] {
 def parse-headers [lines: list<string>] {
     # Build a list of {key, val} pairs, then collapse to a record.
     # Nushell records cannot be mutated in place, so we accumulate a list.
-    mut pairs: list<record<key: string, val: string>> = []
+    mut pairs = []
     mut current_key = ""
     mut current_val = ""
 
