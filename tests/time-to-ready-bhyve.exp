@@ -1,0 +1,135 @@
+#!/usr/bin/env expect
+# SPDX-License-Identifier: Apache-2.0
+# time-to-ready-bhyve.exp — smolBSD bhyve boot gate: time-to-login.
+# Materialized from plans/tinyos/PHASE-3-TPM.md §4
+# Authoring chain: planner@smolbsd.local <task-0024.builder@smolbsd.local>
+#
+# tests/time-to-ready-bhyve.exp
+#
+# Prerequisites:
+#   - bhyve VM already launched by the caller (bhyve-smolbsd.nu or manually).
+#     This script attaches to the console; it does not start bhyve.
+#   - Null-modem device pair created (nmdm(4)):
+#       bhyve -l com1,/dev/nmdm0A ...   # bhyve side
+#     This script connects to the B side: /dev/nmdm0B (or $SMOLBSD_CONSOLE).
+#   - cu(1) available (base system on FreeBSD; package on macOS via homebrew).
+#
+# Console device resolution (first match wins):
+#   1. $SMOLBSD_CONSOLE environment variable
+#   2. $SMOLBSD_SERIAL environment variable (alias accepted for consistency
+#      with the physical-board scripts)
+#   3. Default: /dev/nmdm0B
+#
+# Failure patterns (exit 2, distinct from timeout exit 1):
+#   - "Kernel panic"           — guest panicked during boot
+#   - "mountroot>"             — loader dropped to mountroot prompt
+#   - "UEFI Interactive Shell" — UEFI did not find a bootable image
+#
+# Exit codes:
+#   0 — login prompt appeared within threshold_sec
+#   1 — timeout (no login: within threshold_sec + grace period)
+#   2 — hard failure pattern detected (panic / mountroot / UEFI shell)
+#
+# On success prints: TIME_TO_LOGIN=Ns
+
+# ── Configuration ──────────────────────────────────────────────────────────────
+
+set threshold_sec 60
+# Total expect timeout = threshold + 15s grace for console attachment lag.
+set timeout [expr {$threshold_sec + 15}]
+
+# ── Console device resolution ──────────────────────────────────────────────────
+
+if {[info exists env(SMOLBSD_CONSOLE)]} {
+    set console_dev $env(SMOLBSD_CONSOLE)
+} elseif {[info exists env(SMOLBSD_SERIAL)]} {
+    set console_dev $env(SMOLBSD_SERIAL)
+} else {
+    set console_dev "/dev/nmdm0B"
+}
+
+puts "CONSOLE=$console_dev"
+puts "THRESHOLD=${threshold_sec}s"
+
+# Verify the device node exists before spawning cu.
+# nmdm(4) devices are created on first open; the node itself is always
+# present under /dev on FreeBSD once vmm.ko is loaded.
+# On macOS (development) the node may be absent — warn but continue.
+if {![file exists $console_dev]} {
+    puts stderr "WARN: console device $console_dev not found"
+    puts stderr "  On FreeBSD: ensure nmdm.ko is loaded (kldload nmdm)"
+    puts stderr "  Set SMOLBSD_CONSOLE or SMOLBSD_SERIAL to override"
+    # Do not exit — let cu fail with a clear error rather than silently.
+}
+
+# ── Attach to console via cu(1) ────────────────────────────────────────────────
+#
+# cu(1) is BSD-licensed and present in FreeBSD base; the null-modem device
+# presents as a standard tty so cu handles flow control correctly.
+# -l <device>  — line (tty) device
+# -s 115200    — baud rate (bhyve UART default; must match loader.conf)
+
+set t0 [clock seconds]
+spawn cu -l $console_dev -s 115200
+
+# ── Wait for login prompt or failure pattern ───────────────────────────────────
+
+expect {
+    "login:" {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIME_TO_LOGIN=${elapsed}s"
+        if {$elapsed > $threshold_sec} {
+            puts "VERDICT=fail (${elapsed}s > threshold ${threshold_sec}s)"
+            exit 1
+        }
+        puts "VERDICT=pass"
+        exit 0
+    }
+
+    # Hard failure: kernel panic — boot is not recoverable without VM reset.
+    "Kernel panic" {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIME_TO_LOGIN=${elapsed}s (at panic)"
+        puts "VERDICT=fail (kernel panic detected)"
+        puts "FAILURE_REASON=kernel_panic"
+        exit 2
+    }
+
+    # Hard failure: loader dropped to interactive mountroot prompt.
+    # Common cause: wrong root device in /etc/fstab or missing loader.conf
+    # rootfs= line.
+    "mountroot>" {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIME_TO_LOGIN=${elapsed}s (at mountroot)"
+        puts "VERDICT=fail (dropped to mountroot — check loader.conf rootfs setting)"
+        puts "FAILURE_REASON=mountroot_prompt"
+        exit 2
+    }
+
+    # Hard failure: UEFI did not find BOOTAA64.EFI / BOOTX64.EFI on the ESP.
+    # Common causes: bhyve disk image not passed with -s, wrong image format,
+    # or ESP partition missing BOOTAA64.EFI.
+    "UEFI Interactive Shell" {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIME_TO_LOGIN=${elapsed}s (at UEFI shell)"
+        puts "VERDICT=fail (UEFI shell appeared — bhyve disk image may not be bootable)"
+        puts "FAILURE_REASON=uefi_interactive_shell"
+        exit 2
+    }
+
+    # cu(1) or nmdm(4) closed the connection unexpectedly.
+    eof {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "VERDICT=fail (console connection closed after ${elapsed}s)"
+        puts "FAILURE_REASON=console_eof"
+        exit 1
+    }
+
+    timeout {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIMEOUT after ${elapsed}s (threshold ${threshold_sec}s)"
+        puts "VERDICT=fail"
+        puts "FAILURE_REASON=timeout"
+        exit 1
+    }
+}
