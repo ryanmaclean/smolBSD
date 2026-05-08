@@ -1,0 +1,148 @@
+#!/usr/bin/env expect
+# SPDX-License-Identifier: Apache-2.0
+# time-to-ready-qemu.exp — smolBSD QEMU boot gate: time-to-login via stdio.
+#
+# Unlike time-to-ready-bhyve.exp (which attaches to an nmdm device after
+# bhyve is already running), this script SPAWNS the QEMU process directly
+# so it owns stdio.  The login: timer starts from spawn, not from attach.
+#
+# Usage:
+#   SMOLBSD_QEMU_CMD="qemu-system-aarch64 -machine virt ..." \
+#     expect tests/time-to-ready-qemu.exp
+#
+# Environment variables:
+#   SMOLBSD_QEMU_CMD   — full QEMU command line to spawn (required).
+#                        Must include -serial stdio -nographic or equivalent.
+#   SMOLBSD_TIME_LIMIT — threshold in seconds (default: 30).
+#                        30s is correct for arm64 HVF on Apple Silicon.
+#                        Use 120s for amd64 TCG (rarely practical).
+#   SMOLBSD_ARCH       — informational only; printed in output (default: aarch64).
+#
+# Exit codes:
+#   0 — login: appeared within SMOLBSD_TIME_LIMIT seconds  → TIME_TO_LOGIN=Ns
+#   1 — timeout
+#   2 — hard failure: Kernel panic / mountroot> / UEFI Interactive Shell
+#
+# Notes:
+#   - QEMU is killed on any exit path (timeout, panic, pass) so the caller
+#     does not need to separately clean up the process.
+#   - On pass the script sends Ctrl-C to QEMU after recording the time,
+#     then waits up to 2s for QEMU to exit before sending SIGKILL.
+#   - The timer starts at spawn, so UEFI POST time is included in the
+#     measurement (matches the real user experience).
+
+# ── Configuration ──────────────────────────────────────────────────────────────
+
+if {[info exists env(SMOLBSD_TIME_LIMIT)]} {
+    set threshold_sec $env(SMOLBSD_TIME_LIMIT)
+} else {
+    set threshold_sec 30
+}
+
+if {[info exists env(SMOLBSD_ARCH)]} {
+    set arch $env(SMOLBSD_ARCH)
+} else {
+    set arch "aarch64"
+}
+
+# Total expect timeout = threshold + 10s grace for UEFI/loader variability.
+set timeout [expr {$threshold_sec + 10}]
+
+# ── Resolve QEMU command ───────────────────────────────────────────────────────
+
+if {![info exists env(SMOLBSD_QEMU_CMD)] || $env(SMOLBSD_QEMU_CMD) eq ""} {
+    puts stderr "ERROR: SMOLBSD_QEMU_CMD is not set"
+    puts stderr "  Set it to the full qemu-system-* command line."
+    puts stderr "  Example:"
+    puts stderr {    SMOLBSD_QEMU_CMD="qemu-system-aarch64 -machine virt,accel=hvf -cpu host -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd -m 256M -smp 2 -drive file=smolbsd.qcow2,format=qcow2,if=virtio -nic user,model=virtio-net-pci,hostfwd=tcp::2241-:22 -serial stdio -nographic"}
+    exit 1
+}
+
+set qemu_cmd $env(SMOLBSD_QEMU_CMD)
+
+puts "ARCH=$arch"
+puts "THRESHOLD=${threshold_sec}s"
+puts "QEMU_CMD=$qemu_cmd"
+
+# ── Spawn QEMU ────────────────────────────────────────────────────────────────
+#
+# expect's spawn runs the command through the system shell when given as a
+# string — this handles spaces and shell quoting correctly.
+
+set t0 [clock seconds]
+eval spawn $qemu_cmd
+
+# ── Helper: kill spawned QEMU process ─────────────────────────────────────────
+
+proc kill_qemu {spawn_id} {
+    # Send Ctrl-C to the QEMU monitor / serial stdio to request exit.
+    # QEMU exits cleanly on Ctrl-A x (the stdio escape), or on SIGTERM.
+    catch {exec kill [exp_pid]}
+    # Brief wait then SIGKILL if still alive.
+    after 1500
+    catch {exec kill -KILL [exp_pid]}
+}
+
+# ── Wait for login prompt or failure pattern ───────────────────────────────────
+
+expect {
+    "login:" {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIME_TO_LOGIN=${elapsed}s"
+        if {$elapsed > $threshold_sec} {
+            puts "VERDICT=fail (${elapsed}s > threshold ${threshold_sec}s)"
+            kill_qemu $spawn_id
+            exit 1
+        }
+        puts "VERDICT=pass"
+        kill_qemu $spawn_id
+        exit 0
+    }
+
+    # Hard failure: kernel panic — unrecoverable without VM restart.
+    "Kernel panic" {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIME_TO_LOGIN=${elapsed}s (at panic)"
+        puts "VERDICT=fail (kernel panic detected at ${elapsed}s)"
+        puts "FAILURE_REASON=kernel_panic"
+        kill_qemu $spawn_id
+        exit 2
+    }
+
+    # Hard failure: loader/bsdinstall mountroot prompt.
+    "mountroot>" {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIME_TO_LOGIN=${elapsed}s (at mountroot)"
+        puts "VERDICT=fail (dropped to mountroot at ${elapsed}s — check disk image)"
+        puts "FAILURE_REASON=mountroot_prompt"
+        kill_qemu $spawn_id
+        exit 2
+    }
+
+    # Hard failure: UEFI shell — firmware could not find bootloader.
+    "UEFI Interactive Shell" {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIME_TO_LOGIN=${elapsed}s (at UEFI shell)"
+        puts "VERDICT=fail (UEFI Interactive Shell at ${elapsed}s — image may not be bootable)"
+        puts "FAILURE_REASON=uefi_interactive_shell"
+        kill_qemu $spawn_id
+        exit 2
+    }
+
+    # QEMU exited before login appeared (e.g. image format error, missing BIOS).
+    eof {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "VERDICT=fail (QEMU exited unexpectedly after ${elapsed}s)"
+        puts "FAILURE_REASON=qemu_exit"
+        exit 2
+    }
+
+    timeout {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIMEOUT after ${elapsed}s (threshold ${threshold_sec}s)"
+        puts "VERDICT=fail"
+        puts "FAILURE_REASON=timeout"
+        kill_qemu $spawn_id
+        exit 1
+    }
+}

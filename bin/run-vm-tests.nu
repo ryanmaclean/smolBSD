@@ -239,39 +239,79 @@ def step-launch [
     $"($backend) launched; job_id=($job_id)"
 }
 
-# step-boot-gate: run time-to-ready-bhyve.exp, capture TIME_TO_LOGIN.
-# Returns elapsed seconds as a string; fails if >60s or script absent.
-def step-boot-gate [console: string, timeout_sec: int] {
-    let script = "tests/time-to-ready-bhyve.exp"
-    if not ($script | path exists) {
-        error make {msg: $"($script) not found — create this expect script (see tests/time-to-ready.exp for reference)"}
-    }
+# step-boot-gate: run the appropriate boot-gate expect script.
+# Backend "qemu" spawns QEMU directly via time-to-ready-qemu.exp (stdio).
+# Backend "bhyve" attaches to nmdm console via time-to-ready-bhyve.exp.
+# Returns elapsed seconds as a string; fails if > threshold or script absent.
+def step-boot-gate [console: string, timeout_sec: int, backend: string, qemu_cmd: string, arch: string] {
+    if $backend == "qemu" {
+        # ── QEMU path: spawn the VM inside the expect script ──────────────────
+        let script = "tests/time-to-ready-qemu.exp"
+        if not ($script | path exists) {
+            error make {msg: $"($script) not found"}
+        }
 
-    # Pass console via env var (tpm-attest.exp uses the same convention).
-    let b_side = $console | str replace --regex "A$" "B"
-    let result = (with-env {SMOLBSD_CONSOLE: $b_side} {
-        ^expect $script | complete
-    })
+        # Threshold: 30s for arm64 HVF, 120s for amd64 TCG.
+        let time_limit = if $arch == "arm64" { "30" } else { "120" }
 
-    if $result.exit_code != 0 {
-        error make {msg: $"boot-gate expect script failed (exit ($result.exit_code)): ($result.stderr | str trim)"}
-    }
+        let result = (with-env {
+            SMOLBSD_QEMU_CMD: $qemu_cmd
+            SMOLBSD_TIME_LIMIT: $time_limit
+            SMOLBSD_ARCH: $arch
+        } {
+            ^expect $script | complete
+        })
 
-    # Parse TIME_TO_LOGIN=<N>s from stdout.
-    # Guard against missing line: if expect didn't emit it, treat as timeout.
-    let ttl_lines = $result.stdout | lines | where {|l| $l | str contains "TIME_TO_LOGIN"}
-    let ttl_secs = if ($ttl_lines | length) > 0 {
-        let parsed = $ttl_lines | first | parse "TIME_TO_LOGIN={n}s"
-        if ($parsed | length) > 0 { $parsed | get n | first | into int } else { 999 }
+        # exit 2 = hard failure (panic/mountroot/UEFI shell) — surface as error
+        if $result.exit_code == 2 {
+            let reason = ($result.stdout | lines | where {|l| $l | str contains "FAILURE_REASON"} | first | default "unknown")
+            error make {msg: $"boot-gate hard failure: ($reason)"}
+        }
+        if $result.exit_code != 0 {
+            error make {msg: $"boot-gate expect script failed (exit ($result.exit_code)): ($result.stdout | str trim)"}
+        }
+
+        let ttl_lines = $result.stdout | lines | where {|l| $l | str contains "TIME_TO_LOGIN"}
+        let ttl_secs = if ($ttl_lines | length) > 0 {
+            let parsed = $ttl_lines | first | parse "TIME_TO_LOGIN={n}s"
+            if ($parsed | length) > 0 { $parsed | get n | first | into int } else { 999 }
+        } else { 999 }
+
+        let threshold = $time_limit | into int
+        if $ttl_secs > $threshold {
+            error make {msg: $"boot gate failed: TIME_TO_LOGIN=($ttl_secs)s > ($threshold)s threshold"}
+        }
+
+        $"TIME_TO_LOGIN=($ttl_secs)s (threshold ($threshold)s, arch ($arch))"
+
     } else {
-        999
-    }
+        # ── bhyve path: attach to nmdm console via cu ─────────────────────────
+        let script = "tests/time-to-ready-bhyve.exp"
+        if not ($script | path exists) {
+            error make {msg: $"($script) not found — create this expect script (see tests/time-to-ready.exp for reference)"}
+        }
 
-    if $ttl_secs > 60 {
-        error make {msg: $"boot gate failed: TIME_TO_LOGIN=($ttl_secs)s > 60s threshold"}
-    }
+        let b_side = $console | str replace --regex "A$" "B"
+        let result = (with-env {SMOLBSD_CONSOLE: $b_side} {
+            ^expect $script | complete
+        })
 
-    $"TIME_TO_LOGIN=($ttl_secs)s (threshold 60s)"
+        if $result.exit_code != 0 {
+            error make {msg: $"boot-gate expect script failed (exit ($result.exit_code)): ($result.stderr | str trim)"}
+        }
+
+        let ttl_lines = $result.stdout | lines | where {|l| $l | str contains "TIME_TO_LOGIN"}
+        let ttl_secs = if ($ttl_lines | length) > 0 {
+            let parsed = $ttl_lines | first | parse "TIME_TO_LOGIN={n}s"
+            if ($parsed | length) > 0 { $parsed | get n | first | into int } else { 999 }
+        } else { 999 }
+
+        if $ttl_secs > 60 {
+            error make {msg: $"boot gate failed: TIME_TO_LOGIN=($ttl_secs)s > 60s threshold"}
+        }
+
+        $"TIME_TO_LOGIN=($ttl_secs)s (threshold 60s)"
+    }
 }
 
 # step-memory: SSH into guest, compute free MiB from sysctl output.
@@ -359,37 +399,83 @@ def step-tpm-seal [] {
     "TPM seal/unseal dry-run passed"
 }
 
-# step-crash-recovery: run bhyve-crash-recovery.exp; pass if CRASH_RECOVERY_TIME ≤90s.
-def step-crash-recovery [console: string, timeout_sec: int] {
-    let script = "tests/bhyve-crash-recovery.exp"
-    if not ($script | path exists) {
-        error make {msg: $"($script) not found — create this expect script for crash-recovery gate"}
-    }
+# step-crash-recovery: run the appropriate crash-recovery expect script.
+# Backend "qemu" uses crash-recovery-qemu.exp (spawns QEMU, graceful shutdown,
+#   relaunches, measures recovery time).
+# Backend "bhyve" uses bhyve-crash-recovery.exp (SIGKILL + nmdm reattach).
+# Acceptance: RECOVERY_TIME (qemu) or CRASH_RECOVERY_TIME (bhyve) <= 90s.
+def step-crash-recovery [console: string, timeout_sec: int, backend: string, qemu_cmd: string, arch: string] {
+    if $backend == "qemu" {
+        # ── QEMU path: graceful shutdown then recovery boot ────────────────────
+        let script = "tests/crash-recovery-qemu.exp"
+        if not ($script | path exists) {
+            error make {msg: $"($script) not found"}
+        }
 
-    let b_side = $console | str replace --regex "A$" "B"
-    let result = (with-env {SMOLBSD_CONSOLE: $b_side, TIMEOUT: ($timeout_sec | into string)} {
-        ^expect $script | complete
-    })
+        let boot_limit    = if $arch == "arm64" { "30" } else { "120" }
+        let recovery_limit = "90"
 
-    if $result.exit_code != 0 {
-        error make {msg: $"crash-recovery expect script failed (exit ($result.exit_code))"}
-    }
+        let result = (with-env {
+            SMOLBSD_QEMU_CMD: $qemu_cmd
+            SMOLBSD_TIME_LIMIT: $boot_limit
+            SMOLBSD_RECOVERY_LIMIT: $recovery_limit
+            SMOLBSD_ARCH: $arch
+        } {
+            ^expect $script | complete
+        })
 
-    # Parse CRASH_RECOVERY_TIME=<N>s from stdout.
-    # Guard against missing line: if expect didn't emit it, treat as timeout.
-    let crt_lines = $result.stdout | lines | where {|l| $l | str contains "CRASH_RECOVERY_TIME"}
-    let crt_secs = if ($crt_lines | length) > 0 {
-        let parsed = $crt_lines | first | parse "CRASH_RECOVERY_TIME={n}s"
-        if ($parsed | length) > 0 { $parsed | get n | first | into int } else { 999 }
+        # exit 2 = hard failure, exit 3 = initial boot failed
+        if $result.exit_code == 2 {
+            let reason = ($result.stdout | lines | where {|l| $l | str contains "FAILURE_REASON"} | first | default "unknown")
+            error make {msg: $"crash-recovery hard failure: ($reason)"}
+        }
+        if $result.exit_code == 3 {
+            error make {msg: "crash-recovery: initial boot failed — recovery not attempted"}
+        }
+        if $result.exit_code != 0 {
+            error make {msg: $"crash-recovery-qemu.exp failed (exit ($result.exit_code)): ($result.stdout | str trim)"}
+        }
+
+        let crt_lines = $result.stdout | lines | where {|l| $l | str contains "RECOVERY_TIME"}
+        let crt_secs = if ($crt_lines | length) > 0 {
+            let parsed = $crt_lines | first | parse "RECOVERY_TIME={n}s"
+            if ($parsed | length) > 0 { $parsed | get n | first | into int } else { 999 }
+        } else { 999 }
+
+        if $crt_secs > 90 {
+            error make {msg: $"crash-recovery failed: RECOVERY_TIME=($crt_secs)s > 90s threshold"}
+        }
+
+        $"RECOVERY_TIME=($crt_secs)s (threshold 90s, arch ($arch))"
+
     } else {
-        999
-    }
+        # ── bhyve path: SIGKILL VM, relaunch, measure via nmdm ────────────────
+        let script = "tests/bhyve-crash-recovery.exp"
+        if not ($script | path exists) {
+            error make {msg: $"($script) not found — create this expect script for crash-recovery gate"}
+        }
 
-    if $crt_secs > 90 {
-        error make {msg: $"crash-recovery failed: CRASH_RECOVERY_TIME=($crt_secs)s > 90s threshold"}
-    }
+        let b_side = $console | str replace --regex "A$" "B"
+        let result = (with-env {SMOLBSD_CONSOLE: $b_side, TIMEOUT: ($timeout_sec | into string)} {
+            ^expect $script | complete
+        })
 
-    $"CRASH_RECOVERY_TIME=($crt_secs)s (threshold 90s)"
+        if $result.exit_code != 0 {
+            error make {msg: $"crash-recovery expect script failed (exit ($result.exit_code))"}
+        }
+
+        let crt_lines = $result.stdout | lines | where {|l| $l | str contains "CRASH_RECOVERY_TIME"}
+        let crt_secs = if ($crt_lines | length) > 0 {
+            let parsed = $crt_lines | first | parse "CRASH_RECOVERY_TIME={n}s"
+            if ($parsed | length) > 0 { $parsed | get n | first | into int } else { 999 }
+        } else { 999 }
+
+        if $crt_secs > 90 {
+            error make {msg: $"crash-recovery failed: CRASH_RECOVERY_TIME=($crt_secs)s > 90s threshold"}
+        }
+
+        $"CRASH_RECOVERY_TIME=($crt_secs)s (threshold 90s)"
+    }
 }
 
 # step-teardown: stop the VM and optionally stop swtpm; best-effort.
@@ -506,6 +592,49 @@ export def main [
 
     let started_at = date now | format date "%Y-%m-%dT%H:%M:%SZ"
 
+    # ── Pre-compute the QEMU command string for expect scripts ────────────────
+    # When backend=qemu the boot-gate and crash-recovery expect scripts spawn
+    # QEMU directly.  We reconstruct the command string here so it is available
+    # before step-launch runs (the expect scripts start their own QEMU process
+    # independently — they don't attach to the one started by step-launch).
+    #
+    # The string is passed to expect scripts via SMOLBSD_QEMU_CMD env var.
+    # It must include -serial stdio and -nographic so the expect script can
+    # read boot output from stdin/stdout.
+    let qemu_cmd_str = if $backend == "qemu" {
+        let norm_arch = if $arch == "arm64" { "aarch64" } else { $arch }
+        let qemu_bin  = if $norm_arch == "aarch64" { "qemu-system-aarch64" } else { "qemu-system-x86_64" }
+        # Resolve BIOS path the same way qemu-smolbsd.nu does (best-effort here;
+        # qemu-smolbsd.nu will validate on its own launch).
+        let bios_candidates = if $norm_arch == "aarch64" {
+            ["/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
+             "/usr/local/share/qemu/edk2-aarch64-code.fd"
+             "/usr/share/qemu/edk2-aarch64-code.fd"]
+        } else {
+            ["/opt/homebrew/share/qemu/edk2-x86_64-code.fd"
+             "/usr/local/share/qemu/edk2-x86_64-code.fd"
+             "/usr/share/qemu/edk2-x86_64-code.fd"]
+        }
+        let bios = ($bios_candidates | where {|p| $p | path exists} | first | default "")
+        let accel = if $norm_arch == "aarch64" { "hvf" } else { "tcg" }
+        let img_fmt = if ($image | str ends-with ".qcow2") { "qcow2" } else { "raw" }
+        let machine = if $norm_arch == "aarch64" { $"virt,accel=($accel)" } else { "pc" }
+        let cpu     = if $norm_arch == "aarch64" { "host" } else { "qemu64" }
+        mut parts = [$qemu_bin "-machine" $machine "-cpu" $cpu]
+        if ($bios | str length) > 0 {
+            $parts = $parts | append ["-bios" $bios]
+        }
+        $parts = $parts | append [
+            "-m" "256M" "-smp" "2"
+            "-drive" $"file=($image),format=($img_fmt),if=virtio"
+            "-nic"   $"user,model=virtio-net-pci,hostfwd=tcp::($hostfwd_ssh)-:22"
+            "-serial" "stdio" "-nographic"
+        ]
+        $parts | str join " "
+    } else {
+        ""   # bhyve path does not use SMOLBSD_QEMU_CMD
+    }
+
     log-step "orchestrator" "run-vm-tests starting" {
         image:        $image
         backend:      $backend
@@ -517,6 +646,7 @@ export def main [
         skip:         ($skip | str join ",")
         timeout:      $timeout
         results_file: $results_file
+        qemu_cmd_str: $qemu_cmd_str
     }
 
     mut results: list<record> = []
@@ -558,14 +688,14 @@ export def main [
     })
 
     # ── 4. boot-gate ─────────────────────────────────────────────────────────
-    # Skip only for arm64 bhyve (stdio console — nmdm expect script won't work).
-    # qemu on amd64 uses nmdm and the expect scripts work normally.
-    # qemu on arm64 also uses stdio/nmdm depending on configuration — keep running.
+    # qemu backend: spawns QEMU via time-to-ready-qemu.exp (stdio, all arches).
+    # bhyve backend: attaches to nmdm via time-to-ready-bhyve.exp.
+    #   Skip only for arm64 bhyve (bhyve arm64 uses stdio, not nmdm).
     if $arch == "arm64" and $backend == "bhyve" {
         $results = $results | append (make-result "boot-gate" "skip" 0 "arm64 bhyve uses stdio, not nmdm")
     } else {
         $results = $results | append (run-step "boot-gate" $skip {
-            step-boot-gate $console $timeout
+            step-boot-gate $console $timeout $backend $qemu_cmd_str $arch
         })
     }
 
@@ -598,12 +728,14 @@ export def main [
     }
 
     # ── 9. crash-recovery ─────────────────────────────────────────────────────
-    # Skip only for arm64 bhyve (same stdio-vs-nmdm reason as boot-gate).
+    # qemu backend: graceful shutdown + recovery via crash-recovery-qemu.exp.
+    # bhyve backend: SIGKILL + nmdm reattach via bhyve-crash-recovery.exp.
+    #   Skip only for arm64 bhyve (same stdio-vs-nmdm reason as boot-gate).
     if $arch == "arm64" and $backend == "bhyve" {
         $results = $results | append (make-result "crash-recovery" "skip" 0 "arm64 bhyve uses stdio, not nmdm")
     } else {
         $results = $results | append (run-step "crash-recovery" $skip {
-            step-crash-recovery $console $timeout
+            step-crash-recovery $console $timeout $backend $qemu_cmd_str $arch
         })
     }
 
