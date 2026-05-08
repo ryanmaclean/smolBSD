@@ -7505,3 +7505,76 @@ under Settings → Webservice and App Settings.
 3. Confirm: ssh root@<IP> 'kldload vmm && ls -la /dev/vmm'
 4. Update task-0039 with real IP, VT-x confirmation, pkg versions
 
+
+From smolbsd-coord Fri May 08 17:22:00 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [task-0033] VM test suite non-TPM run — minim4-24
+Date: Fri, 08 May 2026 17:22:00 -0000
+Message-ID: <task-0033.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/vm-testing
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0033"
+title   = "Run non-TPM QEMU test suite on minim4-24 — first pass"
+
+[brief]
+summary = """
+Run the first pass of the non-TPM QEMU test suite on minim4-24.
+Use the arm64 BASIC-CLOUDINIT image. Skip tpm-device, tpm-seal.
+Skip artifact-size (build VM, not release image). Record result
+at /tmp/smolbsd-results/smolbsd-run-1.toml.
+"""
+
+[reply_contract]
+output_to   = "coordinator@smolbsd.local"
+reply_msgid = "<task-0033.builder@smolbsd.local>"
+
+From smolbsd-coord Fri May 08 17:47:00 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [task-0034] VM test suite pass 2 — minim4-24
+Date: Fri, 08 May 2026 17:47:00 -0000
+Message-ID: <task-0034.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/vm-testing
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0034"
+title   = "Run pass 2 of the non-TPM QEMU test suite on minim4-24"
+
+[brief]
+summary = """
+Run pass 2. Skip same steps as pass 1. Record at
+/tmp/smolbsd-results/smolbsd-run-2.toml. Two consecutive
+passes required before opening CI gate.
+"""
+
+[reply_contract]
+output_to   = "coordinator@smolbsd.local"
+reply_msgid = "<task-0034.builder@smolbsd.local>"
+
+From smolbsd-coord Fri May 08 17:48:30 2026
+From: coordinator@smolbsd.local
+To: builder@smolbsd.local
+Subject: [task-0035] VM test suite pass 3 — minim4-24 (gate open)
+Date: Fri, 08 May 2026 17:48:30 -0000
+Message-ID: <task-0035.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/vm-testing
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0035"
+title   = "Run pass 3 of the non-TPM QEMU test suite — CI gate target"
+
+[brief]
+summary = """
+Run pass 3. If all three passes (run-1 through run-3) result in
+overall=pass, the CI gate opens (3 consecutive passes required
+per task-0027 audit). Run ci-gate.nu after to confirm.
+"""
+
+[reply_contract]
+output_to   = "coordinator@smolbsd.local"
+reply_msgid = "<task-0035.builder@smolbsd.local>"

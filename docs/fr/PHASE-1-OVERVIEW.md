@@ -217,14 +217,93 @@ CP2102 3,3 V branché sur l'en-tête UART de débogage de la carte est requis.
 ### 6.5 Prérequis pour les tests bhyve/TPM (Phase III)
 
 Les tests TPM Phase III (T1–T6, `bin/bhyve-smolbsd.nu`, `tests/tpm-seal-test.nu`)
-nécessitent un hôte amd64 bare-metal ou une instance cloud Vultr vc2 amd64.
-**HVF ne permet pas la virtualisation imbriquée** : un Mac Apple Silicon
-exécutant FreeBSD sous QEMU/HVF ne peut pas lancer bhyve, car HVF n'expose
-pas le niveau EL2 aux VM invitées. De plus, bhyve arm64 sous FreeBSD 15 ne
-dispose pas du périphérique `virtio-tpm` — les tests T2–T6 requièrent donc
-impérativement un hôte amd64. Les cartes physiques Pi 5 et RK3588 atteignent
-la prise en charge TPM via fTPM/TrustZone, traité en Phase IV.
+nécessitent un hôte amd64 bare-metal ou équivalent.
+
+**Résultats des enquêtes d'infrastructure (task-0028 à task-0030) :**
+
+- **HVF ne permet pas la virtualisation imbriquée.** `minim4-24` (Apple Silicon)
+  n'expose pas EL2 aux invités QEMU/HVF : bhyve ne peut pas démarrer, `/dev/vmm`
+  n'est jamais créé.
+- **Vultr vc2 n'expose pas VT-x.** Le message `vmx_modinit: processor does not
+  support VMX operation` confirme que les instances cloud KVM Vultr ne
+  transmettent pas la virtualisation matérielle aux invités.
+- **Vultr bare-metal rejette FreeBSD 15.** L'API Vultr renvoie HTTP 400
+  (`This OS currently cannot be used with the selected plan`) pour tous les
+  plans bare-metal testés avec `os_id=2720`.
+- **Solution retenue — Hetzner ccx23.** Les instances dédiées Hetzner Cloud
+  `ccx23` (AMD EPYC dédié, ~49 €/mo) exposent AMD-V aux invités ; la création
+  de `/dev/vmm` à l'intérieur d'un invité FreeBSD est confirmée. Le script
+  `bin/hetzner-bhyve-provision.nu` automatise l'approvisionnement (deux chemins :
+  `--type hcloud` pour ccx23/ccx33, `--type robot` pour AX41-NVMe bare-metal).
+  Nécessite la variable d'environnement `HCLOUD_TOKEN`.
+
+**Blocage TPM aarch64 QEMU (task-0031) :** Sur QEMU aarch64 avec `tpm-tis-device`,
+l'UEFI (edk2) mesure correctement dans swtpm (`Tpm2GetCapabilityPcrs` réussit),
+mais le champ `ControlArea` de la table ACPI TPM2 vaut 0. Le pilote CRB de
+FreeBSD refuse de s'attacher : `/dev/tpm0` n'est pas créé. Ce blocage est
+spécifique à l'émulation aarch64 ; la solution est **amd64 QEMU avec `tpm-tis`**
+(non `tpm-tis-device`), disponible sur un hôte Hetzner ccx23.
 
 ---
 
-*Résumé produit le 2026-05-04 à partir des documents de planification smolBSD Phase I. Mis à jour le 2026-05-04 pour refléter la complétion de Phase I. §6 ajouté le 2026-05-06 pour Phase II. §6.5 ajouté le 2026-05-08 suite au blocage bhyve/HVF de task-0028.*
+## 7. État actuel — Phases III et suivantes
+
+> *Mis à jour le 2026-05-08.*
+
+### 7.1 Porte CI : OUVERTE (sous-portes TPM en attente)
+
+Trois passes consécutives sans TPM ont été enregistrées sur `minim4-24`
+(FreeBSD 15.0-RELEASE-p5 aarch64, QEMU 10.2.1 HVF, fbuild VM) :
+
+| Passe | Horodatage | Mémoire libre VM | Résultat |
+|-------|-----------|-----------------|---------|
+| 1 | 2026-05-08T17:22:57Z | 804 Mio | pass |
+| 2 | 2026-05-08T17:48:19Z | 805 Mio | pass |
+| 3 | 2026-05-08T17:49:07Z | 584 Mio | pass |
+
+`nu bin/ci-gate.nu --results-dir /tmp/smolbsd-results` : sortie
+`{consecutive_passes: 3, required: 3, gate: open}` — code de sortie 0.
+
+La **porte boot-gate** (temps jusqu'à `login:` ≤ 30 s) a été validée
+séparément à **7 s** sur minim4-24 (task-0031). Le câblage du script expect
+nmdm/stdio reste à finaliser pour l'intégrer dans la suite automatisée.
+
+Sous-portes **en attente** : boot-gate automatisé, artifact-size (image
+de build VM exclue — plafond 512 Mio applicable uniquement aux artefacts de
+release), crash-recovery (harnais QEMU monitor à implémenter), TPM complet
+(hôte amd64 requis).
+
+### 7.2 Construction de l'image amd64 smolBSD
+
+Une image amd64 a été construite par compilation croisée sur fbuild
+(`TARGET=amd64 TARGET_ARCH=amd64`) et est disponible sous :
+`smolbsd-buildworld @ 108.61.206.203:/root/genoa/out/smolbsd-linode-amd64-v0.1.0.raw`
+(2,0 Gio, GPT : 128 Mio ESP avec `BOOTX64.EFI` + racine UFS 1,9 Gio,
+noyau GENERIC). Un noyau `SMOLBSD` configurable reste à construire.
+
+### 7.3 Nouveaux outils (Phase III)
+
+| Script | Rôle |
+|--------|------|
+| `bin/qemu-smolbsd.nu` | Lance smolBSD sous QEMU (HVF sur Apple Silicon, KVM sur Linux). Détection automatique de l'accélérateur. Support TPM via `tpm-tis` (amd64) ou `tpm-tis-device` (aarch64). |
+| `bin/hetzner-bhyve-provision.nu` | Provisionne un hôte Hetzner pour bhyve : `--type hcloud` (ccx23/ccx33, AMD-V exposé) ou `--type robot` (AX41-NVMe bare-metal). |
+| `bin/run-vm-tests.nu` | Orchestrateur de suite de tests VM — backends `qemu` et `bhyve`, flag `--arch`, 10 étapes ordonnées, fichier de résultats TOML. |
+| `bin/ci-gate.nu` | Évalue la porte des 3 passes consécutives à partir d'un répertoire de fichiers TOML de résultats. |
+| `bin/smolbsd.nu` | Point d'entrée CLI principal : sous-commandes `build`, `test`, `convert`, `provision vultr|hetzner`, `bhyve`, `qemu`, `coord`, etc. |
+| `tests/time-to-ready-bhyve.exp` | Porte boot-gate bhyve via console nmdm (`cu`). Détecte `login:`, `Kernel panic`, `mountroot>`, `UEFI Interactive Shell`. |
+| `tests/bhyve-crash-recovery.exp` | Porte crash-recovery bhyve — power-cycle via bhyvectl + attente de `login:`. |
+
+### 7.4 Prochaines étapes
+
+1. **Hôte TPM amd64** : obtenir `HCLOUD_TOKEN` et lancer
+   `nu bin/smolbsd.nu provision hetzner --dry-run` puis la création réelle.
+2. **Image smolBSD minimale** : construire un qcow2 < 512 Mio avec le noyau
+   `SMOLBSD` (non GENERIC) pour valider la porte artifact-size.
+3. **Boot-gate automatisé** : câbler `tests/time-to-ready-bhyve.exp` dans
+   `bin/run-vm-tests.nu` via une console nmdm ou stdio selon le backend.
+4. **Suite TPM complète** : lancer T1–T6 sur l'hôte Hetzner ccx23 une fois
+   provisionné ; trois passes consécutives ouvrent la porte TPM.
+
+---
+
+*Résumé produit le 2026-05-04 à partir des documents de planification smolBSD Phase I. Mis à jour le 2026-05-04 pour refléter la complétion de Phase I. §6 ajouté le 2026-05-06 pour Phase II. §6.5 mis à jour et §7 ajouté le 2026-05-08 pour Phase III (findings task-0028 à task-0035).*
