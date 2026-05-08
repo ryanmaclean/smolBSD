@@ -81,7 +81,25 @@ def count-from-lines [spool_path: string] {
     | length
 }
 
-# ── coord-tick wrapper ────────────────────────────────────────────────────────
+# ── coord-tick helpers ───────────────────────────────────────────────────────
+
+# Run coord-tick once and return the state record regardless of exit code.
+# Absorbs any error from the subprocess (including job-spawn propagation when
+# the claude CLI is absent from coord-dispatch.nu).
+def safe-tick-and-read-state [root: string, spool_abs: string, state_abs: string] {
+    let spool_rel = $spool_abs | str replace $"($root)/" ""
+    let state_rel = $state_abs | str replace $"($root)/" ""
+    # The inner nu process is captured via complete; any further Nushell job error
+    # is absorbed by the outer try.
+    let _ignored = try {
+        ^nu --no-config-file bin/coord-tick.nu --root $root --spool $spool_rel --state-file $state_rel --max-ticks 8 | complete
+    } catch {
+        null  # absorb — we read state file below regardless
+    }
+    if ($state_abs | path exists) {
+        try { open --raw $state_abs | from toml } catch { {} }
+    } else { {} }
+}
 
 # Run coord-tick once with explicit absolute spool + state paths.
 # Returns the complete record from `| complete`.
@@ -184,18 +202,15 @@ def test-tick2-harvests-reply [root: string, spool_abs: string, state_abs: strin
     let sleep_secs     = 15  # pause between polls
 
     mut final_state   = {}
-    mut final_stdout  = ""
     mut reply_present = false
     mut tick_num      = 0
 
     loop {
         $tick_num = $tick_num + 1
-        let r = run-tick $root $spool_abs $state_abs 8
 
-        $final_state  = if ($state_abs | path exists) {
-            try { open --raw $state_abs | from toml } catch { {} }
-        } else { {} }
-        $final_stdout = $r.stdout
+        # safe-tick: runs coord-tick and absorbs any error (including job-spawn
+        # propagation from coord-dispatch when claude CLI is absent).
+        $final_state = (safe-tick-and-read-state $root $spool_abs $state_abs)
 
         # A reply is present if there are ≥2 From-lines AND the spool contains
         # the FreeBSD uname string or our echo marker.
@@ -213,7 +228,7 @@ def test-tick2-harvests-reply [root: string, spool_abs: string, state_abs: strin
         }
 
         # Wait before next poll so we don't busy-spin while the VM boots.
-        ^sleep $"($sleep_secs)"
+        sleep ($sleep_secs * 1sec)
     }
 
     let seen_count = $final_state | get seen_ids? | default [] | length
