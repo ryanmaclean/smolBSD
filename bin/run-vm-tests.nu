@@ -1,15 +1,28 @@
 # SPDX-License-Identifier: Apache-2.0
 # run-vm-tests.nu — master VM test orchestrator for smolBSD
 #
-# Launches a smolBSD image in bhyve, runs the full acceptance test suite,
-# and writes a structured TOML result file.
+# Launches a smolBSD image under qemu or bhyve, runs the full acceptance test
+# suite, and writes a structured TOML result file.
 #
-# Usage:
-#   nu bin/run-vm-tests.nu --image smolbsd-amd64.raw
-#   nu bin/run-vm-tests.nu --image smolbsd-amd64.raw --tpm
-#   nu bin/run-vm-tests.nu --image smolbsd-amd64.raw --skip ["tpm","crash"]
+# Usage (QEMU — default, works on minim4-24 with HVF today):
+#   nu bin/run-vm-tests.nu --image smolbsd.qcow2
+#   nu bin/run-vm-tests.nu --image smolbsd.qcow2 --tpm
+#   nu bin/run-vm-tests.nu --image smolbsd.qcow2 --arch arm64
 #
-# Prerequisites (FreeBSD bhyve host):
+# Usage (bhyve — production FreeBSD bare-metal amd64 host):
+#   nu bin/run-vm-tests.nu --image smolbsd.raw --backend bhyve
+#   nu bin/run-vm-tests.nu --image smolbsd.raw --backend bhyve --tpm
+#
+# Skipping individual steps:
+#   nu bin/run-vm-tests.nu --image smolbsd.qcow2 --skip ["tpm","crash-recovery"]
+#
+# Prerequisites (qemu backend):
+#   qemu-system-aarch64 / qemu-system-x86_64  — emulators/qemu port
+#   swtpm                                      — security/swtpm port (only if --tpm)
+#   expect                                     — lang/expect port
+#   qemu-img                                   — emulators/qemu-utils
+#
+# Prerequisites (bhyve backend):
 #   bhyve(8), bhyvectl(8)  — base system
 #   swtpm                  — security/swtpm port (only if --tpm)
 #   expect                 — lang/expect port
@@ -92,19 +105,47 @@ def run-step [
 # ── Individual test steps ──────────────────────────────────────────────────────
 
 # step-preflight: verify all required binaries and paths exist.
+# Checks differ by backend: qemu needs qemu-system-*, bhyve needs bhyve/bhyvectl.
+# qemu-img and expect are required by both.
 def step-preflight [
-    image:       string
-    use_tpm:     bool
-    console:     string
+    image:   string
+    use_tpm: bool
+    backend: string   # "qemu" | "bhyve"
+    arch:    string   # "amd64" | "arm64"
 ] {
     if not ($image | path exists) {
         error make {msg: $"image not found: ($image)"}
     }
 
-    for bin in ["bhyve", "bhyvectl", "expect", "qemu-img"] {
+    # Shared requirements regardless of backend.
+    for bin in ["expect", "qemu-img"] {
         let found = (^which $bin | complete)
         if $found.exit_code != 0 {
             error make {msg: $"required binary not found: ($bin)"}
+        }
+    }
+
+    if $backend == "qemu" {
+        # Select the right qemu binary for the target arch.
+        let qemu_bin = if $arch == "arm64" { "qemu-system-aarch64" } else { "qemu-system-x86_64" }
+        let found = (^which $qemu_bin | complete)
+        if $found.exit_code != 0 {
+            error make {msg: $"required binary not found: ($qemu_bin) — install emulators/qemu"}
+        }
+    } else {
+        # bhyve backend
+        for bin in ["bhyve", "bhyvectl"] {
+            let found = (^which $bin | complete)
+            if $found.exit_code != 0 {
+                error make {msg: $"required binary not found: ($bin)"}
+            }
+        }
+        # nmdm is bhyve-specific; warn if module not loaded (bhyve will fail later).
+        let kldstat_out = (^kldstat | complete)
+        if $kldstat_out.exit_code == 0 {
+            if not ($kldstat_out.stdout | str contains "nmdm") {
+                log-step "preflight" "WARNING: nmdm kernel module not loaded — run: kldload nmdm" {}
+            }
         }
     }
 
@@ -115,17 +156,7 @@ def step-preflight [
         }
     }
 
-    # nmdm device: check the A-side exists (kldload nmdm if not)
-    # We check /dev/nmdm0A as a proxy — bhyve will create it on use.
-    # If the kernel module isn't loaded, warn but do not fail (bhyve will error later).
-    let kldstat_out = (^kldstat | complete)
-    if $kldstat_out.exit_code == 0 {
-        if not ($kldstat_out.stdout | str contains "nmdm") {
-            log-step "preflight" "WARNING: nmdm kernel module not loaded — run: kldload nmdm" {}
-        }
-    }
-
-    "all preflight checks passed"
+    $"all preflight checks passed (backend: ($backend), arch: ($arch))"
 }
 
 # step-swtpm-start: start swtpm via swtpm-setup.nu and verify socket.
@@ -144,9 +175,10 @@ def step-swtpm-start [tpm_state: string] {
     $"swtpm running; socket: ($sock)"
 }
 
-# step-bhyve-launch: launch bhyve in a background job. Returns job id.
-# The VM name is used for teardown via bhyvectl --destroy --vm=<name>.
-def step-bhyve-launch [
+# step-launch: launch the VM (qemu or bhyve) in a background job.
+# Returns a detail string including the job id.
+# Teardown uses the job tag "vm-<vm_name>" to find and kill the job.
+def step-launch [
     image:       string
     vm_name:     string
     hostfwd_ssh: int
@@ -154,36 +186,57 @@ def step-bhyve-launch [
     use_tpm:     bool
     tpm_state:   string
     arch:        string
+    backend:     string   # "qemu" | "bhyve"
 ] {
-    # Destroy any stale VM with this name first.
-    ^bhyvectl --destroy $"--vm=($vm_name)" out+err> /dev/null
-
-    # Assemble bhyve-smolbsd.nu args as a list so we can splat them.
-    # Build the final immutable list before spawning (closures can't capture mut vars).
-    let base_args = [
-        "--image" $image
-        "--arch"  $arch
-        "--name"  $vm_name
-        "--console" $console
-        "--hostfwd-ssh" ($hostfwd_ssh | into string)
-    ]
-    let args = if $use_tpm {
-        $base_args | append ["--tpm" "--tpm-state" $tpm_state]
+    # Build the final immutable args list before spawning.
+    # (Closures cannot capture mutable variables.)
+    let args = if $backend == "qemu" {
+        # qemu-smolbsd.nu flags
+        let base = [
+            "--image"       $image
+            "--arch"        $arch
+            "--hostfwd-ssh" ($hostfwd_ssh | into string)
+            "--console"     $console
+        ]
+        if $use_tpm {
+            $base | append ["--tpm" "--tpm-state" $tpm_state]
+        } else {
+            $base
+        }
     } else {
-        $base_args
+        # bhyve-smolbsd.nu flags — destroy any stale VM first (synchronous)
+        ^bhyvectl --destroy $"--vm=($vm_name)" out+err> /dev/null
+        let base = [
+            "--image"       $image
+            "--arch"        $arch
+            "--name"        $vm_name
+            "--console"     $console
+            "--hostfwd-ssh" ($hostfwd_ssh | into string)
+        ]
+        if $use_tpm {
+            $base | append ["--tpm" "--tpm-state" $tpm_state]
+        } else {
+            $base
+        }
     }
 
-    # Spawn bhyve in a background Nushell job.
-    let job_id = job spawn --tag $"bhyve-($vm_name)" {
-        ^nu bin/bhyve-smolbsd.nu ...$args
+    let script = if $backend == "qemu" { "bin/qemu-smolbsd.nu" } else { "bin/bhyve-smolbsd.nu" }
+
+    let job_id = job spawn --tag $"vm-($vm_name)" {
+        ^nu $script ...$args
     }
 
-    log-step "bhyve-launch" "bhyve background job started" {job_id: $job_id, vm: $vm_name}
+    log-step "vm-launch" $"($backend) background job started" {
+        backend: $backend
+        job_id:  $job_id
+        vm:      $vm_name
+        arch:    $arch
+    }
 
-    # Brief pause to let bhyve initialise before we start probing.
+    # Brief pause to let the VM initialise before we start probing.
     ^sleep 2
 
-    $"bhyve launched; job_id=($job_id)"
+    $"($backend) launched; job_id=($job_id)"
 }
 
 # step-boot-gate: run time-to-ready-bhyve.exp, capture TIME_TO_LOGIN.
@@ -339,30 +392,38 @@ def step-crash-recovery [console: string, timeout_sec: int] {
     $"CRASH_RECOVERY_TIME=($crt_secs)s (threshold 90s)"
 }
 
-# step-teardown: destroy bhyve VM and optionally stop swtpm; best-effort.
-# Returns a detail string regardless of partial failures.
-def step-teardown [vm_name: string, use_tpm: bool, tpm_state: string] {
+# step-teardown: stop the VM and optionally stop swtpm; best-effort.
+# Returns a joined detail string regardless of partial failures.
+def step-teardown [vm_name: string, use_tpm: bool, tpm_state: string, backend: string] {
     mut notes: list<string> = []
 
-    # Destroy the bhyve VM (name-based, not PID-based).
-    let destroy = (^bhyvectl --destroy $"--vm=($vm_name)" | complete)
-    if $destroy.exit_code == 0 {
-        $notes = $notes | append "bhyve VM destroyed"
+    if $backend == "bhyve" {
+        # bhyve: destroy by VM name via bhyvectl.
+        let destroy = (^bhyvectl --destroy $"--vm=($vm_name)" | complete)
+        if $destroy.exit_code == 0 {
+            $notes = $notes | append "bhyve VM destroyed"
+        } else {
+            $notes = $notes | append $"bhyvectl destroy: ($destroy.stderr | str trim)"
+        }
     } else {
-        $notes = $notes | append $"bhyvectl destroy: ($destroy.stderr | str trim)"
+        # qemu: kill by process name pattern; qemu-smolbsd.nu sets -name $vm_name.
+        let pkill_r = (^pkill -f $"qemu-system.*($vm_name)" | complete)
+        if $pkill_r.exit_code == 0 {
+            $notes = $notes | append $"qemu process killed (name: ($vm_name))"
+        } else {
+            # exit 1 from pkill means no matching process — not an error.
+            $notes = $notes | append "qemu: no matching process found (already exited?)"
+        }
     }
 
-    # Kill any background bhyve job by tag (best-effort).
-    let jobs = job list
-    let bhyve_jobs = $jobs | where {|j|
-        ($j | get tag? | default "") | str contains $"bhyve-($vm_name)"
-    }
-    for j in $bhyve_jobs {
-        job kill ($j | get id)
-        $notes = $notes | append $"killed background job id=($j | get id)"
+    # Kill the background Nu job by tag "vm-<vm_name>" (best-effort, both backends).
+    let vm_jobs = job list | where {|j| ($j.tag | default "") | str contains $"vm-($vm_name)"}
+    for j in $vm_jobs {
+        job kill ($j.id)
+        $notes = $notes | append $"killed background job id=($j.id)"
     }
 
-    # Stop swtpm if it was started.
+    # Stop swtpm if it was started (both backends).
     if $use_tpm {
         let stop = (^nu bin/swtpm-setup.nu --action stop --state-dir $tpm_state | complete)
         if $stop.exit_code == 0 {
@@ -407,21 +468,24 @@ def print-summary [tests: list<record>, overall: string] {
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
-# Run the full smolBSD VM test suite against a bhyve-hosted image.
+# Run the full smolBSD VM test suite against a qemu or bhyve hosted image.
 #
 # --image          path to smolBSD qcow2 or raw image (required)
-# --tpm            enable swtpm TPM attachment
+# --backend        qemu (default) | bhyve
+# --arch           amd64 (default) | arm64
+# --tpm            enable swtpm TPM attachment (amd64 only)
 # --tpm-state      swtpm state directory
-# --vm-name        bhyve VM name
+# --vm-name        VM instance name
 # --hostfwd-ssh    host port forwarded to guest SSH
-# --console        bhyve null-modem device host side (tests use the B side)
+# --console        serial console device (nmdm for bhyve/amd64; stdio or nmdm for qemu)
 # --skip           list of test names to skip, e.g. ["tpm","crash-recovery"]
 # --timeout        global timeout in seconds (currently advisory)
 # --results-file   path to write TOML results
 export def main [
     --image:        string                                  # path to smolBSD qcow2 or raw image
-    --arch:         string = "amd64"                        # amd64 | arm64 (arm64 skips nmdm console tests)
-    --tpm                                                   # enable swtpm TPM attachment
+    --backend:      string = "qemu"                         # qemu | bhyve
+    --arch:         string = "amd64"                        # amd64 | arm64
+    --tpm                                                   # enable swtpm TPM attachment (amd64 only)
     --tpm-state:    string = "/var/run/smolbsd-tpm-test"
     --vm-name:      string = "smolbsd-test"
     --hostfwd-ssh:  int    = 2240
@@ -434,10 +498,18 @@ export def main [
         error make {msg: "--image is required (path to smolBSD qcow2 or raw image)"}
     }
 
+    if $backend != "qemu" and $backend != "bhyve" {
+        error make {msg: $"--backend must be qemu or bhyve, got: ($backend)"}
+    }
+
+    let arch = if $arch == "aarch64" { "arm64" } else { $arch }
+
     let started_at = date now | format date "%Y-%m-%dT%H:%M:%SZ"
 
     log-step "orchestrator" "run-vm-tests starting" {
         image:        $image
+        backend:      $backend
+        arch:         $arch
         vm_name:      $vm_name
         tpm:          $tpm
         hostfwd_ssh:  $hostfwd_ssh
@@ -451,7 +523,7 @@ export def main [
 
     # ── 1. preflight ──────────────────────────────────────────────────────────
     $results = $results | append (run-step "preflight" $skip {
-        step-preflight $image $tpm $console
+        step-preflight $image $tpm $backend $arch
     })
 
     # Abort only on preflight failure — nothing useful can run without it.
@@ -480,15 +552,17 @@ export def main [
         $results = $results | append (make-result "swtpm-start" "skip" 0 "--tpm not set")
     }
 
-    # ── 3. bhyve-launch ───────────────────────────────────────────────────────
-    $results = $results | append (run-step "bhyve-launch" $skip {
-        step-bhyve-launch $image $vm_name $hostfwd_ssh $console $tpm $tpm_state $arch
+    # ── 3. vm-launch ─────────────────────────────────────────────────────────
+    $results = $results | append (run-step "vm-launch" $skip {
+        step-launch $image $vm_name $hostfwd_ssh $console $tpm $tpm_state $arch $backend
     })
 
-    # ── 4. boot-gate ──────────────────────────────────────────────────────────
-    # arm64 bhyve uses stdio console — nmdm-based expect scripts are amd64-only.
-    if $arch == "arm64" {
-        $results = $results | append (make-result "boot-gate" "skip" 0 "arm64 bhyve uses stdio console, not nmdm")
+    # ── 4. boot-gate ─────────────────────────────────────────────────────────
+    # Skip only for arm64 bhyve (stdio console — nmdm expect script won't work).
+    # qemu on amd64 uses nmdm and the expect scripts work normally.
+    # qemu on arm64 also uses stdio/nmdm depending on configuration — keep running.
+    if $arch == "arm64" and $backend == "bhyve" {
+        $results = $results | append (make-result "boot-gate" "skip" 0 "arm64 bhyve uses stdio, not nmdm")
     } else {
         $results = $results | append (run-step "boot-gate" $skip {
             step-boot-gate $console $timeout
@@ -524,8 +598,9 @@ export def main [
     }
 
     # ── 9. crash-recovery ─────────────────────────────────────────────────────
-    if $arch == "arm64" {
-        $results = $results | append (make-result "crash-recovery" "skip" 0 "arm64 bhyve uses stdio console, not nmdm")
+    # Skip only for arm64 bhyve (same stdio-vs-nmdm reason as boot-gate).
+    if $arch == "arm64" and $backend == "bhyve" {
+        $results = $results | append (make-result "crash-recovery" "skip" 0 "arm64 bhyve uses stdio, not nmdm")
     } else {
         $results = $results | append (run-step "crash-recovery" $skip {
             step-crash-recovery $console $timeout
@@ -534,8 +609,7 @@ export def main [
 
     # ── 10. teardown (always runs) ────────────────────────────────────────────
     $results = $results | append (run-step "teardown" [] {
-        # teardown is never in skip list — always runs
-        step-teardown $vm_name $tpm $tpm_state
+        step-teardown $vm_name $tpm $tpm_state $backend
     })
 
     # ── Compute overall ───────────────────────────────────────────────────────

@@ -11,12 +11,13 @@
 #
 # Subcommands:
 #   build        nu bin/prep-bhyve-image.nu   — convert qcow2 → raw, verify image
-#   test         nu bin/run-vm-tests.nu        — run full VM acceptance test suite
+#   test         nu bin/run-vm-tests.nu        — run full VM acceptance test suite (qemu|bhyve)
 #   convert      nu bin/qcow2-to-physical.nu   — convert qcow2 → physical board raw+GPT
 #   ci-gate      nu bin/ci-gate.nu             — check / enforce 3-consecutive-pass gate
 #   board-probe  nu bin/board-probe.nu         — detect connected physical boards
 #   swtpm        nu bin/swtpm-setup.nu         — manage swtpm daemon lifecycle
 #   bhyve        nu bin/bhyve-smolbsd.nu       — launch smolBSD bhyve guest
+#   qemu         nu bin/qemu-smolbsd.nu        — launch smolBSD qemu guest (HVF on Apple Silicon)
 #   coord        nu bin/coord-tick.nu          — run coordinator FSM tick
 #   first-boot   nu bin/first-boot.nu          — run first-boot provisioning in guest
 #   mbox-parse   nu bin/mbox-parse.nu          — parse var/mail/spool into records
@@ -25,13 +26,18 @@
 #
 # Examples:
 #   nu bin/smolbsd.nu build --input FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2
-#   nu bin/smolbsd.nu test --image smolbsd-amd64.raw --tpm
+#   nu bin/smolbsd.nu test --image smolbsd.qcow2                           # qemu, default
+#   nu bin/smolbsd.nu test --image smolbsd.qcow2 --tpm                     # qemu + swtpm
+#   nu bin/smolbsd.nu test --image smolbsd.qcow2 --arch arm64              # qemu arm64
+#   nu bin/smolbsd.nu test --image smolbsd.raw --backend bhyve             # bhyve amd64
+#   nu bin/smolbsd.nu test --image smolbsd.raw --backend bhyve --tpm       # bhyve + swtpm
 #   nu bin/smolbsd.nu convert --input foo.qcow2 --board pi5 --output foo-pi5.raw
 #   nu bin/smolbsd.nu ci-gate --results-dir /tmp/results
 #   nu bin/smolbsd.nu ci-gate --run --image smolbsd-amd64.raw --tpm
 #   nu bin/smolbsd.nu board-probe
 #   nu bin/smolbsd.nu swtpm --action start
 #   nu bin/smolbsd.nu bhyve --image smolbsd-amd64.raw --tpm
+#   nu bin/smolbsd.nu qemu --image smolbsd.qcow2 --arch arm64
 #   nu bin/smolbsd.nu coord --dispatch-phase-ii
 #   nu bin/smolbsd.nu tpm-verify --host 127.0.0.1 --port 2240
 #   nu bin/smolbsd.nu tpm-verify --dry-run
@@ -41,12 +47,13 @@
 def subcommand-table [] {
     [
         {subcommand: "build",       script: "bin/prep-bhyve-image.nu",          description: "Convert qcow2 -> raw bhyve image; verify size and integrity"},
-        {subcommand: "test",        script: "bin/run-vm-tests.nu",               description: "Run the full smolBSD VM acceptance test suite in bhyve"},
+        {subcommand: "test",        script: "bin/run-vm-tests.nu",               description: "Run the full smolBSD VM acceptance test suite (--backend qemu|bhyve)"},
         {subcommand: "convert",     script: "bin/qcow2-to-physical.nu",          description: "Convert qcow2 -> physical board raw+GPT (Pi 5 / RK3588)"},
         {subcommand: "ci-gate",     script: "bin/ci-gate.nu",                    description: "Check 3-consecutive-pass CI gate; optionally run tests first"},
         {subcommand: "board-probe", script: "bin/board-probe.nu",                description: "Detect and profile connected physical boards via serial/SSH"},
         {subcommand: "swtpm",       script: "bin/swtpm-setup.nu",                description: "Manage swtpm daemon: start | stop | status | reset"},
         {subcommand: "bhyve",       script: "bin/bhyve-smolbsd.nu",              description: "Launch smolBSD bhyve guest with optional swtpm TPM"},
+        {subcommand: "qemu",        script: "bin/qemu-smolbsd.nu",               description: "Launch smolBSD qemu guest (HVF on Apple Silicon / KVM on Linux)"},
         {subcommand: "coord",       script: "bin/coord-tick.nu",                 description: "Run one coordinator FSM tick (or --dispatch-phase-ii)"},
         {subcommand: "first-boot",  script: "bin/first-boot.nu",                 description: "Run first-boot provisioning inside a booted smolBSD guest"},
         {subcommand: "mbox-parse",  script: "bin/mbox-parse.nu",                 description: "Parse var/mail/spool into structured TOML records"},
@@ -107,6 +114,10 @@ def main [
 
         "bhyve" => {
             ^nu --no-config-file bin/bhyve-smolbsd.nu ...$args
+        }
+
+        "qemu" => {
+            ^nu --no-config-file bin/qemu-smolbsd.nu ...$args
         }
 
         "coord" => {
