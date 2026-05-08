@@ -210,7 +210,7 @@ Do not modify any other messages in the spool. Append only.
 "
     $prompt | save --force $prompt_file
 
-    let sh_cmd = $"claude --model claude-sonnet-4-6 -p \"$\(cat ($prompt_file)\)\" >($log_file) 2>&1 &"
+    let sh_cmd = $"claude --model claude-sonnet-4-6 -p \"$\(cat '($prompt_file)'\)\" >'($log_file)' 2>&1 &"
     ^sh -c $sh_cmd
 
     log-event "subagent_spawned" {
