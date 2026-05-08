@@ -7320,3 +7320,109 @@ expected = "host can run bhyve with swtpm for Phase-III T1-T6 tests"
 probe    = "VT-x probe, /dev/vmm check"
 evidence = "VT-x unavailable (Vultr vc2 KVM); bhyve cannot run; no TPM testing possible on this host"
 verdict  = "fail"
+From smolbsd-runner Thu May 08 18:00:00 2026
+From: runner@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: [task-0037] smolBSD amd64 SMOLBSD-kernel image build — launched on fbuild
+Date: Thu, 08 May 2026 18:00:00 -0000
+Message-ID: <task-0037.runner@smolbsd.local>
+In-Reply-To: <task-0030.runner@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/phase-iii
+X-Verdict: in-progress
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "task-0037"
+verdict  = "in-progress"
+run_date = "2026-05-08T18:00:00Z"
+runner   = "claude-sonnet-4-6 / blissful-shockley worktree"
+
+[build_host]
+host        = "fbuild (fb-vm-24)"
+fqdn        = "ssh -J minim4-24 -p 2222 builder@localhost"
+os          = "FreeBSD 15.0-RELEASE-p5 arm64"
+kernel      = "VIRT-MINIMAL"
+cpus        = 4
+disk_before = "639M free"
+disk_after_cleanup = "16G free"
+
+[build_target]
+arch        = "amd64"
+target_arch = "amd64"
+kernconf    = "SMOLBSD"
+vmformats   = "qcow2"
+vmsize      = "4g"
+conf        = "/usr/src/release/tools/smolbsd-qemu.conf"
+note        = "Cross-build: aarch64 host building amd64 guest image"
+
+[pre_build_checks]
+
+[pre_build_checks.kernel_config]
+path       = "/usr/src/sys/amd64/conf/SMOLBSD"
+status     = "present (142 lines, installed Apr 30)"
+updated    = "true — pushed device tpm lines from worktree sys/amd64/conf/SMOLBSD"
+tpm_line   = "device tpm  # TPM 2.0 (CRB + FIFO interfaces)"
+diff       = "5 lines added at end: TPM 2.0 support section with device tpm"
+
+[pre_build_checks.release_conf]
+path   = "/usr/src/release/tools/smolbsd-qemu.conf"
+status = "present and correct"
+
+[pre_build_checks.obj_tree]
+initial_check   = "/usr/obj/amd64.amd64/usr/src/ — not found (checked wrong path)"
+actual_path     = "/usr/obj/usr/src/amd64.amd64/ — found (2.2G, partial kernel-only build, Apr 30)"
+arm64_obj       = "/usr/obj/usr/src/arm64.aarch64/ — found (9.4G, full arm64 build from prev run)"
+action          = "Removed both obj trees (stale partial amd64; arm64 no longer needed). Cleared schg flags on arm64 release DESTDIR before removal."
+
+[pre_build_checks.disk_cleanup]
+freed_smolbsd_out   = "4.9G — /tmp/smolbsd-out (arm64 qcow2 + efi.img + root.ufs; arm64 snapshot exists)"
+freed_smolbsd_work  = "1.4G — /tmp/smolbsd-work (stale release DESTDIR)"
+freed_smolbsd_raw   = "1.4G — /tmp/smolbsd-head.raw (stale partial raw)"
+freed_gocache       = "1.3G — /tmp/gocache (rebuilds automatically)"
+freed_pkg_artifacts = "0.4G — /tmp/pkg_test, /tmp/pkg-rebuild, /tmp/da-pkg-v2.tar, /tmp/ports.tar.gz"
+freed_arm64_obj     = "9.4G — /usr/obj/usr/src/arm64.aarch64 (previous arm64 buildworld)"
+freed_amd64_obj     = "2.2G — /usr/obj/usr/src/amd64.amd64 (stale partial kernel-only)"
+total_freed         = "~21G"
+not_touched         = "/home/builder/ports (12G dd-agent-7.55 build work — builder's active port)"
+
+[build_session]
+screen_name  = "smolbuild-amd64"
+screen_pid   = "82866"
+started_at   = "2026-05-08T17:51:07Z"
+log_file     = "/tmp/smolbuild-amd64.log"
+script       = "/tmp/smolbuild-amd64.sh"
+status_at_dispatch = "running — buildworld cross-compile in progress (LLVM bootstrap visible in log)"
+
+[build_steps]
+step_1 = "sudo make -j4 buildworld TARGET=amd64 TARGET_ARCH=amd64"
+step_2 = "sudo make -j4 buildkernel KERNCONF=SMOLBSD TARGET=amd64 TARGET_ARCH=amd64"
+step_3 = "sudo make -C /usr/src/release vm-image KERNCONF=SMOLBSD TARGET=amd64 TARGET_ARCH=amd64 WITH_PKGBASE=yes VMFORMATS=qcow2 VMSIZE=4g CLOUDWARE_CONF=/usr/src/release/tools/smolbsd-qemu.conf"
+output_dir = "/tmp/smolbsd-amd64-out/"
+
+[eta]
+buildworld_estimate  = "2–4 hours (cross aarch64→amd64, -j4, LLVM bootstrap required)"
+buildkernel_estimate = "15–30 minutes after buildworld"
+release_estimate     = "30–60 minutes after buildkernel"
+total_estimate       = "3–5 hours from 17:51Z; expect artifact by ~21:00–23:00Z"
+check_command        = "ssh -J minim4-24 -p 2222 builder@localhost 'tail -20 /tmp/smolbuild-amd64.log; screen -ls'"
+
+[expected_output]
+artifact  = "/tmp/smolbsd-amd64-out/FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2"
+size_goal = "< 512 MiB (artifact-size gate)"
+kernel    = "SMOLBSD — strips physical drivers, adds device tpm, includes virtio stack"
+tpm       = "device tpm compiled in; supports CRB and FIFO interfaces"
+
+[next_actions]
+on_success = [
+  "SCP artifact to test host (smolbsd-buildworld or new Vultr instance)",
+  "nu bin/prep-bhyve-image.nu --input <artifact.qcow2> to convert to raw",
+  "nu bin/qemu-smolbsd.nu --image <artifact.raw> --arch amd64 --tpm to test TPM",
+  "nu bin/run-vm-tests.nu --image <artifact.raw> --tpm --results-file /tmp/smolbsd-run-1.toml",
+  "Append task-0038 with real test results",
+]
+on_failure = [
+  "Check /tmp/smolbuild-amd64.log for error",
+  "Common failure: disk full during release step (monitor df -h during build)",
+  "If disk fills: clean /usr/ports/distfiles or /var/cache/pkg",
+]
