@@ -82,21 +82,32 @@ def vultr-api [
         error make {msg: $"vultr-api: unsupported method ($method)"}
     }
 
-    let status   = $resp | get status?  | default 0
-    let body_str = $resp | get body?    | default "" | into string
+    let status    = $resp | get status? | default 0
+    # --full with application/json response: body is already a parsed record/list.
+    # For non-JSON or empty responses it may be a string or null.
+    let body_raw  = $resp | get body? | default null
 
     if $status < 200 or $status >= 300 {
+        let err_hint = if $body_raw != null { $body_raw | to nuon | str substring 0..200 } else { "" }
         error make {
             msg:  $"Vultr API ($method) ($path) failed: HTTP ($status)"
-            help: ($body_str | str substring 0..200)
+            help: $err_hint
         }
     }
 
-    if ($body_str | str trim | str length) == 0 {
+    if $body_raw == null {
         return {}
     }
 
-    $body_str | from json
+    # Already a record (parsed JSON) — return directly.
+    # If it's a string (non-JSON response), parse it.
+    let body_type = $body_raw | describe
+    if (($body_type | str starts-with "record") or ($body_type | str starts-with "list")) {
+        $body_raw
+    } else {
+        let s = $body_raw | into string | str trim
+        if ($s | str length) == 0 { {} } else { $s | from json }
+    }
 }
 
 # Poll a bare-metal or instance endpoint until status == "active" or timeout.
