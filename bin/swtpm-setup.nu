@@ -84,21 +84,24 @@ def action-start [paths: record] {
     }
 
     # Launch swtpm in daemon mode.
-    # FreeBSD security/swtpm port installs to /usr/local/bin/swtpm.
-    let swtpm_bin = "/usr/local/bin/swtpm"
-    if not ($swtpm_bin | path exists) {
-        error make {msg: $"swtpm binary not found at ($swtpm_bin); install security/swtpm"}
+    # FreeBSD security/swtpm port installs to /usr/local/bin/swtpm (most versions)
+    # or /usr/local/sbin/swtpm (some port revisions).  Probe both.
+    let swtpm_candidates = ["/usr/local/bin/swtpm", "/usr/local/sbin/swtpm"]
+    let swtpm_bin = $swtpm_candidates | where {|p| $p | path exists} | first 1
+    if ($swtpm_bin | length) == 0 {
+        error make {msg: $"swtpm binary not found in ($swtpm_candidates | str join ' or '); install security/swtpm"}
     }
+    let swtpm_bin = $swtpm_bin | first
 
     log-step "swtpm_launching" {
-        cmd:      $swtpm_bin
-        tpmstate: $paths.state_dir
+        cmd:       $swtpm_bin
+        tpmstate:  $paths.state_dir
         ctrl_path: $paths.socket
         pid_file:  $paths.pid_file
     }
 
     let tpmstate_arg = $"dir=($paths.state_dir)"
-    let ctrl_arg = $"type=unixio,path=($paths.socket)"
+    let ctrl_arg     = $"type=unixio,path=($paths.socket)"
     ^$swtpm_bin socket --tpmstate $tpmstate_arg --tpm2 --ctrl $ctrl_arg --pid-file $paths.pid_file --daemon
 
     # Verify socket appears within 3 seconds (poll every 0.3s, 10 attempts).

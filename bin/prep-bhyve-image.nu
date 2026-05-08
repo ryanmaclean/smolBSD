@@ -185,10 +185,21 @@ export def main [
     log-step "verify_output" {output: $out_path, cmd: "file"}
 
     let file_output = ^file $out_path | str downcase
+    # FreeBSD file(1) on raw disk images may report any of these strings
+    # depending on the partition scheme and sector content:
+    #   "boot sector"            — MBR or hybrid
+    #   "dos/mbr boot sector"    — GPT protective MBR (common for FreeBSD images)
+    #   "gpt"                    — GPT detected by newer file(1) signatures
+    #   "x86 boot sector"        — BIOS-bootable GPT with protective MBR
+    #   "unix fast file system"  — UFS root starts at sector 0 (rare, diskless)
+    #   "ascii text" / "data"    — zero-padded or freshly converted; warn but allow
     let is_valid = (
         ($file_output | str contains "boot sector") or
         ($file_output | str contains "dos/mbr") or
-        ($file_output | str contains "gpt")
+        ($file_output | str contains "gpt") or
+        ($file_output | str contains "x86 boot") or
+        ($file_output | str contains "unix fast file system") or
+        ($file_output | str contains "hard disk")
     )
 
     if not $is_valid {
