@@ -1,0 +1,217 @@
+#!/usr/bin/env expect
+# SPDX-License-Identifier: Apache-2.0
+# crash-recovery-qemu.exp — smolBSD QEMU crash-recovery gate.
+#
+# Measures the full crash+recovery cycle for a QEMU guest:
+#
+#   Phase 1 — INITIAL BOOT
+#     Spawn QEMU via $SMOLBSD_QEMU_CMD.
+#     Wait for "login:" within $SMOLBSD_TIME_LIMIT seconds.
+#
+#   Phase 2 — GRACEFUL SHUTDOWN
+#     Send "shutdown -p now" via the serial console.
+#     Wait for QEMU to exit (guest poweroff).
+#     Record SHUTDOWN_TIME=Ns.
+#     A graceful shutdown is used instead of SIGKILL to preserve qcow2
+#     image integrity across test runs.
+#
+#   Phase 3 — RECOVERY BOOT
+#     Spawn QEMU again with the same command.
+#     T0 = spawn time.
+#     Wait for "login:" within $SMOLBSD_RECOVERY_LIMIT seconds.
+#     Record RECOVERY_TIME=Ns.
+#     Acceptance: RECOVERY_TIME <= 90s.
+#
+# Environment variables:
+#   SMOLBSD_QEMU_CMD         — full QEMU command (required; same as time-to-ready-qemu.exp)
+#   SMOLBSD_TIME_LIMIT       — initial boot threshold in seconds (default: 30)
+#   SMOLBSD_RECOVERY_LIMIT   — recovery boot threshold in seconds (default: 90)
+#   SMOLBSD_ARCH             — informational; printed in output (default: aarch64)
+#   SMOLBSD_GUEST_USER       — login username for shutdown command (default: root)
+#   SMOLBSD_GUEST_PASSWORD   — guest password, empty string = no password (default: "")
+#
+# Exit codes:
+#   0 — both boots passed and RECOVERY_TIME <= threshold
+#   1 — timeout in any phase
+#   2 — hard failure pattern (panic / mountroot / UEFI shell)
+#   3 — initial boot failed (recovery not attempted)
+
+# ── Configuration ──────────────────────────────────────────────────────────────
+
+set boot_limit_sec     [expr {[info exists env(SMOLBSD_TIME_LIMIT)]     ? $env(SMOLBSD_TIME_LIMIT)     : 30}]
+set recovery_limit_sec [expr {[info exists env(SMOLBSD_RECOVERY_LIMIT)] ? $env(SMOLBSD_RECOVERY_LIMIT) : 90}]
+set arch               [expr {[info exists env(SMOLBSD_ARCH)]            ? $env(SMOLBSD_ARCH)            : "aarch64"}]
+set guest_user         [expr {[info exists env(SMOLBSD_GUEST_USER)]      ? $env(SMOLBSD_GUEST_USER)      : "root"}]
+set guest_pass         [expr {[info exists env(SMOLBSD_GUEST_PASSWORD)]  ? $env(SMOLBSD_GUEST_PASSWORD)  : ""}]
+
+# Shutdown waits up to 30s for QEMU to exit after the guest poweroff command.
+set shutdown_wait_sec 30
+
+if {![info exists env(SMOLBSD_QEMU_CMD)] || $env(SMOLBSD_QEMU_CMD) eq ""} {
+    puts stderr "ERROR: SMOLBSD_QEMU_CMD is not set — see time-to-ready-qemu.exp for usage"
+    exit 1
+}
+set qemu_cmd $env(SMOLBSD_QEMU_CMD)
+
+puts "ARCH=$arch"
+puts "BOOT_LIMIT=${boot_limit_sec}s"
+puts "RECOVERY_LIMIT=${recovery_limit_sec}s"
+
+# ── Helper: kill QEMU process by pid ─────────────────────────────────────────
+
+proc kill_qemu {} {
+    catch {exec kill [exp_pid]}
+    after 1500
+    catch {exec kill -KILL [exp_pid]}
+}
+
+# ── Helper: wait for login and log in ────────────────────────────────────────
+# Returns elapsed seconds on success; calls exit on hard failure.
+
+proc wait_for_login {threshold_label threshold_sec} {
+    set t0 [clock seconds]
+
+    expect {
+        "login:" {
+            set elapsed [expr {[clock seconds] - $t0}]
+            puts "${threshold_label}_TIME_TO_LOGIN=${elapsed}s"
+            return $elapsed
+        }
+        "Kernel panic" {
+            set elapsed [expr {[clock seconds] - $t0}]
+            puts "VERDICT=fail (kernel panic during $threshold_label at ${elapsed}s)"
+            puts "FAILURE_REASON=kernel_panic"
+            kill_qemu
+            exit 2
+        }
+        "mountroot>" {
+            set elapsed [expr {[clock seconds] - $t0}]
+            puts "VERDICT=fail (mountroot during $threshold_label at ${elapsed}s)"
+            puts "FAILURE_REASON=mountroot_prompt"
+            kill_qemu
+            exit 2
+        }
+        "UEFI Interactive Shell" {
+            set elapsed [expr {[clock seconds] - $t0}]
+            puts "VERDICT=fail (UEFI shell during $threshold_label at ${elapsed}s)"
+            puts "FAILURE_REASON=uefi_interactive_shell"
+            kill_qemu
+            exit 2
+        }
+        eof {
+            set elapsed [expr {[clock seconds] - $t0}]
+            puts "VERDICT=fail (QEMU exited unexpectedly during $threshold_label at ${elapsed}s)"
+            puts "FAILURE_REASON=qemu_exit"
+            exit 2
+        }
+        timeout {
+            set elapsed [expr {[clock seconds] - $t0}]
+            puts "TIMEOUT during $threshold_label after ${elapsed}s (threshold ${threshold_sec}s)"
+            puts "VERDICT=fail"
+            puts "FAILURE_REASON=timeout"
+            kill_qemu
+            exit 1
+        }
+    }
+}
+
+# ── Phase 1: initial boot ─────────────────────────────────────────────────────
+
+puts "PHASE=initial_boot"
+set timeout [expr {$boot_limit_sec + 10}]
+eval spawn $qemu_cmd
+
+set boot_elapsed [wait_for_login "BOOT" $boot_limit_sec]
+
+if {$boot_elapsed > $boot_limit_sec} {
+    puts "VERDICT=fail (initial boot too slow: ${boot_elapsed}s > ${boot_limit_sec}s)"
+    kill_qemu
+    exit 3
+}
+
+puts "PHASE=initial_boot_ok (${boot_elapsed}s)"
+
+# ── Phase 2: log in and shut down cleanly ─────────────────────────────────────
+#
+# We need a shell to run shutdown.  Log in as $guest_user.
+# FreeBSD cloud/smolBSD images typically allow root login at the serial
+# console without a password prompt (PermitRootLogin yes set by cloud-init
+# or image build).  If a password is configured, $guest_pass is sent.
+
+puts "PHASE=login_and_shutdown"
+set timeout 15
+
+# Send a newline to get a clean login prompt (the expect above consumed it).
+send "\r"
+expect {
+    "login:"  { send "$guest_user\r" }
+    "#"       { }
+    timeout   {
+        # Already at a prompt (the newline triggered no re-prompt).
+        # Send login anyway in case the prompt was eaten.
+        send "$guest_user\r"
+    }
+}
+
+# Handle optional password prompt.
+if {$guest_pass ne ""} {
+    expect {
+        "Password:" { send "$guest_pass\r" }
+        "#"         { }
+        timeout     { }
+    }
+}
+
+# Wait for shell prompt (#) then issue shutdown.
+set timeout 10
+expect {
+    "#"     { }
+    timeout { send "\r"; expect -timeout 5 "#" {} }
+}
+
+puts "PHASE=sending_shutdown"
+set t_shutdown_start [clock seconds]
+send "shutdown -p now\r"
+
+# Wait for QEMU process to exit after guest poweroff.
+set timeout [expr {$shutdown_wait_sec + 5}]
+expect {
+    eof {
+        set t_shutdown_end [clock seconds]
+        set shutdown_elapsed [expr {$t_shutdown_end - $t_shutdown_start}]
+        puts "SHUTDOWN_TIME=${shutdown_elapsed}s"
+        puts "PHASE=shutdown_complete"
+    }
+    timeout {
+        # Guest shutdown took too long — force kill and continue.
+        set shutdown_elapsed $shutdown_wait_sec
+        puts "WARN: guest did not power off within ${shutdown_wait_sec}s — forcing QEMU exit"
+        puts "SHUTDOWN_TIME=${shutdown_elapsed}s (forced)"
+        kill_qemu
+    }
+}
+
+# Brief pause to let the process table clear before re-spawning.
+after 500
+
+# ── Phase 3: recovery boot ────────────────────────────────────────────────────
+
+puts "PHASE=recovery_boot"
+set timeout [expr {$recovery_limit_sec + 10}]
+set t0_recovery [clock seconds]
+eval spawn $qemu_cmd
+
+set recovery_elapsed [wait_for_login "RECOVERY" $recovery_limit_sec]
+
+puts "RECOVERY_TIME=${recovery_elapsed}s"
+
+if {$recovery_elapsed > $recovery_limit_sec} {
+    puts "VERDICT=fail (recovery boot too slow: ${recovery_elapsed}s > ${recovery_limit_sec}s)"
+    kill_qemu
+    exit 1
+}
+
+puts "VERDICT=pass"
+puts "PHASE=recovery_boot_ok (${recovery_elapsed}s)"
+kill_qemu
+exit 0
