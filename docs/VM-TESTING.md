@@ -117,6 +117,17 @@ cu -l /dev/nmdm0B
 
 All six must pass for Phase III acceptance.
 
+> **aarch64 QEMU TPM limitation:** `swtpm` + `-device tpm-tis-device` works at
+> firmware level (UEFI measures into PCRs; swtpm state shows non-zero PCR 0
+> before kernel handoff) but `/dev/tpm0` is **not** created in the FreeBSD
+> guest. Root cause: QEMU aarch64 generates an ACPI `TPM2` table with
+> `ControlArea=0`; the FreeBSD `tpm(4)` CRB driver reads `ControlArea` to
+> locate the MMIO CRB region, treats zero as invalid, and refuses to attach.
+> **Use amd64 QEMU with `-device tpm-tis`** (`bin/qemu-smolbsd.nu --arch amd64
+> --tpm`) for OS-level TPM testing (T2–T6). amd64 QEMU with TCG works on
+> macOS/minim4-24 without VT-x. See `plans/tinyos/PHASE-3-TPM.md §4a.3` for
+> the full analysis and evidence from task-0031.
+
 ---
 
 ## 4. TPM Test Sequence (T1–T6)
@@ -225,12 +236,29 @@ dmesg | grep -i tpm
 # Expected: tpm0: <TPM 2.0> on pci0
 ```
 
-If absent, the smolBSD kernel config is missing `device tpm` or bhyve was
+If absent, the smolBSD kernel config is missing `device tpm` or the VM was
 launched without `--tpm`. Confirm the bhyve command line includes:
 
 ```
 -s 5,tpm,type=swtpm,path=/var/run/smolbsd-tpm/swtpm.sock
 ```
+
+Or for QEMU amd64, confirm the command includes:
+
+```
+-chardev socket,id=chrtpm,path=/var/run/smolbsd-qemu-tpm/swtpm.sock
+-tpmdev emulator,id=tpm0,chardev=chrtpm
+-device tpm-tis,tpmdev=tpm0
+```
+
+**aarch64 QEMU special case — `tpm.ko` loads but no `/dev/tpm0`:**
+If `dmesg` shows `tpm.ko` loaded but no `tpm0` device attachment, and you are
+running aarch64 QEMU with `-device tpm-tis-device`, this is a known limitation:
+QEMU sets `ControlArea=0` in the ACPI `TPM2` table, which the FreeBSD CRB
+driver treats as invalid. The UEFI firmware still uses swtpm correctly (PCRs
+are non-zero) but the OS-level driver does not attach. **Solution: switch to
+amd64 QEMU** (`qemu-system-x86_64 -device tpm-tis`). See
+`plans/tinyos/PHASE-3-TPM.md §4a.3`.
 
 If `/dev/tpm0` appears as FIFO instead of CRB, add to guest `/boot/loader.conf`:
 
