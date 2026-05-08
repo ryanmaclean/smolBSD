@@ -131,6 +131,56 @@ Guest kernel configuration is covered in §5.
 
 ---
 
+## 4a. Host Platform Requirements
+
+### 4a.1 Hardware virtualisation prerequisite
+
+bhyve requires a FreeBSD host with hardware virtualisation exposed to the
+kernel: Intel VT-x or AMD-V on amd64, or ARM EL2 on aarch64. **Apple
+Hypervisor Framework (HVF) does NOT expose EL2 to guest VMs** — a FreeBSD
+VM running inside QEMU/HVF on Apple Silicon cannot run bhyve. Attempting to
+load `vmm.ko` in that environment will fail with a permissions error; `bhyve`
+will refuse to open `/dev/vmm`.
+
+**Supported Phase-III host configurations:**
+
+| Host | VT capability | bhyve | Notes |
+|------|--------------|-------|-------|
+| Bare-metal amd64 (Intel/AMD) | VT-x / AMD-V | yes | Preferred; full `vmm.ko` support |
+| Vultr vc2 amd64 cloud instance | VMX exposed to guest | yes | Verified: nested virt enabled by default |
+| Bare-metal aarch64 (non-Apple) | EL2 present | yes | e.g. Ampere Altra; EL2 not blocked |
+| FreeBSD VM under QEMU/HVF (Apple Silicon) | EL2 blocked by HVF | **no** | `fbuild` on minim4-24 falls into this category |
+| FreeBSD VM under VirtualBox / VMware | depends on host config | conditional | Nested VT-x must be enabled explicitly |
+
+**Implication for smolBSD:** `fbuild` (the project's aarch64 FreeBSD VM on
+`minim4-24`) cannot run bhyve. Phase-III TPM testing must be performed on a
+dedicated bare-metal amd64 host or a Vultr vc2 amd64 instance. The scripts
+`bin/bhyve-smolbsd.nu` and `bin/vultr-bhyve-provision.nu` target these hosts.
+
+### 4a.2 arm64 bhyve virtio-tpm limitation
+
+FreeBSD 15 arm64 bhyve does **not** implement a `virtio-tpm` PCI device.
+The `virtio-tpm` backend was merged for the amd64 target only; the arm64
+bhyve code path lacks the device emulation layer required to forward the
+swtpm socket to a guest PCI slot.
+
+Consequence: TPM tests T2–T6 (guest `/dev/tpm0`, PCR read, seal/unseal,
+PCR mutation) can only be executed in an **amd64 bhyve guest**. arm64
+physical boards (Pi 5, RK3588) reach TPM support through the fTPM /
+TrustZone path documented in §7 and addressed in Phase IV — not through
+bhyve.
+
+**Summary of TPM test platform requirements:**
+
+| Test | Platform required | Reason |
+|------|------------------|--------|
+| T1 (swtpm socket) | Any host with `swtpm` installed | Host-side check only |
+| T2–T6 (guest TPM) | amd64 bhyve (bare-metal or Vultr vc2) | `virtio-tpm` amd64-only |
+| Physical Pi 5 fTPM | Pi 5 physical board (Phase IV) | RP1 TrustZone fTPM |
+| Physical RK3588 fTPM | RK3588 + OP-TEE build (Phase IV) | ARM TrustZone + OP-TEE |
+
+---
+
 ## 5. TPM Kernel Configuration
 
 The FreeBSD kernel config used in smolBSD must include `device tpm` for all
@@ -329,10 +379,12 @@ Key facts:
 | Path | Purpose | Status |
 |------|---------|--------|
 | `plans/tinyos/PHASE-3-TPM.md` | This scope document | done |
-| `bin/swtpm-setup.nu` | Initialize swtpm state directory; start swtpm socket process; verify socket appears within 3s | pending |
-| `bin/bhyve-smolbsd.nu` | Launch bhyve with smolBSD image, virtio-tpm attached to swtpm socket, UEFI firmware, serial console | pending |
-| `tests/tpm-attest.exp` | expect script: boots guest via bhyve-smolbsd.nu, waits for login prompt, runs T2–T5 sequence via SSH or serial, records PCR baseline | pending |
-| `tests/tpm-seal-test.nu` | Nushell: T5 seal/unseal round-trip; T6 PCR-extend mutation check; emits TOML result with pass/fail verdict per test | pending |
+| `bin/swtpm-setup.nu` | Initialize swtpm state directory; start swtpm socket process; verify socket appears within 3s | done |
+| `bin/bhyve-smolbsd.nu` | Launch bhyve with smolBSD image, virtio-tpm attached to swtpm socket, UEFI firmware, serial console | done |
+| `tests/tpm-attest.exp` | expect script: boots guest via bhyve-smolbsd.nu, waits for login prompt, runs T2–T5 sequence via SSH or serial, records PCR baseline | done |
+| `tests/tpm-seal-test.nu` | Nushell: T5 seal/unseal round-trip; T6 PCR-extend mutation check; emits TOML result with pass/fail verdict per test | done |
+| `bin/bhyve-host-setup.nu` | Provision a bare-metal amd64 or Vultr vc2 host for bhyve+swtpm: load vmm.ko/nmdm.ko, install swtpm/bhyve-firmware pkgs, verify /dev/vmm; fails fast on HVF/arm64 hosts | pending |
+| `bin/vultr-bhyve-provision.nu` | Provision a Vultr vc2 amd64 instance via Vultr API, bootstrap FreeBSD 15, install bhyve prerequisites, and run bhyve-host-setup.nu remotely | pending |
 
 All scripts must pass `nu --no-config-file` syntax check before acceptance.
 `tpm-attest.exp` must tolerate a 30s boot window before declaring timeout.
