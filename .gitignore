@@ -15,6 +15,9 @@ build/
 *.raw
 *.vmdk
 
+# Claude Code agent worktrees and session data
+.claude/
+
 # Editor / OS detritus
 .DS_Store
 *.swp
