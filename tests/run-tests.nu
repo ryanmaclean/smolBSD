@@ -10,6 +10,7 @@
 
 use ../bin/mbox-parse.nu [parse-mbox, extract-toml, msg-id]
 use coord-fsm-tests.nu [run-coord-fsm-tests]
+use coord-vm-e2e-tests.nu [run-coord-vm-e2e-tests]
 
 # Minimal two-message mbox fixture used by unit tests.
 const FIXTURE_MBOX = "From agent1 Mon May  4 10:00:00 2026
@@ -190,7 +191,7 @@ def run-e2e-test [arch: string, script: string, qcow2: string, ...extra_args: st
 }
 
 def main [
-    --suite: string = "all"   # all | unit | e2e
+    --suite: string = "all"   # all | unit | e2e | e2e-coord
     --arch: string = "all"    # all | amd64 | aarch64
 ] {
     mut results = []
@@ -199,6 +200,11 @@ def main [
     if $suite == "all" or $suite == "unit" {
         $results = $results | append (run-unit-tests)
         $results = $results | append (run-coord-fsm-tests)
+    }
+
+    # Coordinator → VM end-to-end suite (slow; ~30–60 s; excluded from default "all")
+    if $suite == "e2e-coord" {
+        $results = $results | append (run-coord-vm-e2e-tests)
     }
 
     # E2E tests (require real qcow2 images)
