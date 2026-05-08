@@ -205,15 +205,92 @@ USB-UART アダプターを接続する必要があります。
 ### 6.5 bhyve/TPM テストのホスト要件（フェーズ III）
 
 フェーズ III の TPM テスト（T1–T6、`bin/bhyve-smolbsd.nu`、`tests/tpm-seal-test.nu`）
-を実行するには、amd64 のベアメタルホストまたは Vultr vc2 amd64 クラウドインスタンスが
-必要です。**HVF はネストされた仮想化を許可しません**：Apple Silicon Mac 上で
-QEMU/HVF を使って FreeBSD を動作させている環境（`fbuild` / `minim4-24` がこれに
-該当します）では、HVF がゲスト VM に EL2 を公開しないため bhyve を起動できません。
-また、FreeBSD 15 の arm64 bhyve は `virtio-tpm` PCI デバイスを実装していないため、
-T2–T6 テスト（ゲスト内 `/dev/tpm0`、PCR 読み取り、seal/unseal）は amd64 bhyve
-ホストでのみ実行可能です。Pi 5 および RK3588 の物理ボードにおける TPM サポートは、
-fTPM/TrustZone 経由でフェーズ IV で対応します。
+を実行するには、amd64 ベアメタルまたは同等のホストが必要です。
+
+**インフラ調査の結果（task-0028〜task-0030）：**
+
+- **HVF はネストされた仮想化を許可しません。** `minim4-24`（Apple Silicon）では
+  HVF がゲストに EL2 を公開しないため、QEMU/HVF 上で bhyve を起動できず
+  `/dev/vmm` が作成されません。
+- **Vultr vc2 は VT-x を公開しません。** `vmx_modinit: processor does not
+  support VMX operation` というメッセージが示す通り、Vultr の KVM クラウド
+  インスタンスはゲストに対してハードウェア仮想化を透過的に渡しません。
+- **Vultr ベアメタルは FreeBSD 15 を拒否します。** テストしたすべてのベアメタル
+  プランで `os_id=2720` を指定すると HTTP 400 が返されます。
+- **採用した解決策 — Hetzner ccx23。** Hetzner Cloud の専用 vCPU インスタンス
+  `ccx23`（AMD EPYC 専用、約 49 ユーロ/月）はゲストに AMD-V を公開することが
+  確認されており、FreeBSD ゲスト内で `/dev/vmm` の作成が可能です。
+  `bin/hetzner-bhyve-provision.nu` でプロビジョニングを自動化できます
+  （`--type hcloud` で ccx23/ccx33、`--type robot` で AX41-NVMe ベアメタル）。
+  `HCLOUD_TOKEN` 環境変数が必要です。
+
+**aarch64 QEMU における TPM ブロッカー（task-0031）：** QEMU aarch64 で
+`tpm-tis-device` を使用すると、UEFI（edk2）は swtpm への計測に成功
+（`Tpm2GetCapabilityPcrs` が UEFI レベルで通過）しますが、ACPI TPM2 テーブルの
+`ControlArea` フィールドが 0 になります。FreeBSD の CRB ドライバーがアタッチを
+拒否し、`/dev/tpm0` が作成されません。このブロッカーは aarch64 エミュレーション
+固有のものです。解決策は **amd64 QEMU で `tpm-tis`（`tpm-tis-device` ではなく）
+を使用すること**であり、Hetzner ccx23 ホスト上で実行します。
 
 ---
 
-*このサマリーは 2026-05-04 に smolBSD フェーズ I 計画ドキュメントから作成されました。フェーズ I 完了を反映して 2026-05-04 に更新。§6 は 2026-05-06 にフェーズ II 向けとして追加。§6.5 は 2026-05-08 に task-0028 の bhyve/HVF ブロッカー発覚を受けて追加。*
+## 7. 現在の状態 — フェーズ III とその後
+
+> *2026-05-08 更新。*
+
+### 7.1 CI ゲート：オープン（TPM サブゲートは保留中）
+
+`minim4-24`（FreeBSD 15.0-RELEASE-p5 aarch64、QEMU 10.2.1 HVF、fbuild VM）で
+非 TPM の 3 連続パスが記録されました：
+
+| パス | タイムスタンプ | VM 内空きメモリ | 結果 |
+|------|------------|--------------|------|
+| 1 | 2026-05-08T17:22:57Z | 804 MiB | pass |
+| 2 | 2026-05-08T17:48:19Z | 805 MiB | pass |
+| 3 | 2026-05-08T17:49:07Z | 584 MiB | pass |
+
+`nu bin/ci-gate.nu --results-dir /tmp/smolbsd-results` の出力：
+`{consecutive_passes: 3, required: 3, gate: open}`（終了コード 0）。
+
+**boot-gate**（`login:` までの時間 ≤ 30 秒）は task-0031 で **7 秒** として
+個別に検証済みです。自動テストスイートへの組み込みは nmdm/stdio の
+expect スクリプト配線が完了次第行います。
+
+保留中のサブゲート：boot-gate の自動化、artifact-size（ビルド VM イメージは
+対象外 — 512 MiB 上限はリリースアーティファクトにのみ適用）、crash-recovery
+（QEMU monitor ハーネスの実装が必要）、TPM フルパス（amd64 ホストが必要）。
+
+### 7.2 smolBSD amd64 イメージのビルド
+
+fbuild 上でクロスコンパイル（`TARGET=amd64 TARGET_ARCH=amd64`）によって
+amd64 イメージが生成されており、以下に配置されています：
+`smolbsd-buildworld @ 108.61.206.203:/root/genoa/out/smolbsd-linode-amd64-v0.1.0.raw`
+（2.0 GiB、GPT：128 MiB ESP に `BOOTX64.EFI` + 1.9 GiB UFS ルート、
+GENERIC カーネル）。`SMOLBSD` カーネルコンフィグを用いた最小ビルドは未完了です。
+
+### 7.3 新しいツール（フェーズ III）
+
+| スクリプト | 役割 |
+|-----------|------|
+| `bin/qemu-smolbsd.nu` | smolBSD を QEMU で起動（Apple Silicon では HVF、Linux では KVM）。アクセラレータを自動検出。TPM は `tpm-tis`（amd64）または `tpm-tis-device`（aarch64）経由。 |
+| `bin/hetzner-bhyve-provision.nu` | bhyve 用 Hetzner ホストのプロビジョニング：`--type hcloud`（ccx23/ccx33、AMD-V 公開）または `--type robot`（AX41-NVMe ベアメタル）。 |
+| `bin/run-vm-tests.nu` | VM テストスイートのオーケストレーター — `qemu` / `bhyve` バックエンド、`--arch` フラグ、10 ステップ順次実行、TOML 形式の結果ファイル出力。 |
+| `bin/ci-gate.nu` | 結果 TOML ファイルのディレクトリを参照して 3 連続パスゲートを評価。 |
+| `bin/smolbsd.nu` | メイン CLI エントリポイント：`build`、`test`、`convert`、`provision vultr\|hetzner`、`bhyve`、`qemu`、`coord` 等のサブコマンド。 |
+| `tests/time-to-ready-bhyve.exp` | nmdm コンソール（`cu`）経由の bhyve boot-gate。`login:`、`Kernel panic`、`mountroot>`、`UEFI Interactive Shell` を検出。 |
+| `tests/bhyve-crash-recovery.exp` | bhyve の crash-recovery ゲート — bhyvectl によるパワーサイクル後に `login:` を待機。 |
+
+### 7.4 次のステップ
+
+1. **amd64 TPM ホスト**：`HCLOUD_TOKEN` を取得し、
+   `nu bin/smolbsd.nu provision hetzner --dry-run` で動作確認後、実際に作成する。
+2. **最小 smolBSD イメージ**：`SMOLBSD` カーネル（GENERIC ではなく）で
+   512 MiB 未満の qcow2 を構築し、artifact-size ゲートを検証する。
+3. **boot-gate の自動化**：バックエンドに応じた nmdm または stdio コンソール経由で
+   `tests/time-to-ready-bhyve.exp` を `bin/run-vm-tests.nu` に組み込む。
+4. **TPM 完全スイート**：Hetzner ccx23 ホストをプロビジョニングし次第、T1–T6 を
+   実行する。3 連続パスで TPM ゲートがオープンする。
+
+---
+
+*このサマリーは 2026-05-04 に smolBSD フェーズ I 計画ドキュメントから作成されました。フェーズ I 完了を反映して 2026-05-04 に更新。§6 は 2026-05-06 にフェーズ II 向けとして追加。§6.5 は 2026-05-08 に更新、§7 は 2026-05-08 にフェーズ III の知見（task-0028〜task-0035）を受けて追加。*
