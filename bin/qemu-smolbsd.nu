@@ -267,9 +267,15 @@ def build-cmd-aarch64 [
         "-smp"     ($cpus | into string)
         "-drive"   $"file=($image),format=($img_fmt),if=virtio"
         "-nic"     $"user,model=virtio-net-pci,hostfwd=tcp::($hostfwd)-:22"
-        "-serial"  $serial
         "-nographic"
+        "-monitor" "none"
     ]
+    # -nographic redirects serial to stdio implicitly; adding -serial stdio
+    # would cause "cannot use stdio by multiple character devices" — omit it.
+    # For non-stdio serial (file:, unix:), append explicitly.
+    if $serial != "stdio" {
+        $args = ($args | append ["-serial" $serial])
+    }
 
     # TPM — aarch64 QEMU: tpm-tis-device
     if $tpm {

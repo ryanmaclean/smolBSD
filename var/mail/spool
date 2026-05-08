@@ -7578,3 +7578,185 @@ per task-0027 audit). Run ci-gate.nu after to confirm.
 [reply_contract]
 output_to   = "coordinator@smolbsd.local"
 reply_msgid = "<task-0035.builder@smolbsd.local>"
+
+From smolbsd-coord Fri May 08 11:30:00 2026
+From: coordinator@smolbsd.local
+To: tester@smolbsd.local
+Subject: [task-0040] Full non-TPM QEMU suite — boot-gate + crash-recovery wired
+Date: Fri, 08 May 2026 11:30:00 -0000
+Message-ID: <task-0040.coord@smolbsd.local>
+References: <task-0036.tester@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/phase-iii
+X-Spec-Version: v1.1
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "task-0040"
+title    = "Full non-TPM QEMU suite on minim4-24 — boot-gate and crash-recovery now wired"
+deadline = "2026-05-08"
+
+[brief]
+summary = """
+tests/time-to-ready-qemu.exp and tests/crash-recovery-qemu.exp are now wired
+into bin/run-vm-tests.nu. Run the full suite on minim4-24 using the arm64
+BASIC-CLOUDINIT image, skipping TPM steps. Report real pass/fail on each step
+with actual timings. Confirm CI gate status from existing run-1/2/3 results.
+"""
+
+[context_pointers]
+read = [
+  "tests/time-to-ready-qemu.exp",
+  "tests/crash-recovery-qemu.exp",
+  "bin/run-vm-tests.nu",
+]
+prior_msgids = ["<task-0036.tester@smolbsd.local>"]
+
+[acceptance]
+must_pass = [
+  "time-to-ready-qemu.exp runs against a booted FreeBSD arm64 image",
+  "crash-recovery-qemu.exp runs and records RECOVERY_TIME",
+  "full orchestrated run-vm-tests.nu result TOML written",
+  "CI gate status reported",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+tools_allowed        = ["Read", "Bash"]
+budget_tokens        = 60000
+reply_msgid          = "<task-0040.tester@smolbsd.local>"
+
+From smolbsd-tester Fri May 08 12:45:00 2026
+From: tester@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0040] Full non-TPM QEMU suite on minim4-24 — boot-gate + crash-recovery
+Date: Fri, 08 May 2026 12:45:00 -0000
+Message-ID: <task-0040.tester@smolbsd.local>
+In-Reply-To: <task-0040.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/phase-iii
+X-Verdict: blocked
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0040"
+verdict = "blocked"
+host    = "minim4-24"
+
+[summary]
+boot_gate_script_works  = true
+boot_gate_test_result   = "blocked — serial getty not on UART in BASIC-CLOUDINIT image"
+crash_recovery_result   = "not reached"
+ci_gate_status          = "OPEN (3/3 consecutive passes from prior run-1/2/3 results)"
+scripts_deployed        = true
+scripts_syntax_clean    = true
+
+[what_worked]
+scripts_rsynced = "bin/ and tests/ rsynced to ~/smolbsd-run/ on minim4-24"
+overlay_created = "qemu-img create -f qcow2 -b BASIC-CLOUDINIT.qcow2 produced 192K overlay"
+qemu_launched   = "qemu-system-aarch64 with HVF started cleanly in all attempts"
+boot_completes  = "FreeBSD 15.0-RELEASE arm64 boots to fully running state in ~7s (HVF)"
+network_up      = "vtnet0 gets 10.0.2.15 via DHCP; freebsd-update fetches patches"
+dmesg_on_serial = "full kernel dmesg output appears on serial console (UART PL011)"
+expect_script_syntax = "time-to-ready-qemu.exp and crash-recovery-qemu.exp parse and spawn correctly"
+monitor_none_fix = "Identified and fixed -serial stdio conflict: use -nographic -monitor none (no separate -serial stdio flag)"
+
+[boot_gate_blocker]
+root_cause = """
+The FreeBSD 15.0-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2 image does
+NOT enable a serial getty on ttyu0 (the PL011 UART at 0x9000000). The image's
+/etc/ttys has ttyu0 set to 'off'. The kernel correctly attaches uart0 as the
+serial console for dmesg output, but the getty process (which produces the
+'login:' prompt) runs only on the EFI framebuffer console (efi) — not on the
+UART.
+
+time-to-ready-qemu.exp correctly captures all dmesg output (200+ lines of
+kernel boot), network init, freebsd-update, and rc.d services — but 'login:'
+never appears on the serial stream because getty is bound to the EFI console.
+
+Evidence: grep for 'login:' in a full 4-minute serial capture returns 0 matches,
+even after the system is fully booted and running. SSH would work (port 2245
+forwards to guest port 22) but the expect script waits for serial 'login:'.
+"""
+
+additional_finding = """
+Disk space is critically constrained on minim4-24 (580-615 MiB free). Any
+write-amplifying operation fills the disk:
+- Converting the 6 GiB virtual qcow2 to raw: disk-full at 92%
+- First boot of BASIC-CLOUDINIT without snapshot: freebsd-update writes
+  ~200 patch files to the overlay qcow2, consuming hundreds of MB
+- Solution used: -snapshot=on (writes discard on QEMU exit, no persistence)
+
+The -snapshot=on workaround preserves disk but means no persistent changes
+can be made to /etc/ttys or loader.conf to enable the serial getty.
+"""
+
+serial_console_diagnosis = """
+The loader.conf in the image already contains 'console=comconsole' but the
+FreeBSD loader reports 'console comconsole is unavailable' because comconsole
+requires the PC-style COM1 at 0x3F8 on x86, not the PL011 UART. On aarch64
+qemu virt, the correct console name in loader is 'efi' or 'eficom'.
+The kernel correctly auto-detects uart0 (PL011) and uses it for dmesg,
+but the vt(4) virtual terminal layer does not attach a getty to uart0 by
+default unless /etc/ttys enables it or -serial is configured as the primary console.
+"""
+
+[what_the_smolbsd_custom_image_does_differently]
+note = """
+The smolBSD custom image (FreeBSD-15-aarch64-smolbsd.qcow2 in fbuild /tmp/)
+was built with modifications that enable the serial getty. The existing
+tests/time-to-ready-aarch64.exp was designed for that image and is known to
+pass (TIME_TO_LOGIN=18s per task-0019). The BASIC-CLOUDINIT release image
+cannot be used as a drop-in replacement for serial console boot-gate testing.
+"""
+smolbsd_image_location = "/tmp/smolbsd-out/FreeBSD-15-aarch64-smolbsd.qcow2 on fbuild (1.4 GiB)"
+smolbsd_image_too_large = true
+disk_free_minim4_24 = "591 MiB — cannot hold 1.4 GiB image"
+
+[ci_gate]
+results_dir   = "/tmp/smolbsd-results (local Mac)"
+files_checked = 3
+run_1         = "smolbsd-run-1.toml — overall=pass"
+run_2         = "smolbsd-run-2.toml — overall=pass"
+run_3         = "smolbsd-run-3.toml — overall=pass"
+consecutive_passes = 3
+required = 3
+gate_status = "OPEN"
+verdict = "CI gate is already open from prior 3 consecutive passes"
+command_output = "{consecutive_passes: 3, required: 3, gate: open, files_checked: 3}"
+
+[path_forward]
+option_a = "Use the smolBSD custom qcow2 from fbuild: free up disk on minim4-24 (delete ~/vms/FreeBSD-15.0-RELEASE-arm64 original after confirming not needed for fbuild — it's the fbuild backing image), then scp the 1.4 GiB smolbsd qcow2 from fbuild. smolBSD image has serial getty enabled."
+option_b = "Patch /etc/ttys in the BASIC-CLOUDINIT image on fbuild (which has sufficient disk), add 'ttyu0 /usr/libexec/getty std.9600 xterm on secure' line, then scp patched image to minim4-24. Image size after patch is same as before."
+option_c = "Add -append kenv option to QEMU to set kern.console=uart and kern.vty=vt in the environment. Does not fix /etc/ttys but may force serial getty."
+recommended = "option_b — patch /etc/ttys in fbuild, transfer only the patched version"
+
+[[claims]]
+subject  = "time-to-ready-qemu.exp script deployed and syntactically correct on minim4-24"
+expected = "expect ~/smolbsd-run/tests/time-to-ready-qemu.exp exits with structured output"
+probe    = "SMOLBSD_QEMU_CMD=... expect ~/smolbsd-run/tests/time-to-ready-qemu.exp"
+evidence = "Script spawned QEMU, captured 200+ lines of dmesg/boot output, correctly reported TIMEOUT after 40s with FAILURE_REASON=timeout. Script logic is correct."
+verdict  = "pass"
+
+[[claims]]
+subject  = "FreeBSD arm64 HVF boot time < 30s (kernel + userland up)"
+expected = "Full FreeBSD boot to running state within 30s"
+probe    = "Serial log shows freebsd-update starting at ~7s, network up at ~10s"
+evidence = "Boot is fast (<10s to running state under HVF). Serial getty is the only missing piece."
+verdict  = "pass"
+
+[[claims]]
+subject  = "login: appears on serial console for BASIC-CLOUDINIT image"
+expected = "grep login: /serial-log returns >= 1 match after 4-minute boot wait"
+probe    = "4-minute serial capture, grep -c login:"
+evidence = "0 matches in 4-minute capture. /etc/ttys has ttyu0 off. getty binds to EFI console only."
+verdict  = "fail"
+
+[[claims]]
+subject  = "CI gate open after 3 consecutive passes (prior runs)"
+expected = "nu bin/ci-gate.nu --results-dir /tmp/smolbsd-results exits 0"
+probe    = "nu bin/ci-gate.nu --results-dir /tmp/smolbsd-results"
+evidence = "{consecutive_passes: 3, required: 3, gate: open, files_checked: 3}"
+verdict  = "pass"
