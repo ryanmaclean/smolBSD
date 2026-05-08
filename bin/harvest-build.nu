@@ -16,9 +16,8 @@
 # var/mail/spool.
 #
 # Artifact search order (both paths checked each poll):
-#   1. /tmp/smolbsd-amd64-out/*.qcow2      (copied there by build script on finish)
-#   2. /usr/obj/usr/src/amd64.amd64/release/*.qcow2  (make release output)
-#   3. /usr/obj/usr/src/amd64.amd64/release/vm*/*.qcow2  (vmimage subdir variant)
+#   1. /tmp/smolbsd-amd64-out/*.qcow2                    (copied there by build script on finish)
+#   2. /usr/obj/amd64.amd64/usr/src/release/**/*.qcow2   (make release OBJDIR output)
 #
 # See: bin/smolbuild-amd64.sh (build script on fbuild)
 #      var/mail/spool task-0037 (build launch record)
@@ -81,8 +80,11 @@ def find-artifact [
     jump: string, port: int, target: string, dry_run: bool
 ] {
     # Search both the build script's copy dir and make release output paths.
+    # FreeBSD MAKEOBJDIRPREFIX layout: /usr/obj/<target>.<arch>/usr/src/release/
+    # For amd64: /usr/obj/amd64.amd64/usr/src/release/
+    # vm-image subdir: /usr/obj/amd64.amd64/usr/src/release/vm/
     # Use a single semicolon-separated sh -c string to avoid Nushell escape issues.
-    let search_cmd = "sh -c 'f=$(ls /tmp/smolbsd-amd64-out/*.qcow2 2>/dev/null | head -1); [ -n \"$f\" ] && echo \"$f\" && exit 0; f=$(find /usr/obj/usr/src/amd64.amd64/release -name *.qcow2 2>/dev/null | head -1); [ -n \"$f\" ] && echo \"$f\" && exit 0; echo'"
+    let search_cmd = "sh -c 'f=$(ls /tmp/smolbsd-amd64-out/*.qcow2 2>/dev/null | head -1); [ -n \"$f\" ] && echo \"$f\" && exit 0; f=$(find /usr/obj/amd64.amd64/usr/src/release -name *.qcow2 2>/dev/null | head -1); [ -n \"$f\" ] && echo \"$f\" && exit 0; echo'"
     let r = ssh-fbuild $jump $port $target $search_cmd $dry_run
     if $dry_run { return "" }
     $r.stdout | str trim
@@ -154,8 +156,7 @@ def append-spool [
     let ts    = date now | format date "%a %b %d %H:%M:%S %Y"
     let ts_iso = date now | format date "%Y-%m-%dT%H:%M:%SZ"
 
-    let body = $"
-From smolbsd-runner ($ts) 2026
+    let body = $"From smolbsd-runner ($ts)
 From: runner@smolbsd.local
 To: coordinator@smolbsd.local
 Subject: [task-0038] smolBSD amd64 SMOLBSD-kernel build harvest — ($verdict)

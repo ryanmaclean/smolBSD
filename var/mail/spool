@@ -7426,3 +7426,82 @@ on_failure = [
   "Common failure: disk full during release step (monitor df -h during build)",
   "If disk fills: clean /usr/ports/distfiles or /var/cache/pkg",
 ]
+From smolbsd-provisioner Thu May 08 11:24:00 2026
+From: smolbsd-provisioner <provisioner@smolbsd.local>
+To: smolbsd-coord <coord@smolbsd.local>
+Date: Thu, 08 May 2026 11:24:00 +0000
+Subject: task-0039: Hetzner Cloud bhyve host provisioning — credential check + dry-run
+Message-ID: <task-0039@smolbsd.local>
+Content-Type: text/plain; charset=utf-8
+
+# task-0039: Hetzner Cloud bhyve host provisioning run
+
+## Result: BLOCKED — no Hetzner credentials available
+
+## Credential check
+
+- HCLOUD_TOKEN: missing (not set in env)
+- HETZNER_ROBOT_USER: missing (not set in env)
+- HETZNER_ROBOT_PASSWORD: missing (not set in env)
+- hcloud CLI: not installed (not in PATH, not at /opt/homebrew/bin/hcloud)
+- ~/.config/hcloud/: not present
+
+No credentials or CLI access found for either Hetzner Cloud or Hetzner Robot.
+
+## Dry-run result: PASS
+
+Script `bin/hetzner-bhyve-provision.nu --type hcloud --dry-run` executed successfully.
+
+Dry-run output confirmed:
+- Would POST to https://api.hetzner.cloud/v1/servers
+- Server type: ccx23 (4 dedicated AMD EPYC vCPUs, 16 GiB RAM, ~€49/mo)
+- Location: nbg1 (Nuremberg)
+- Label: smolbsd-bhyve
+- Image: freebsd-14 (FreeBSD 15 not yet in Hetzner catalogue; falls back to FreeBSD 14)
+- user_data: first-boot cloud-init sh script that installs bhyve deps, loads vmm kmod,
+  verifies /dev/vmm, and touches /var/run/smolbsd-host-ready
+- Labels: project=smolbsd, purpose=bhyve-host, phase=phase-iii
+
+The cloud-init script mirrors bin/bhyve-host-setup.nu and will:
+  pkg install -y nushell swtpm bhyve-firmware qemu-utils expect git
+  kldload vmm nmdm if_tap if_bridge
+  sysrc kld_list+="vmm nmdm if_tap if_bridge"
+  verify /dev/vmm exists
+
+## What is needed to proceed
+
+### Option A: Hetzner Cloud (recommended)
+
+1. Create a Hetzner Cloud account at https://console.hetzner.cloud/
+2. Create an API token (Read+Write) in the project Security → API Tokens tab
+3. Set in environment: export HCLOUD_TOKEN=<token>
+4. Run: nu bin/hetzner-bhyve-provision.nu --type hcloud --poll
+
+Expected cost: ccx23 is ~€0.068/hr (dedicated AMD EPYC vCPU, AMD-V exposed to guests).
+Estimated provisioning time: <2 minutes to running state.
+
+### Option B: Hetzner Robot (bare-metal, more powerful)
+
+1. Purchase or have an existing Hetzner Robot account
+2. Set: export HETZNER_ROBOT_USER=<webservice-user>
+3. Set: export HETZNER_ROBOT_PASSWORD=<webservice-password>
+4. Run: nu bin/hetzner-bhyve-provision.nu --type robot --poll
+
+Note: AX41-NVMe bare-metal takes 15–30 minutes to provision.
+Webservice credentials differ from main Robot login — set in Robot account
+under Settings → Webservice and App Settings.
+
+## Why Hetzner (not Vultr)
+
+- Vultr vc2: KVM does not expose VT-x/AMD-V to FreeBSD guests → bhyve fails
+- Vultr bare-metal: Rejects FreeBSD 15 (HTTP 400 on all plans, needs support ticket)
+- Hetzner ccx* (dedicated vCPU): AMD-V confirmed exposed to guests; /dev/vmm works
+  (Hetzner documentation + community reports, task-0030 blocker analysis)
+
+## Next steps after provisioning
+
+1. Obtain IP from provisioning output
+2. Run: nu bin/bhyve-host-setup.nu --remote root@<IP>
+3. Confirm: ssh root@<IP> 'kldload vmm && ls -la /dev/vmm'
+4. Update task-0039 with real IP, VT-x confirmation, pkg versions
+

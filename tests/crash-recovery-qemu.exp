@@ -42,7 +42,7 @@ set boot_limit_sec     [expr {[info exists env(SMOLBSD_TIME_LIMIT)]     ? $env(S
 set recovery_limit_sec [expr {[info exists env(SMOLBSD_RECOVERY_LIMIT)] ? $env(SMOLBSD_RECOVERY_LIMIT) : 90}]
 set arch               [expr {[info exists env(SMOLBSD_ARCH)]            ? $env(SMOLBSD_ARCH)            : "aarch64"}]
 set guest_user         [expr {[info exists env(SMOLBSD_GUEST_USER)]      ? $env(SMOLBSD_GUEST_USER)      : "root"}]
-set guest_pass         [expr {[info exists env(SMOLBSD_GUEST_PASSWORD)]  ? $env(SMOLBSD_GUEST_PASSWORD)  : ""}]
+set guest_pass         [expr {[info exists env(SMOLBSD_GUEST_PASSWORD)]  ? $env(SMOLBSD_GUEST_PASSWORD)  : "smolbsd"}]
 
 # Shutdown waits up to 30s for QEMU to exit after the guest poweroff command.
 set shutdown_wait_sec 30

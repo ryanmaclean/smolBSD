@@ -84,7 +84,7 @@ def print-help [] {
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
-def main [
+def --wrapped main [
     subcommand?: string,   # subcommand to dispatch (omit to print help)
     ...args: string,       # remaining flags/args forwarded to delegate script
 ] {

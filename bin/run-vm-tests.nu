@@ -604,23 +604,48 @@ export def main [
     let qemu_cmd_str = if $backend == "qemu" {
         let norm_arch = if $arch == "arm64" { "aarch64" } else { $arch }
         let qemu_bin  = if $norm_arch == "aarch64" { "qemu-system-aarch64" } else { "qemu-system-x86_64" }
-        # Resolve BIOS path the same way qemu-smolbsd.nu does (best-effort here;
-        # qemu-smolbsd.nu will validate on its own launch).
+        # Resolve BIOS path — same candidate list as qemu-smolbsd.nu find-bios.
         let bios_candidates = if $norm_arch == "aarch64" {
             ["/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
              "/usr/local/share/qemu/edk2-aarch64-code.fd"
-             "/usr/share/qemu/edk2-aarch64-code.fd"]
+             "/usr/share/qemu/QEMU_EFI.fd"
+             "/usr/share/qemu/edk2-aarch64-code.fd"
+             "/usr/share/AAVMF/AAVMF_CODE.fd"]
         } else {
             ["/opt/homebrew/share/qemu/edk2-x86_64-code.fd"
              "/usr/local/share/qemu/edk2-x86_64-code.fd"
-             "/usr/share/qemu/edk2-x86_64-code.fd"]
+             "/usr/share/qemu/OVMF.fd"
+             "/usr/share/qemu/edk2-x86_64-code.fd"
+             "/usr/share/OVMF/OVMF_CODE.fd"]
         }
         let bios = ($bios_candidates | where {|p| $p | path exists} | first | default "")
-        let accel = if $norm_arch == "aarch64" { "hvf" } else { "tcg" }
+        # Detect accelerator the same way qemu-smolbsd.nu detect-accel does.
+        let accel = do {
+            let hv_r = (^sysctl kern.hv_support | complete)
+            if $hv_r.exit_code == 0 {
+                let val = $hv_r.stdout | str trim | split row ":" | last | str trim
+                if $val == "1" { "hvf" } else if ("/dev/kvm" | path exists) { "kvm" } else { "tcg" }
+            } else if ("/dev/kvm" | path exists) {
+                "kvm"
+            } else {
+                "tcg"
+            }
+        }
         let img_fmt = if ($image | str ends-with ".qcow2") { "qcow2" } else { "raw" }
-        let machine = if $norm_arch == "aarch64" { $"virt,accel=($accel)" } else { "pc" }
-        let cpu     = if $norm_arch == "aarch64" { "host" } else { "qemu64" }
-        mut parts = [$qemu_bin "-machine" $machine "-cpu" $cpu]
+        let cpu = if $accel == "hvf" or $accel == "kvm" {
+            "host"
+        } else if $norm_arch == "aarch64" {
+            "cortex-a72"
+        } else {
+            "qemu64"
+        }
+        # aarch64: -machine virt,accel=<accel>  (accel embedded in machine flag)
+        # amd64:   -M q35 -accel <accel>         (matches qemu-smolbsd.nu build-cmd-amd64)
+        mut parts = if $norm_arch == "aarch64" {
+            [$qemu_bin "-machine" $"virt,accel=($accel)" "-cpu" $cpu]
+        } else {
+            [$qemu_bin "-M" "q35" "-accel" $accel "-cpu" $cpu]
+        }
         if ($bios | str length) > 0 {
             $parts = $parts | append ["-bios" $bios]
         }
