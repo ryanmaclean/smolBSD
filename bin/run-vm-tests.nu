@@ -203,8 +203,14 @@ def step-boot-gate [console: string, timeout_sec: int] {
     }
 
     # Parse TIME_TO_LOGIN=<N>s from stdout.
-    let ttl_line = $result.stdout | lines | where {|l| $l | str contains "TIME_TO_LOGIN"} | first
-    let ttl_secs = $ttl_line | parse "TIME_TO_LOGIN={n}s" | get n? | first? | default "999" | into int
+    # Guard against missing line: if expect didn't emit it, treat as timeout.
+    let ttl_lines = $result.stdout | lines | where {|l| $l | str contains "TIME_TO_LOGIN"}
+    let ttl_secs = if ($ttl_lines | length) > 0 {
+        let parsed = $ttl_lines | first | parse "TIME_TO_LOGIN={n}s"
+        if ($parsed | length) > 0 { $parsed | get n | first | into int } else { 999 }
+    } else {
+        999
+    }
 
     if $ttl_secs > 60 {
         error make {msg: $"boot gate failed: TIME_TO_LOGIN=($ttl_secs)s > 60s threshold"}
@@ -315,8 +321,14 @@ def step-crash-recovery [console: string, timeout_sec: int] {
     }
 
     # Parse CRASH_RECOVERY_TIME=<N>s from stdout.
-    let crt_line  = $result.stdout | lines | where {|l| $l | str contains "CRASH_RECOVERY_TIME"} | first
-    let crt_secs  = $crt_line | parse "CRASH_RECOVERY_TIME={n}s" | get n? | first? | default "999" | into int
+    # Guard against missing line: if expect didn't emit it, treat as timeout.
+    let crt_lines = $result.stdout | lines | where {|l| $l | str contains "CRASH_RECOVERY_TIME"}
+    let crt_secs = if ($crt_lines | length) > 0 {
+        let parsed = $crt_lines | first | parse "CRASH_RECOVERY_TIME={n}s"
+        if ($parsed | length) > 0 { $parsed | get n | first | into int } else { 999 }
+    } else {
+        999
+    }
 
     if $crt_secs > 90 {
         error make {msg: $"crash-recovery failed: CRASH_RECOVERY_TIME=($crt_secs)s > 90s threshold"}
