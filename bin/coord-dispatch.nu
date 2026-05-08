@@ -13,7 +13,8 @@ def find-claude [] {
         "/usr/local/bin/claude"
         ($env.HOME | path join ".local/bin/claude")
     ]
-    $candidates | where { |p| $p | path exists } | first?
+    let found = $candidates | where { |p| $p | path exists }
+    if ($found | is-empty) { null } else { $found | first }
 }
 
 # Dispatch a subagent for a task.
