@@ -20,16 +20,15 @@ export def parse-mbox [content: string] {
         | each {|entry|
             # The very first segment starts with "From " (intact); subsequent
             # items had the "From " prefix consumed by the split delimiter.
-            let raw = if $entry.index == 0 {
+            if $entry.index == 0 {
                 if ($entry.item | str starts-with "From ") {
-                    $entry.item | str substring 5..   # strip leading "From "
+                    ($entry.item | str replace "From " "")
                 } else {
                     $entry.item
                 }
             } else {
                 $entry.item   # separator already consumed by split
             }
-            $raw
         }
         | where {|s| ($s | str trim | str length) > 0 }
     )
@@ -37,35 +36,39 @@ export def parse-mbox [content: string] {
     $raw_messages | each {|msg_body|
         # First line is the mbox "From " envelope line (sender + timestamp).
         let lines = $msg_body | lines
-        if ($lines | length) == 0 { return null }
-
-        let from_line = $"From ($lines | first)"
-
-        # Headers end at the first blank line; body is everything after.
-        let blank_idx_result = (
-            $lines
-            | enumerate
-            | skip 1               # skip the from_line we already captured
-            | where {|e| ($e.item | str trim) == ""}
-            | first
-        )
-
-        # Guard against messages with no blank line (malformed — skip body).
-        let blank_idx = ($blank_idx_result | get index? | default ($lines | length) | into int)
-
-        let header_lines = $lines | skip 1 | first ([($blank_idx - 1), 0] | math max)
-        let body_lines   = if ($blank_idx + 1) < ($lines | length) {
-            $lines | skip ($blank_idx + 1)
+        if ($lines | length) == 0 {
+            null
         } else {
-            []
+            let from_line = $"From ($lines | first)"
+
+            # Headers end at the first blank line; body is everything after.
+            # Guard against messages with no blank line (malformed).
+            let blank_lines = (
+                $lines
+                | enumerate
+                | skip 1               # skip the from_line we already captured
+                | where {|e| ($e.item | str trim) == ""}
+            )
+            let blank_idx = if ($blank_lines | length) == 0 {
+                $lines | length
+            } else {
+                ($blank_lines | first).index | into int
+            }
+
+            let header_lines = $lines | skip 1 | first ([($blank_idx - 1), 0] | math max)
+            let body_lines   = if ($blank_idx + 1) < ($lines | length) {
+                $lines | skip ($blank_idx + 1)
+            } else {
+                []
+            }
+
+            let headers = parse-headers $header_lines
+            let body    = $body_lines | str join "\n"
+
+            {from_line: $from_line, headers: $headers, body: $body}
         }
-
-        let headers = parse-headers $header_lines
-        let body    = $body_lines | str join "\n"
-
-        {from_line: $from_line, headers: $headers, body: $body}
     }
-    | where {|r| $r != null }
+    | compact
 }
 
 # Parse RFC822 header lines into a flat record.
@@ -73,7 +76,7 @@ export def parse-mbox [content: string] {
 def parse-headers [lines: list<string>] {
     # Build a list of {key, val} pairs, then collapse to a record.
     # Nushell records cannot be mutated in place, so we accumulate a list.
-    mut pairs: list<record<key: string, val: string>> = []
+    mut pairs = []
     mut current_key = ""
     mut current_val = ""
 
@@ -86,10 +89,10 @@ def parse-headers [lines: list<string>] {
             if $current_key != "" {
                 $pairs = $pairs | append {key: $current_key, val: $current_val}
             }
-            let colon_pos = $line | str index-of ":"
-            if $colon_pos > 0 {
-                $current_key = $line | str substring ..($colon_pos - 1) | str trim
-                $current_val = $line | str substring ($colon_pos + 1).. | str trim
+            if ($line | str contains ":") {
+                let parts = $line | split row ":"
+                $current_key = $parts | first | str trim
+                $current_val = $parts | skip 1 | str join ":" | str trim
             } else {
                 $current_key = ""
                 $current_val = ""
@@ -103,7 +106,11 @@ def parse-headers [lines: list<string>] {
 
     # Convert list of {key,val} pairs to a record.
     # Duplicate header names: last one wins (RFC 2822 is lenient here).
-    $pairs | reduce --fold {} {|pair, acc| $acc | insert $pair.key $pair.val}
+    mut result = {}
+    for pair in $pairs {
+        $result = $result | upsert $pair.key $pair.val
+    }
+    $result
 }
 
 # Parse the TOML body of a message record.
