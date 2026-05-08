@@ -6301,3 +6301,121 @@ infrastructure_confirmed_on_fbuild = [
   "u-boot-bhyve-arm64 2024.07 installed; correct arm64 bhyve syntax documented above",
   "DNS fix applied to fbuild (/etc/resolv.conf was empty; fixed with 1.1.1.1/8.8.8.8)",
 ]
+From smolbsd-coord Thu May 08 17:00:00 2026
+From: coordinator@smolbsd.local
+To: runner@smolbsd.local
+Subject: [task-0029] Provision Vultr amd64 bhyve host for Phase-III test run
+Date: Thu, 08 May 2026 17:00:00 -0000
+Message-ID: <task-0029.coord@smolbsd.local>
+In-Reply-To: <task-0028.runner@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/phase-iii
+X-Verdict: dispatch
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "task-0029"
+title    = "Provision Vultr bare-metal amd64 host for bhyve Phase-III test run"
+deadline = "2026-05-09"
+
+[brief]
+summary = """
+task-0028 confirmed fbuild (fb-vm-24) cannot run bhyve: Apple HVF does not
+expose EL2 to guests. Phase-III TPM gates also require amd64 (virtio-tpm PCI
+device is amd64-only in FreeBSD 15 bhyve). This task provisions a Vultr
+bare-metal amd64 instance, sets it up as a bhyve host, and re-runs the
+time-to-ready and crash-recovery gates. TPM gates run if swtpm attaches.
+"""
+
+[host_requirements]
+arch          = "amd64 (mandatory — arm64 bhyve lacks virtio-tpm PCI device)"
+virtualisation = "bare-metal VT-x preferred; Vultr KVM instance with nested=1 is acceptable fallback"
+os            = "FreeBSD 15.0 x64 (OS ID 2720)"
+preferred_plan = "vbm-6c-32gb  (6c/32GB Intel E-2286G, $185/mo, ewr/ord/lax)"
+fallback_plan  = "vc2-4c-8gb   (4c/8GB KVM cloud, $24/mo) with --instance-fallback flag"
+
+[provision_steps]
+step_1 = "VULTR_API_KEY=<key> nu bin/vultr-bhyve-provision.nu --poll"
+step_2 = "# Record the IP printed by --poll"
+step_3 = "nu bin/bhyve-host-setup.nu --remote root@<IP>"
+step_4 = "# Transfer smolBSD amd64 qcow2 artifact to the host"
+step_5 = "ssh root@<IP> 'nu ~/smolbsd/bin/prep-bhyve-image.nu --input ~/FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2'"
+step_6 = "ssh root@<IP> 'nu ~/smolbsd/bin/run-vm-tests.nu --image ~/FreeBSD-15.0-RELEASE-amd64-SMOLBSD.raw --tpm --results-file /tmp/smolbsd-run-1.toml'"
+step_7 = "scp root@<IP>:/tmp/smolbsd-run-1.toml . && cat smolbsd-run-1.toml"
+
+[known_issues_from_task_0028]
+dns_fix       = "Vultr instances may ship with empty /etc/resolv.conf — bhyve-host-setup.nu adds 1.1.1.1 automatically"
+pkg_srv       = "pkg SRV mirror resolution fails without DNS; bhyve-host-setup.nu writes direct-HTTPS repo override to /usr/local/etc/pkg/repos/FreeBSD.conf"
+disk_space    = "amd64 qcow2 virtual size is 4 GiB; need at least 5 GiB free on host for qemu-img convert (vbm-6c-32gb has 960 GiB SSD — not a concern)"
+
+[scripts_written]
+vultr_provision = "bin/vultr-bhyve-provision.nu — creates bare-metal or cloud instance, polls until active, returns IP"
+bhyve_host_setup = "bin/bhyve-host-setup.nu — idempotent host setup: VT-x check, pkg install, kldload + persist, tap/bridge, project sync, smoke-check, sentinel"
+
+[acceptance]
+must_pass = [
+  "bhyve-host-setup.nu completes with /var/run/smolbsd-host-ready written",
+  "run-vm-tests.nu overall = pass",
+  "boot-gate TIME_TO_LOGIN <= 60s",
+  "memory-gate free >= 150 MiB",
+  "artifact-gate image <= 512 MiB",
+  "crash-recovery CRASH_RECOVERY_TIME <= 90s",
+]
+tpm_gates_conditional = "run if swtpm attaches (--tpm flag); amd64 bhyve supports virtio-tpm PCI device"
+From smolbsd-runner Thu May 08 17:30:00 2026
+From: runner@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0029] Provision Vultr amd64 bhyve host — scripts written, provision pending user auth
+Date: Thu, 08 May 2026 17:30:00 -0000
+Message-ID: <task-0029.runner@smolbsd.local>
+In-Reply-To: <task-0029.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/phase-iii
+X-Verdict: partial
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0029"
+verdict  = "partial"
+run_date = "2026-05-08T17:30:00Z"
+runner   = "claude-sonnet-4-6 / blissful-shockley worktree"
+
+[summary]
+status = "Scripts written and syntax-verified. Actual provisioning requires VULTR_API_KEY in environment — not set in this session. Provision command is ready to run."
+blocking = "VULTR_API_KEY not set in Claude Code session environment; cannot call api.vultr.com/v2 without it"
+
+[scripts_delivered]
+vultr_bhyve_provision_nu = "bin/vultr-bhyve-provision.nu — SYNTAX OK (verified via 'use' import + --dry-run)"
+bhyve_host_setup_nu      = "bin/bhyve-host-setup.nu — SYNTAX OK (verified via 'use' import)"
+
+[dry_run_output]
+# nu bin/vultr-bhyve-provision.nu --dry-run produced:
+plan   = "vbm-6c-32gb"
+region = "ewr"
+os_id  = 2720
+label  = "smolbsd-bhyve"
+ssh_key_ids = [
+  "bc0728b4-a0aa-4c16-93a0-3667465e5cbd",
+  "50b6a6f8-c693-4633-b86f-e259265dd162",
+  "5518413b-0d1c-4d16-a858-40e172586380",
+]
+# (all three account SSH keys included)
+
+[vultr_env_survey]
+# Confirmed via vultr-cli (which vultr -> /opt/homebrew/bin/vultr)
+cli_available     = true
+cli_path          = "/opt/homebrew/bin/vultr"
+existing_bare_metal = 0
+existing_instances  = 1  # smolbsd-buildworld at 108.61.206.203 (lax, amd64, active)
+os_id_2720        = "FreeBSD 15 x64 — confirmed available"
+plan_vbm_6c_32gb  = "E-2286G 6c/32GB/960GB SSD $185/mo — available in ewr, ord, lax, and others"
+plan_fallback     = "vc2-4c-8gb 4c/8GB KVM $24/mo — available everywhere"
+
+[operator_action_required]
+command = "VULTR_API_KEY=<your-key> nu bin/vultr-bhyve-provision.nu --poll"
+then    = "nu bin/bhyve-host-setup.nu --remote root@<IP-from-above>"
+note    = "vbm-6c-32gb provisions in ~10 min; --poll waits up to 600s for active status"
+
+[cloud_init_note]
+issue   = "Vultr user-data is processed by cloud-init on first boot only. The NoCloud datasource caches semaphores at /var/lib/cloud/instance/sem/ and does not re-run modules on subsequent boots even if instance-id changes. Force full re-run with: cloud-init clean --logs --reboot"
+mitigation = "bhyve-host-setup.nu is designed to be run via SSH (not cloud-init) and is fully idempotent. The user-data in vultr-bhyve-provision.nu only installs nushell; all real setup is in bhyve-host-setup.nu run by the operator."

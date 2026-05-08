@@ -214,6 +214,17 @@ Le périphérique série est configurable via la variable d'environnement
 `SMOLBSD_SERIAL` (par défaut : `/dev/ttyUSB0`). Un adaptateur USB-UART
 CP2102 3,3 V branché sur l'en-tête UART de débogage de la carte est requis.
 
+### 6.5 Prérequis pour les tests bhyve/TPM (Phase III)
+
+Les tests TPM Phase III (T1–T6, `bin/bhyve-smolbsd.nu`, `tests/tpm-seal-test.nu`)
+nécessitent un hôte amd64 bare-metal ou une instance cloud Vultr vc2 amd64.
+**HVF ne permet pas la virtualisation imbriquée** : un Mac Apple Silicon
+exécutant FreeBSD sous QEMU/HVF ne peut pas lancer bhyve, car HVF n'expose
+pas le niveau EL2 aux VM invitées. De plus, bhyve arm64 sous FreeBSD 15 ne
+dispose pas du périphérique `virtio-tpm` — les tests T2–T6 requièrent donc
+impérativement un hôte amd64. Les cartes physiques Pi 5 et RK3588 atteignent
+la prise en charge TPM via fTPM/TrustZone, traité en Phase IV.
+
 ---
 
-*Résumé produit le 2026-05-04 à partir des documents de planification smolBSD Phase I. Mis à jour le 2026-05-04 pour refléter la complétion de Phase I. §6 ajouté le 2026-05-06 pour Phase II.*
+*Résumé produit le 2026-05-04 à partir des documents de planification smolBSD Phase I. Mis à jour le 2026-05-04 pour refléter la complétion de Phase I. §6 ajouté le 2026-05-06 pour Phase II. §6.5 ajouté le 2026-05-08 suite au blocage bhyve/HVF de task-0028.*

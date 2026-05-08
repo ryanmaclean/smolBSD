@@ -202,6 +202,18 @@ SD カードへの書き込みはその後 `tests/sd-write.nu` で行います�
 `/dev/ttyUSB0`）。ボードのデバッグ UART ヘッダーに 3.3V CP2102 等の
 USB-UART アダプターを接続する必要があります。
 
+### 6.5 bhyve/TPM テストのホスト要件（フェーズ III）
+
+フェーズ III の TPM テスト（T1–T6、`bin/bhyve-smolbsd.nu`、`tests/tpm-seal-test.nu`）
+を実行するには、amd64 のベアメタルホストまたは Vultr vc2 amd64 クラウドインスタンスが
+必要です。**HVF はネストされた仮想化を許可しません**：Apple Silicon Mac 上で
+QEMU/HVF を使って FreeBSD を動作させている環境（`fbuild` / `minim4-24` がこれに
+該当します）では、HVF がゲスト VM に EL2 を公開しないため bhyve を起動できません。
+また、FreeBSD 15 の arm64 bhyve は `virtio-tpm` PCI デバイスを実装していないため、
+T2–T6 テスト（ゲスト内 `/dev/tpm0`、PCR 読み取り、seal/unseal）は amd64 bhyve
+ホストでのみ実行可能です。Pi 5 および RK3588 の物理ボードにおける TPM サポートは、
+fTPM/TrustZone 経由でフェーズ IV で対応します。
+
 ---
 
-*このサマリーは 2026-05-04 に smolBSD フェーズ I 計画ドキュメントから作成されました。フェーズ I 完了を反映して 2026-05-04 に更新。§6 は 2026-05-06 にフェーズ II 向けとして追加。*
+*このサマリーは 2026-05-04 に smolBSD フェーズ I 計画ドキュメントから作成されました。フェーズ I 完了を反映して 2026-05-04 に更新。§6 は 2026-05-06 にフェーズ II 向けとして追加。§6.5 は 2026-05-08 に task-0028 の bhyve/HVF ブロッカー発覚を受けて追加。*

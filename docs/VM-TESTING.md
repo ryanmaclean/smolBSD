@@ -5,7 +5,35 @@ inside bhyve on a FreeBSD 15 host.
 
 ---
 
+## Host Requirements
+
+> **bhyve requires a bare-metal amd64 host with VT-x/AMD-V.** arm64 bhyve
+> (Apple Silicon HVF guest) cannot run nested VMs. TPM testing requires amd64
+> bhyve.
+>
+> | Scenario | Supported? | Notes |
+> |---|---|---|
+> | FreeBSD 15 amd64 bare-metal (VT-x/AMD-V) | Yes | Full test suite including TPM |
+> | Vultr vc2/vhf amd64 cloud instance | Yes | VMX exposed by default |
+> | FreeBSD 15 aarch64 bare-metal (Ampere/Vultr arm64) | Partial | `--arch arm64` works; no TPM |
+> | Apple Silicon Mac running FreeBSD under HVF | No | HVF does not expose EL2; `vmm.ko` fails to load |
+> | Any VM with nested virtualisation disabled | No | bhyve requires hardware VMX/SVM |
+>
+> Passing `--tpm` with `--arch arm64` to `bin/bhyve-smolbsd.nu` will produce
+> an explicit error: `arm64 bhyve has no virtio-tpm device; TPM testing
+> requires --arch amd64`.
+
+---
+
 ## 1. Prerequisites
+
+> **⚠ bhyve host requirement: bare-metal amd64 with VT-x/AMD-V, OR a cloud VM
+> with nested virtualization exposed. Apple Silicon Macs running FreeBSD under
+> HVF cannot run bhyve — HVF does not expose EL2 to guest VMs, so `vmm.ko`
+> will fail to load. Vultr vc2/vhf amd64 instances work (VMX is exposed by
+> default). arm64 bhyve lacks `virtio-tpm` — TPM tests T2–T6 require an amd64
+> bhyve host. See `plans/tinyos/PHASE-3-TPM.md §4a` for the full platform
+> requirements matrix.**
 
 **Host OS:** FreeBSD 15.0-RELEASE amd64 (bhyve `virtio-tpm` landed in FreeBSD 15).
 
