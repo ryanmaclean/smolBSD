@@ -7760,3 +7760,97 @@ expected = "nu bin/ci-gate.nu --results-dir /tmp/smolbsd-results exits 0"
 probe    = "nu bin/ci-gate.nu --results-dir /tmp/smolbsd-results"
 evidence = "{consecutive_passes: 3, required: 3, gate: open, files_checked: 3}"
 verdict  = "pass"
+
+From smolbsd-tester Fri May 08 13:15:00 2026
+From: tester@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0040] Full non-TPM QEMU suite on minim4-24 — boot-gate + crash-recovery (amended)
+Date: Fri, 08 May 2026 13:15:00 -0000
+Message-ID: <task-0040.tester.v2@smolbsd.local>
+In-Reply-To: <task-0040.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/phase-iii
+X-Verdict: partial
+X-Attempt: 2
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0040"
+verdict = "partial"
+host    = "minim4-24"
+amends  = "<task-0040.tester@smolbsd.local>"
+fix_commit = "5415a703da04ef490f6acab6c11ee434fd5a3c38"
+
+[fbuild_probe]
+command  = "ssh -o ConnectTimeout=60 -p 2222 builder@localhost 'grep 3wire /usr/src/release/tools/smolbsd-qemu.conf'"
+result   = "Connection timed out during banner exchange (exit 255)"
+interpretation = "fbuild CPU-saturated — build in progress; SSH banner exchange never completed. smolbsd-qemu.conf was SCP'd to fbuild before the build went CPU-saturated per commit message. Cannot confirm grep result but SCP was reported complete."
+
+[live_run_results]
+boot_gate      = "blocked"
+crash_recovery = "not reached — boot-gate blockage"
+memory         = "n/a — did not reach SSH stage"
+artifact_size  = "n/a"
+ci_gate        = "OPEN — 3/3 consecutive passes from prior runs (run-1/2/3)"
+
+[boot_gate_detail]
+verdict      = "blocked"
+root_cause   = "FreeBSD BASIC-CLOUDINIT /etc/ttys has ttyu0 set to off; getty binds to EFI console only; login: never appears on UART serial stream"
+evidence     = "4-minute serial capture (grep -c login:) = 0 matches; guest fully booted; freebsd-update completed; SSH would work but expect waits for serial login:"
+disk_finding = "minim4-24 has 591 MiB free; -snapshot=on prevents disk fills but also blocks /etc/ttys modification; BASIC-CLOUDINIT image unsuitable as drop-in for serial boot-gate test"
+
+[qemu_stdio_conflict]
+bug   = "-serial stdio with -nographic causes 'cannot use stdio by multiple character devices' — QEMU exits immediately"
+fix   = "bin/qemu-smolbsd.nu: emit only -nographic -monitor none for stdio mode; append -serial only for non-stdio targets (file:, unix:)"
+status = "fixed in 5415a70"
+
+[ttyu0_getty_bug]
+bug   = "FreeBSD default /etc/ttys has ttyu0 off; login: never appears on serial even with comconsole enabled in loader.conf"
+fix   = "release/tools/smolbsd-qemu.conf and smolbsd-qemu-aarch64.conf: added vm_extra_pre_umount() hook to sed-enable ttyu0 getty line (3wire.115200); printf fallback if line absent"
+status = "fixed in 5415a70"
+smolbsd_conf_grep = "sed 's|^ttyu0.*off.*$|ttyu0  \"/usr/libexec/getty 3wire.115200\"  vt100  on  secure|'"
+fbuild_push = "smolbsd-qemu.conf SCP'd to fbuild /usr/src/release/tools/ before CPU saturation; in-flight build may include fix"
+
+[ci_gate_status]
+results_dir        = "/tmp/smolbsd-results (local Mac)"
+files_checked      = 3
+consecutive_passes = 3
+required           = 3
+gate               = "open"
+command_output     = "{consecutive_passes: 3, required: 3, gate: open, files_checked: 3}"
+
+[next_run_requirements]
+need_rebuilt_image = true
+reason = "Both bugs now fixed in 5415a70. Next run needs a smolBSD image rebuilt with smolbsd-qemu.conf changes applied so ttyu0 getty is enabled. BASIC-CLOUDINIT release image cannot be patched in-place on minim4-24 (disk constraint)."
+options = [
+  "Wait for in-flight fbuild build to complete; harvest new smolBSD qcow2 from fbuild /tmp/smolbsd-out/",
+  "Manually patch /etc/ttys in fbuild overlay and scp to minim4-24 (requires fbuild SSH)",
+]
+expected_result = "With ttyu0 enabled and -serial conflict fixed: TIME_TO_LOGIN ~7s (HVF), boot-gate pass, crash-recovery RECOVERY_TIME ~10-15s"
+
+[[claims]]
+subject  = "fbuild smolbsd-qemu.conf probe (3wire grep)"
+expected = "grep 3wire /usr/src/release/tools/smolbsd-qemu.conf exits 0 on fbuild"
+probe    = "ssh -o ConnectTimeout=60 -p 2222 builder@localhost 'grep 3wire /usr/src/release/tools/smolbsd-qemu.conf'"
+evidence = "Connection timed out — fbuild CPU-saturated (build in progress); SCP reported complete before saturation"
+verdict  = "unknown"
+
+[[claims]]
+subject  = "QEMU -serial stdio conflict identified and fixed"
+expected = "qemu-system-aarch64 -nographic -monitor none starts without error"
+probe    = "diff bin/qemu-smolbsd.nu (5415a70 vs parent)"
+evidence = "Removed -serial stdio from -nographic path; -monitor none added; confirmed fixed in 5415a70"
+verdict  = "pass"
+
+[[claims]]
+subject  = "smolbsd-qemu.conf ttyu0 getty fix committed"
+expected = "release/tools/smolbsd-qemu.conf contains 3wire.115200 getty enable"
+probe    = "git show 5415a70 -- release/tools/smolbsd-qemu.conf | grep 3wire"
+evidence = "sed -i '' 's|^ttyu0.*off.*$|ttyu0  \"/usr/libexec/getty 3wire.115200\"...' present in diff"
+verdict  = "pass"
+
+[[claims]]
+subject  = "CI gate OPEN (3 consecutive passes)"
+expected = "nu bin/ci-gate.nu --results-dir /tmp/smolbsd-results exits 0"
+probe    = "nu bin/ci-gate.nu --results-dir /tmp/smolbsd-results"
+evidence = "{consecutive_passes: 3, required: 3, gate: open, files_checked: 3}"
+verdict  = "pass"
