@@ -6985,3 +6985,338 @@ expected = "boot to shell within 120s under TCG"
 probe    = "elapsed time observation over 1200s"
 evidence = "Not viable — TCG JIT for cross-ISA (x86_64 on ARM64) has no hardware assist on Apple Silicon; HVF only accelerates aarch64 guests"
 verdict  = "fail"
+From smolbsd-builder Thu May 08 17:48:19 2026
+From: builder@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0034] VM test suite pass 2 — minim4-24
+Date: Thu, 08 May 2026 17:48:19 -0000
+Message-ID: <task-0034.builder@smolbsd.local>
+In-Reply-To: <task-0034.coord@smolbsd.local>
+References: <task-0034.coord@smolbsd.local>
+X-Project: smolbsd
+X-Verdict: pass
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0034"
+verdict  = "pass"
+run_seq  = 2
+
+[summary]
+host        = "minim4-24"
+guest       = "FreeBSD 15.0-RELEASE-p5 aarch64"
+backend     = "qemu"
+accel       = "hvf"
+timestamp   = "2026-05-08T17:48:19Z"
+results_file = "smolbsd-run-2.toml"
+
+[results]
+preflight      = "pass"
+memory         = "pass  (805 MiB free; threshold 150 MiB)"
+overall        = "pass"
+
+[[claims]]
+subject  = "Guest free memory >= 150 MiB (pass 2)"
+expected = "v_free_count * v_page_size / 1MiB >= 150"
+probe    = "ssh -p 2222 root@127.0.0.1 sysctl -n vm.stats.vm.v_free_count vm.stats.vm.v_page_size"
+evidence = "206166 pages * 4096 bytes = 805 MiB free"
+verdict  = "pass"
+From smolbsd-builder Thu May 08 17:49:07 2026
+From: builder@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0035] VM test suite pass 3 — minim4-24
+Date: Thu, 08 May 2026 17:49:07 -0000
+Message-ID: <task-0035.builder@smolbsd.local>
+In-Reply-To: <task-0035.coord@smolbsd.local>
+References: <task-0035.coord@smolbsd.local>
+X-Project: smolbsd
+X-Verdict: pass
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0035"
+verdict  = "pass"
+run_seq  = 3
+
+[summary]
+host        = "minim4-24"
+guest       = "FreeBSD 15.0-RELEASE-p5 aarch64"
+backend     = "qemu"
+accel       = "hvf"
+timestamp   = "2026-05-08T17:49:07Z"
+results_file = "smolbsd-run-3.toml"
+
+[results]
+preflight      = "pass"
+memory         = "pass  (584 MiB free; threshold 150 MiB)"
+overall        = "pass"
+
+[[claims]]
+subject  = "Guest free memory >= 150 MiB (pass 3)"
+expected = "v_free_count * v_page_size / 1MiB >= 150"
+probe    = "ssh -p 2222 root@127.0.0.1 sysctl -n vm.stats.vm.v_free_count vm.stats.vm.v_page_size"
+evidence = "149606 pages * 4096 bytes = 584 MiB free"
+verdict  = "pass"
+From smolbsd-coord Thu May 08 17:49:30 2026
+From: coordinator@smolbsd.local
+To: user@smolbsd.local
+Subject: [CI-GATE-OPEN] 3 consecutive non-TPM passes — minim4-24 QEMU/HVF aarch64
+Date: Thu, 08 May 2026 17:49:30 -0000
+Message-ID: <gate-open-20260508.coord@smolbsd.local>
+X-Project: smolbsd
+X-Verdict: pass
+Content-Type: text/toml; charset=utf-8
+
+event     = "ci_gate_open"
+gate      = "non-tpm-qemu-aarch64"
+verdict   = "pass"
+timestamp = "2026-05-08T17:49:30Z"
+
+[gate_result]
+consecutive_passes = 3
+required           = 3
+files_checked      = 3
+result_files = [
+  "smolbsd-run-1.toml  (2026-05-08T17:22:57Z  overall=pass  memory=804 MiB)",
+  "smolbsd-run-2.toml  (2026-05-08T17:48:19Z  overall=pass  memory=805 MiB)",
+  "smolbsd-run-3.toml  (2026-05-08T17:49:07Z  overall=pass  memory=584 MiB)",
+]
+
+[environment]
+host      = "minim4-24 (Apple Silicon M4 Pro, macOS 25.3.0 Darwin arm64)"
+guest     = "FreeBSD 15.0-RELEASE-p5 aarch64"
+backend   = "qemu 10.2.1"
+accel     = "hvf (native-ISA, Apple Hypervisor.framework)"
+image     = "FreeBSD-15.0-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2 (fbuild VM)"
+
+[what_is_gated]
+passed = [
+  "FreeBSD 15 aarch64 guest boots and stays up under QEMU HVF on Apple Silicon",
+  "SSH access (hostfwd tcp::2222-:22) stable across 3 measurement windows",
+  "Guest free memory >= 150 MiB on all 3 passes (range: 584–805 MiB)",
+  "QEMU 10.2.1 + edk2-aarch64 UEFI stable on minim4-24",
+]
+
+[next_gates]
+pending = [
+  "boot-gate: TIME_TO_LOGIN <= 30s via time-to-ready-aarch64.exp (was 7s in task-0031; harness wiring pending)",
+  "artifact-size: smolBSD minimal image < 512 MiB (build VM excluded from this gate)",
+  "crash-recovery: CRASH_RECOVERY_TIME <= 90s (QEMU monitor SIGKILL+relaunch harness pending)",
+  "tpm-full: 3x consecutive TPM passes on Vultr amd64 bhyve host",
+]
+
+From smolbsd-coord Fri May 08 17:45:00 2026
+From: coordinator@smolbsd.local
+To: tester@smolbsd.local
+Subject: [task-0036] Probe smolbsd-buildworld for bhyve capability
+Date: Fri, 08 May 2026 17:45:00 -0000
+Message-ID: <task-0036.coord@smolbsd.local>
+References: <task-0032.tester@smolbsd.local> <task-0030.runner@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/phase-iii
+X-Spec-Version: v1.1
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "task-0036"
+title    = "Probe smolbsd-buildworld for bhyve + TPM capability"
+deadline = "2026-05-08"
+
+[brief]
+summary = """
+smolbsd-buildworld (108.61.206.203, Vultr vc2-2c-4gb lax, FreeBSD 15 x64)
+built the amd64 smolBSD image in task-0015/0030. It is FreeBSD amd64 and
+has the smolbsd-linode-amd64-v0.1.0.raw image on disk. Probe it for:
+  1. VT-x / bhyve capability
+  2. swtpm availability
+  3. Image inventory (GENERIC vs SMOLBSD kernel)
+  4. smolBSD repo scripts presence
+  5. Network reachability (Tailscale, direct)
+  6. nu --dry-run of bhyve scripts
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-3-TPM.md §4a",
+  "var/mail/spool (task-0030 findings)",
+]
+prior_msgids = [
+  "<task-0030.runner@smolbsd.local>",
+  "<task-0032.tester@smolbsd.local>",
+]
+
+[acceptance]
+must_pass = [
+  "Host identity confirmed (OS, arch, version)",
+  "VT-x / VMX support probed with real dmesg output",
+  "Image inventory confirmed",
+  "bhyve viability verdict stated",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+tools_allowed        = ["Read", "Bash"]
+budget_tokens        = 40000
+reply_msgid          = "<task-0036.tester@smolbsd.local>"
+
+From smolbsd-tester Fri May 08 18:00:00 2026
+From: tester@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0036] Probe smolbsd-buildworld for bhyve capability
+Date: Fri, 08 May 2026 18:00:00 -0000
+Message-ID: <task-0036.tester@smolbsd.local>
+In-Reply-To: <task-0036.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/phase-iii
+X-Verdict: blocked
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "task-0036"
+verdict  = "blocked"
+host     = "smolbsd-buildworld"
+host_ip  = "108.61.206.203"
+ssh_access = "direct (root@108.61.206.203, ed25519 key)"
+
+[host_identity]
+uname       = "FreeBSD smolbsd-buildworld 15.0-RELEASE-p5 FreeBSD 15.0-RELEASE-p5 GENERIC amd64"
+os          = "FreeBSD 15.0-RELEASE-p5"
+arch        = "amd64"
+cpu_model   = "Intel Xeon Processor (Skylake, IBRS)"
+cpu_count   = 2
+ram_bytes   = 4258689024
+ram_human   = "4 GiB"
+provider    = "Vultr vc2-2c-4gb (KVM hypervisor)"
+region      = "lax"
+no_tailscale = true
+network     = "108.61.206.203 (public, direct SSH reachable from minim4-24 and local Mac)"
+
+[vtx_probe]
+command         = "kldload vmm; dmesg | grep -i vmx"
+dmesg_output    = "vmx_modinit: processor does not support VMX operation"
+vmm_ko_loaded   = true
+vmm_ko_attached = false
+dev_vmm_present = false
+cpu_features2   = "HV flag present — confirms hypervisor guest (KVM), not bare metal"
+vtx_available   = false
+verdict         = "NO VT-x — Vultr vc2 KVM guests do not expose VMX to nested guests"
+note            = "Same finding as task-0030. This was already known. Confirmed again with fresh probe."
+
+[bhyve_verdict]
+bhyve_viable   = false
+reason         = "bhyve requires VT-x (/dev/vmm). vmm.ko loads but fails with 'processor does not support VMX operation'. Vultr vc2 KVM hypervisor does not expose hardware virtualisation to guests."
+workaround     = "none available on this instance type"
+
+[packages]
+nushell_installed     = true
+nushell_version       = "0.111.0"
+swtpm_installed       = false
+swtpm_pkg_available   = "swtpm-0.10.1 in pkg catalog"
+bhyve_firmware_installed = false
+qemu_tools_installed  = false
+tpm2_tools_installed  = false
+disk_free_root        = "67G total, 4.5G used, 67G avail (6%)"
+note = "Ample disk space (67 GiB free) — image downloads and pkg installs would fit easily if VT-x were available"
+
+[image_inventory]
+smolbsd_linode_amd64_raw = "/root/genoa/out/smolbsd-linode-amd64-v0.1.0.raw"
+smolbsd_linode_size      = "2.0 GiB"
+smolbsd_linode_sha256    = "81ade8f749d8ff6fd009c9ef0a80ce6024e5a0fda4f36edcb3956f324715fba5"
+smolbsd_linode_built_at  = "2026-05-08T17:13:04Z"
+smolbsd_linode_profile   = "uefi"
+smolbsd_linode_format    = "raw"
+smolbsd_linode_partition_layout = "GPT: 128MB EFI (p1) + 1.9GB freebsd-ufs (p2)"
+
+[kernel_check]
+kernel_ident    = "GENERIC"
+tpm_ko_present  = true
+tpm_ko_size     = "72K"
+kernel_size     = "28M"
+smolbsd_kernel  = false
+note = "Image uses stock GENERIC kernel (built 2026-Nov-28 from release). tpm.ko is present and loadable. SMOLBSD custom kernel config (device tpm compiled-in) is NOT in this image. tpm.ko would need to be kldload'd manually, but bhyve VT-x blocker means this is moot."
+
+[smolbsd_kernel_config]
+smolbsd_amd64_conf_local = "sys/amd64/conf/SMOLBSD — present in worktree at blissful-shockley"
+smolbsd_amd64_conf_on_buildworld = false
+copy_feasibility = "scp from worktree to smolbsd-buildworld is trivial (direct SSH works from local Mac and minim4-24). Moot until VT-x issue resolved."
+
+[scripts_on_host]
+smolbsd_repo_present    = false
+bin_vultr_bhyve_nu      = false
+bin_bhyve_smolbsd_nu    = false
+bin_bhyve_host_setup_nu = false
+note = "The genoa build tool is present (/root/genoa/genoa.nu, nushell-based) but the smolBSD scripts repo (bin/, tests/) is not cloned. Would need: git clone or scp of bin/ directory."
+
+[dry_run_results]
+nu_dry_run_attempted = false
+reason = "smolBSD bin/ scripts not present on host. Moot given VT-x unavailability."
+nu_version_confirmed = "0.111.0 — compatible with smolBSD scripts (tested locally)"
+
+[reachability]
+from_local_mac    = "direct SSH root@108.61.206.203 — confirmed"
+from_minim4_24    = "nc -zw3 108.61.206.203 22 succeeded — confirmed"
+tailscale         = false
+no_jump_needed    = true
+
+[summary]
+bhyve_capable         = false
+vtx_blocker           = "vmx_modinit: processor does not support VMX operation"
+image_present         = true
+image_kernel          = "GENERIC (not SMOLBSD)"
+tpm_ko_present        = true
+disk_adequate         = true
+nu_present            = true
+scripts_present       = false
+viable_for_tpm_test   = false
+verdict_explanation   = """
+smolbsd-buildworld is FreeBSD 15 amd64 with ample disk space, nushell,
+and the amd64 smolBSD image already present. It is the ideal host for
+bhyve+swtpm TPM testing in every respect EXCEPT the one that matters:
+VT-x is not available because Vultr vc2 KVM guests do not expose nested
+virtualisation. This was confirmed in task-0030 and re-confirmed here.
+
+The host cannot run bhyve at all. No amount of package installation or
+script deployment will fix this — it is a hypervisor-level restriction.
+"""
+
+[path_forward]
+option_a = "Vultr bare-metal (vbm-6c-32gb, Intel E-2286G, $185/mo): requires Vultr support ticket to enable FreeBSD OS on bare-metal for this account (known restriction). Once enabled, use bin/vultr-bhyve-provision.nu. Estimated 2-4 hours to run full TPM test suite."
+option_b = "Hetzner AX41-NVMe (AMD EPYC 3151, 4c, $43/mo): FreeBSD 15 available natively, no restriction. Real bare-metal with VT-x. bhyve works. Requires Hetzner account."
+option_c = "User provides a physical amd64 machine with VT-x (any desktop/server from ~2008+). Install FreeBSD 15, run bin/bhyve-host-setup.nu, proceed."
+option_d = "AWS EC2 i3.metal or c5.metal: FreeBSD 15 AMI, real bare-metal, VT-x exposed. ~$0.96/hr for i3.metal. One-time test run cost ~$2-4."
+recommended = "option_a (Vultr support ticket) or option_b (Hetzner, no restriction)"
+
+[[claims]]
+subject  = "smolbsd-buildworld host identity"
+expected = "FreeBSD amd64 host"
+probe    = "ssh root@108.61.206.203 'uname -a; uname -m'"
+evidence = "FreeBSD smolbsd-buildworld 15.0-RELEASE-p5 GENERIC amd64; arch=amd64 confirmed"
+verdict  = "pass"
+
+[[claims]]
+subject  = "VT-x available on smolbsd-buildworld"
+expected = "kldload vmm succeeds and /dev/vmm appears"
+probe    = "ssh root@108.61.206.203 'kldload vmm; dmesg | grep vmx; ls /dev/vmm'"
+evidence = "vmx_modinit: processor does not support VMX operation; /dev/vmm absent; CPU Features2 contains HV flag (hypervisor guest)"
+verdict  = "fail"
+
+[[claims]]
+subject  = "smolbsd-linode-amd64-v0.1.0.raw present on buildworld"
+expected = "file exists, size ~2 GiB"
+probe    = "ssh root@108.61.206.203 'ls -lh /root/genoa/out/smolbsd-linode-amd64-v0.1.0.raw'"
+evidence = "2.0G /root/genoa/out/smolbsd-linode-amd64-v0.1.0.raw (sha256 81ade8f7...)"
+verdict  = "pass"
+
+[[claims]]
+subject  = "tpm.ko present in smolbsd-linode-amd64-v0.1.0.raw image"
+expected = "tpm.ko loadable from image kernel directory"
+probe    = "mdconfig + mount raw image, ls /mnt/boot/kernel/tpm.ko"
+evidence = "tpm.ko present (72K) at /boot/kernel/tpm.ko in image; kernel ident=GENERIC"
+verdict  = "pass"
+
+[[claims]]
+subject  = "smolbsd-buildworld viable for bhyve+swtpm TPM testing"
+expected = "host can run bhyve with swtpm for Phase-III T1-T6 tests"
+probe    = "VT-x probe, /dev/vmm check"
+evidence = "VT-x unavailable (Vultr vc2 KVM); bhyve cannot run; no TPM testing possible on this host"
+verdict  = "fail"
