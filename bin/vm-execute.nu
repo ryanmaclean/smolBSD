@@ -70,37 +70,17 @@ export def run-vm-task [
     }
 
     let log_path = $"/tmp/vm-execute-($task_id).log"
-    let pid_path = $"/tmp/vm-execute-($task_id).pid"
 
-    # Clean up any leftover PID file from a previous run
-    if ($pid_path | path exists) { rm -f $pid_path }
-
-    # Spawn QEMU in background (daemonize writes PID to pid_path)
-    let spawn_result = (^$qemu
-        ...$machine_args
-        ...$bios_args
-        -m 256M -smp 2
-        -drive $"file=($actual_image),format=qcow2,if=virtio"
-        -nic $"user,model=virtio-net-pci,hostfwd=tcp::($port)-:22"
-        -nographic
-        -daemonize
-        -pidfile $pid_path
-        -serial $"file:($log_path)"
-    ) | complete
-
-    if $spawn_result.exit_code != 0 {
-        if $use_overlay { rm -f $actual_image }
-        return {verdict: "fail", boot_sec: 0, outputs: [], error: $"qemu spawn failed: ($spawn_result.stderr | str trim)"}
-    }
-
-    # Read the QEMU PID
-    let qemu_pid = if ($pid_path | path exists) {
-        try { open --raw $pid_path | str trim | into int } catch { 0 }
-    } else { 0 }
-
-    if $qemu_pid == 0 {
-        if $use_overlay { rm -f $actual_image }
-        return {verdict: "fail", boot_sec: 0, outputs: [], error: "qemu started but PID file missing"}
+    # Spawn QEMU as a Nushell background job.
+    # -display none: suppress graphical output (compatible with -serial file:)
+    # -serial file:  captures boot console to log_path for debugging
+    # Note: -daemonize conflicts with -nographic on macOS QEMU; use job spawn instead.
+    let err_path   = $"/tmp/vm-execute-($task_id).err"
+    let serial_arg = $"file:($log_path)"
+    let drive_arg  = $"file=($actual_image),format=qcow2,if=virtio"
+    let nic_arg    = $"user,model=virtio-net-pci,hostfwd=tcp::($port)-:22"
+    let qemu_job_id = job spawn {
+        ^$qemu ...$machine_args ...$bios_args -m 256M -smp 2 -drive $drive_arg -nic $nic_arg -display none -serial $serial_arg e> $err_path
     }
 
     # Poll SSH port until it responds (VM boot)
@@ -119,9 +99,8 @@ export def run-vm-task [
     let boot_sec = ((date now | into int) / 1_000_000_000) - $t0
 
     if not $ssh_ready {
-        ^kill $qemu_pid
+        try { job kill $qemu_job_id } catch { }
         if $use_overlay { rm -f $actual_image }
-        rm -f $pid_path
         return {verdict: "fail", boot_sec: $boot_sec, outputs: [], error: $"SSH not reachable within ($timeout)s"}
     }
 
@@ -146,7 +125,7 @@ export def run-vm-task [
         if $ssh_result.exit_code != 0 { $all_ok = false }
     }
 
-    # Graceful shutdown
+    # Graceful shutdown: ask the VM to halt, then force-kill the job
     let _ = (^$sshpass_bin -p $password ssh
         -o StrictHostKeyChecking=no
         -o UserKnownHostsFile=/dev/null
@@ -156,21 +135,11 @@ export def run-vm-task [
         "shutdown -p now"
     ) | complete
     sleep 3sec
-
-    # Force-kill if still alive
-    if ($pid_path | path exists) {
-        let still_pid = try { open --raw $pid_path | str trim | into int } catch { 0 }
-        if $still_pid != 0 {
-            let ps_check = (^ps -p $still_pid) | complete
-            if $ps_check.exit_code == 0 {
-                ^kill $still_pid
-            }
-        }
-    }
+    try { job kill $qemu_job_id } catch { }
 
     # Cleanup temp files
-    rm -f $pid_path
     if $use_overlay { rm -f $actual_image }
+    rm -f $"/tmp/vm-execute-($task_id).err"
 
     {
         verdict:  (if $all_ok { "pass" } else { "fail" })
