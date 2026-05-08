@@ -153,6 +153,7 @@ def step-bhyve-launch [
     console:     string
     use_tpm:     bool
     tpm_state:   string
+    arch:        string
 ] {
     # Destroy any stale VM with this name first.
     ^bhyvectl --destroy $"--vm=($vm_name)" out+err> /dev/null
@@ -161,6 +162,7 @@ def step-bhyve-launch [
     # Build the final immutable list before spawning (closures can't capture mut vars).
     let base_args = [
         "--image" $image
+        "--arch"  $arch
         "--name"  $vm_name
         "--console" $console
         "--hostfwd-ssh" ($hostfwd_ssh | into string)
@@ -418,6 +420,7 @@ def print-summary [tests: list<record>, overall: string] {
 # --results-file   path to write TOML results
 export def main [
     --image:        string                                  # path to smolBSD qcow2 or raw image
+    --arch:         string = "amd64"                        # amd64 | arm64 (arm64 skips nmdm console tests)
     --tpm                                                   # enable swtpm TPM attachment
     --tpm-state:    string = "/var/run/smolbsd-tpm-test"
     --vm-name:      string = "smolbsd-test"
@@ -479,13 +482,18 @@ export def main [
 
     # ── 3. bhyve-launch ───────────────────────────────────────────────────────
     $results = $results | append (run-step "bhyve-launch" $skip {
-        step-bhyve-launch $image $vm_name $hostfwd_ssh $console $tpm $tpm_state
+        step-bhyve-launch $image $vm_name $hostfwd_ssh $console $tpm $tpm_state $arch
     })
 
     # ── 4. boot-gate ──────────────────────────────────────────────────────────
-    $results = $results | append (run-step "boot-gate" $skip {
-        step-boot-gate $console $timeout
-    })
+    # arm64 bhyve uses stdio console — nmdm-based expect scripts are amd64-only.
+    if $arch == "arm64" {
+        $results = $results | append (make-result "boot-gate" "skip" 0 "arm64 bhyve uses stdio console, not nmdm")
+    } else {
+        $results = $results | append (run-step "boot-gate" $skip {
+            step-boot-gate $console $timeout
+        })
+    }
 
     # ── 5. memory ─────────────────────────────────────────────────────────────
     $results = $results | append (run-step "memory" $skip {
@@ -516,9 +524,13 @@ export def main [
     }
 
     # ── 9. crash-recovery ─────────────────────────────────────────────────────
-    $results = $results | append (run-step "crash-recovery" $skip {
-        step-crash-recovery $console $timeout
-    })
+    if $arch == "arm64" {
+        $results = $results | append (make-result "crash-recovery" "skip" 0 "arm64 bhyve uses stdio console, not nmdm")
+    } else {
+        $results = $results | append (run-step "crash-recovery" $skip {
+            step-crash-recovery $console $timeout
+        })
+    }
 
     # ── 10. teardown (always runs) ────────────────────────────────────────────
     $results = $results | append (run-step "teardown" [] {
