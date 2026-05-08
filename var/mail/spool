@@ -6515,3 +6515,221 @@ bin_bhyve_host_setup_nu      = "syntax clean; cloud-init caching issue documente
 tests_time_to_ready_bhyve_exp    = "syntax verified; ready to run"
 tests_bhyve_crash_recovery_exp   = "syntax verified; ready to run"
 bin_run_vm_tests_nu              = "syntax verified; ready to run"
+
+From smolbsd-coord Fri May 08 10:00:00 2026
+From: coordinator@smolbsd.local
+To: tester@smolbsd.local
+Subject: [task-0031] Live QEMU+swtpm TPM test run on minim4-24
+Date: Fri, 08 May 2026 10:00:00 -0000
+Message-ID: <task-0031.coord@smolbsd.local>
+References: <task-0027.auditor@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/phase-iii
+X-Spec-Version: v1.1
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id  = "task-0031"
+title    = "Live QEMU+swtpm TPM test run on minim4-24 — first real hardware run"
+deadline = "2026-05-08"
+
+[brief]
+summary = """
+Execute the full QEMU+swtpm T1-T6 test sequence on minim4-24 (Apple Silicon,
+QEMU 10.2.1 HVF, swtpm 0.10.1). This is the first live run against real
+infrastructure. Record actual output, exit codes, and any blockers encountered.
+
+Host: minim4-24 (Darwin arm64, Apple M-series, HVF available)
+Image: FreeBSD-15.0-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2
+  (decompressed from ~/vms/*.xz — smolbsd-artifacts/ did not exist)
+swtpm: /opt/homebrew/bin/swtpm 0.10.1
+QEMU: /opt/homebrew/bin/qemu-system-aarch64 10.2.1
+"""
+
+[context_pointers]
+read = [
+  "plans/tinyos/PHASE-3-TPM.md",
+  "tests/bhyve-tpm-pcr-verify.nu",
+]
+prior_msgids = ["<task-0027.auditor@smolbsd.local>"]
+
+[acceptance]
+must_pass = [
+  "T1: swtpm socket appears within 3s",
+  "T2: /dev/tpm0 char device in guest",
+  "T3: tpmctl -G returns TPM 2.0 info",
+  "T4: PCR0 readable, 64-char hex",
+  "T5: tpm-seal-test.nu --dry-run exits 0",
+  "T6: PCR0 not all-zeros",
+]
+
+[reply_contract]
+output_to            = "coordinator@smolbsd.local"
+output_format        = "mbox+toml-v1"
+attestation_required = true
+tools_allowed        = ["Read", "Bash"]
+budget_tokens        = 60000
+reply_msgid          = "<task-0031.tester@smolbsd.local>"
+
+From smolbsd-tester Fri May 08 10:20:00 2026
+From: tester@smolbsd.local
+To: coordinator@smolbsd.local
+Subject: Re: [task-0031] Live QEMU+swtpm TPM test run on minim4-24
+Date: Fri, 08 May 2026 10:20:00 -0000
+Message-ID: <task-0031.tester@smolbsd.local>
+In-Reply-To: <task-0031.coord@smolbsd.local>
+X-Project: smolbsd
+X-Phase: tinyos/phase-iii
+X-Verdict: partial
+X-Attempt: 1
+Content-Type: text/toml; charset=utf-8
+
+task_id = "task-0031"
+verdict = "partial"
+run_host = "minim4-24"
+run_date = "2026-05-08"
+qemu_version = "10.2.1"
+swtpm_version = "0.10.1"
+guest_image = "FreeBSD-15.0-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2"
+guest_os = "FreeBSD 15.0-RELEASE-p8 arm64"
+note = "smolbsd-artifacts/ did not exist on minim4-24; used the release cloud image from ~/vms/"
+
+[summary]
+t1_swtpm_socket   = "pass"
+t2_dev_tpm0       = "fail — root cause identified: ControlArea=0 in ACPI TPM2 table"
+t3_tpmctl         = "fail — depends on T2"
+t4_pcr0           = "fail — depends on T2"
+t5_seal_dry_run   = "pass"
+t6_pcr0_nonzero   = "fail — depends on T2"
+boot_time_sec     = 7
+uefi_tpm_seen     = true
+
+[t1_detail]
+description = "swtpm daemon started with --flags startup-clear; socket appeared within 0.5s"
+command = "swtpm_setup --tpm2 --tpmstate /tmp/smolbsd-tpm --overwrite && swtpm socket --tpm2 --tpmstate dir=/tmp/smolbsd-tpm --ctrl type=unixio,path=/tmp/smolbsd-tpm/swtpm.sock --flags startup-clear --daemon"
+socket_path = "/tmp/smolbsd-tpm/swtpm.sock"
+socket_appeared = true
+elapsed_sec = 0.5
+state_file = "/tmp/smolbsd-tpm/tpm2-00.permall"
+note = "swtpm_setup requires swtpm in PATH; /opt/homebrew/bin not in default SSH PATH — used explicit PATH export"
+
+[t2_detail]
+description = "/dev/tpm0 not created despite TPM2 ACPI table being present in guest"
+qemu_tpm_device = "tpm-tis-device"
+acpi_tpm2_table = "present (Length=76, Revision=4)"
+acpi_control_area = "0x0 — ZERO (root cause)"
+acpi_start_method = "6 (CRB)"
+acpi_hid = "MSFT0101"
+tpm_ko_loaded = true
+tpm_ko_attached = false
+dev_tpm0_present = false
+root_cause = """
+QEMU aarch64 tpm-tis-device exports a TPM2 ACPI table with ControlArea=0.
+FreeBSD tpm(4) CRB driver reads the ControlArea address from the ACPI TPM2
+table to locate the MMIO Command Response Buffer. With ControlArea=0 the
+driver refuses to attach — the zero address is not a valid MMIO region.
+This is an aarch64-specific QEMU limitation: tpm-tis-device on the virt
+machine does not provide a valid CRB MMIO address in ACPI.
+tpm-crb (which would provide a correct address) is not available for
+qemu-system-aarch64 -machine virt (only tpm-tis-device and tpm-tis-i2c exist).
+"""
+available_tpm_devices = ["tpm-tis-device", "tpm-tis-i2c"]
+tpm_crb_available = false
+evidence_acpidump = "ControlArea=0, StartMethod=6"
+evidence_devmatch = "Searching acpi bus at handle=_SB_.TPM0 for pnpinfo _HID=MSFT0101 _UID=0 _CID=none — no match"
+
+[t2_uefi_evidence]
+description = "UEFI firmware DID communicate with swtpm during boot (PCR measurements)"
+uefi_log_line = "Tpm2GetCapabilityPcrs - 00000004"
+interpretation = "EDK2 UEFI called swtpm via the TIS interface and read PCR banks. Measurements were extended into swtpm state. The UEFI-level TPM stack works; the FreeBSD kernel-level driver cannot attach."
+
+[t3_detail]
+description = "tpmctl not present in base FreeBSD 15 release image"
+tpmctl_installed = false
+tpm2_tools_installed = false
+note = "Both tools require separate pkg install; not in base system"
+
+[t4_detail]
+description = "PCR0 read not attempted — /dev/tpm0 absent"
+blocked_by = "T2 failure"
+
+[t5_detail]
+description = "tests/tpm-seal-test.nu --dry-run executed locally on workstation"
+command = "nu --no-config-file tests/tpm-seal-test.nu --dry-run"
+exit_code = 0
+note = "Script parses and dry-runs cleanly — not blocked by host/guest issues"
+
+[t6_detail]
+description = "PCR0 non-zero check not attempted — /dev/tpm0 absent"
+blocked_by = "T2 failure"
+indirect_evidence = "UEFI log shows Tpm2GetCapabilityPcrs returned 00000004 (4 PCR banks) — swtpm was measured by UEFI, so PCR0 is non-zero in swtpm state. Cannot confirm from guest side without /dev/tpm0."
+
+[boot_gate]
+time_to_login_sec = 7
+threshold_sec = 30
+verdict = "pass"
+note = "HVF acceleration — 7s to login: on Apple M-series. Well within 30s gate."
+
+[blockers]
+primary = """
+aarch64 QEMU tpm-tis-device + FreeBSD tpm(4) integration is broken on
+the virt machine: ControlArea=0 in ACPI table prevents kernel attachment.
+This is the same architectural blocker documented in PHASE-3-TPM.md §4a.2
+(arm64 bhyve lacks virtio-tpm; physical board fTPM is Phase IV).
+The QEMU TIS device works at the UEFI layer but not at the OS driver layer.
+"""
+
+secondary = """
+smolbsd-artifacts/ directory does not exist on minim4-24. Used the base
+FreeBSD 15 release cloud image as a substitute. The SMOLBSD custom kernel
+config adds 'device tpm' — the GENERIC kernel also ships tpm.ko but cannot
+attach it due to the ControlArea=0 ACPI issue regardless of kernel config.
+"""
+
+[resolution_path]
+option_a = "Use amd64 host (Vultr vc2) — virtio-tpm is amd64-only in QEMU/bhyve; recommended path per PHASE-3-TPM.md §4a"
+option_b = "Patch QEMU aarch64 virt machine to provide valid CRB MMIO in ACPI TPM2 table — upstream fix required, not practical for Phase III"
+option_c = "Switch to tpm-tis-i2c QEMU device and use I2C bus attachment — requires FreeBSD tpm(4) I2C driver support (not present in 15.0)"
+recommended = "option_a"
+
+[[claims]]
+subject  = "T1: swtpm socket appeared on minim4-24"
+expected = "test -S /tmp/smolbsd-tpm/swtpm.sock exits 0 within 3s"
+probe    = "swtpm_setup --tpm2 --tpmstate /tmp/smolbsd-tpm --overwrite && swtpm socket ... --daemon && sleep 0.5 && test -S /tmp/smolbsd-tpm/swtpm.sock"
+evidence = "socket present at /tmp/smolbsd-tpm/swtpm.sock within 0.5s; tpm2-00.permall written"
+verdict  = "pass"
+
+[[claims]]
+subject  = "T2: /dev/tpm0 char device in FreeBSD 15 arm64 guest"
+expected = "test -c /dev/tpm0 exits 0 in guest"
+probe    = "ssh -p 2241 root@localhost 'ls -la /dev/tpm*; dmesg | grep tpm'"
+evidence = "ls: /dev/tpm*: No such file or directory; tpm.ko loaded but not attached; ACPI TPM2 table present with ControlArea=0"
+verdict  = "fail"
+
+[[claims]]
+subject  = "ACPI TPM2 table ControlArea value"
+expected = "non-zero MMIO address for CRB interface"
+probe    = "acpidump -t TPM2 | grep ControlArea"
+evidence = "ControlArea=0 — QEMU aarch64 tpm-tis-device does not provide valid CRB MMIO address"
+verdict  = "fail"
+
+[[claims]]
+subject  = "UEFI-level swtpm communication (indirect T4 evidence)"
+expected = "UEFI firmware reads TPM PCR banks during boot"
+probe    = "grep Tpm2 /tmp/smolbsd-qemu-tpm.log"
+evidence = "Tpm2GetCapabilityPcrs - 00000004 present in boot log — UEFI measured into swtpm, PCR banks active"
+verdict  = "pass"
+
+[[claims]]
+subject  = "T5: tests/tpm-seal-test.nu --dry-run exits 0"
+expected = "script parses and dry-runs without error"
+probe    = "nu --no-config-file tests/tpm-seal-test.nu --dry-run"
+evidence = "exit_code=0 — script valid"
+verdict  = "pass"
+
+[[claims]]
+subject  = "Guest boot time <= 30s (HVF)"
+expected = "login: within 30s on minim4-24 with HVF"
+probe    = "grep -m1 'login:' /tmp/smolbsd-qemu-tpm.log timestamp delta from QEMU start"
+evidence = "login: appeared at elapsed=7s — 23s margin below 30s gate"
+verdict  = "pass"
