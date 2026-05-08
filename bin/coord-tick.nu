@@ -168,6 +168,59 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
     log-event "irc_fallback" {task_id: $task_id, status: $result}
 }
 
+# Spawn a subagent (claude CLI) in the background to execute a dispatched task.
+# Non-blocking: writes a prompt file and launches `claude -p` via `sh -c ... &`.
+# If the `claude` CLI is not on PATH, logs `subagent_spawn_skipped` and returns —
+# the operator must launch manually in that case.
+def spawn-subagent [agent_type: string, task_id: string, spool_path: string, root: string] {
+    let claude_found = (which claude | length) > 0
+    if not $claude_found {
+        log-event "subagent_spawn_skipped" {
+            task_id:    $task_id
+            agent_type: $agent_type
+            reason:     "claude CLI not installed"
+        }
+        return
+    }
+
+    let spawn_dir = [$root, "var", "run", "spawned"] | path join
+    if not ($spawn_dir | path exists) { mkdir $spawn_dir }
+    let prompt_file = [$spawn_dir, $"($task_id).prompt.txt"] | path join
+    let log_file    = [$spawn_dir, $"($task_id).log"]        | path join
+
+    let prompt = $"You are a smolBSD subagent of type ($agent_type) handling task ($task_id).
+
+1. Read the mbox spool at: ($spool_path)
+2. Find the message whose Message-ID contains \"<($task_id).\" — that is your task envelope.
+3. Parse its TOML body and execute the value of the `command` field as a shell command.
+4. Append a reply to the spool (($spool_path)) with these headers:
+   - From: ($agent_type)@smolbsd.local
+   - To: coordinator@smolbsd.local
+   - In-Reply-To: <the original Message-ID>
+   - X-Verdict: pass | fail   \(pass iff exit_code == 0\)
+   - Content-Type: text/toml; charset=utf-8
+5. The TOML body MUST contain:
+   - task_id      = \"($task_id)\"
+   - verdict      = \"pass\" | \"fail\"
+   - exit_code    = <int>
+   - stdout       = <captured stdout, truncated to 4 KiB>
+   - one [[claims]] block with at minimum: kind = \"command_executed\", task_id = \"($task_id)\", exit_code = <int>
+
+Do not modify any other messages in the spool. Append only.
+"
+    $prompt | save --force $prompt_file
+
+    let sh_cmd = $"claude --model claude-sonnet-4-6 -p \"$\(cat ($prompt_file)\)\" >($log_file) 2>&1 &"
+    ^sh -c $sh_cmd
+
+    log-event "subagent_spawned" {
+        task_id:      $task_id
+        agent_type:   $agent_type
+        prompt_file:  $prompt_file
+        log_file:     $log_file
+    }
+}
+
 # ── FSM states ────────────────────────────────────────────────────────────────
 
 # idle: scan spool for new messages not in seen_ids.
@@ -509,6 +562,11 @@ action = \"dispatch\"
         to:         $to_addr
         attempt:    $next_attempt
     }
+
+    # Auto-spawn a subagent to execute the dispatched task (Phase II).
+    # agent_type is derived from the local-part of the recipient address.
+    let agent_type = ($to_addr | split row "@" | first | default "general-purpose")
+    spawn-subagent $agent_type $task_id $spool $root
 
     let updated_counts = $state.attempt_counts | insert $task_id $next_attempt
     tick ($state
