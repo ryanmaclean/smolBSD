@@ -1,6 +1,6 @@
 {
   "project": "smolBSD coordinator",
-  "version": "1.0",
+  "version": "1.1",
   "branchName": "main",
   "qualityChecks": [
     "nu tests/mbox-parse-test.nu",
@@ -18,7 +18,7 @@
         "bin/mbox-parse.nu",
         "tests/coord-tick-test.nu"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "S-002",

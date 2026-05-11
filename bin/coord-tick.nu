@@ -168,35 +168,39 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
     log-event "irc_fallback" {task_id: $task_id, status: $result}
 }
 
-# Follow an In-Reply-To chain and return true if any linked request message
-# in the thread declared attestation_required = true.
-def request-thread-attestation-required [messages: list, in_reply_to: string] {
-    mut current_id = $in_reply_to
-    mut visited = []
+# Process X-Resume-* messages and clear matching per-task HALTs.
+# Returns updated state; retry/edit resumes remove task from halted_tasks.
+def process-resume-actions [state: record, root: string, spool: string, event_prefix: string] {
+    if (($state.halted_tasks | length) == 0) { return $state }
+    if not ($spool | path exists) { return $state }
 
-    while $current_id != "" {
-        if $current_id in $visited {
-            break
+    let content  = open --raw $spool
+    let messages = parse-mbox $content
+    mut next_state = $state
+
+    for msg in $messages {
+        let resume_tag = $msg.headers | get "X-Resume-Tag"? | default ""
+        if $resume_tag == "" { continue }
+
+        let matched = $next_state.halted_tasks | where {|t| $"resume-($t)" == $resume_tag }
+        if (($matched | length) == 0) { continue }
+
+        let task = $matched | first
+        let action_hdr = $msg.headers | get "X-Resume-Action"? | default "retry"
+        log-event $"($event_prefix)_resume_action" {task_id: $task, resume_tag: $resume_tag, action: $action_hdr}
+
+        if $action_hdr == "retry" or $action_hdr == "edit" {
+            let per_halt = [$root, "var", "mail", $"HALT.($task)"] | path join
+            if ($per_halt | path exists) { rm $per_halt }
+            $next_state = ($next_state
+                | update halted_tasks ($next_state.halted_tasks | where {|t| $t != $task})
+                | update fsm_state "idle")
+        } else {
+            log-event $"($event_prefix)_abort" {task_id: $task}
         }
-        $visited = $visited | append $current_id
-
-        let linked_matches = ($messages | where {|m| (msg-id $m) == $current_id } | first 1)
-        if (($linked_matches | length) == 0) {
-            break
-        }
-
-        let linked_msg = $linked_matches | first
-        let linked_payload = extract-toml $linked_msg
-        if not ("_parse_error" in $linked_payload) {
-            if ($linked_payload | get "attestation_required"? | default false) {
-                return true
-            }
-        }
-
-        $current_id = $linked_msg.headers | get "In-Reply-To"? | default ""
     }
 
-    false
+    $next_state
 }
 
 # ── FSM states ────────────────────────────────────────────────────────────────
@@ -568,37 +572,9 @@ def state-halted [state: record, root: string, spool: string] {
         note:         "coordinator paused; rm var/mail/HALT + append resume message to unblock"
     }
 
-    # Scan spool for resume messages matching tasks in halted_tasks.
-    if ($spool | path exists) {
-        let content  = open --raw $spool
-        let messages = parse-mbox $content
-        for msg in $messages {
-            let resume_tag = $msg.headers | get "X-Resume-Tag"? | default ""
-            if $resume_tag != "" {
-                let matched = $state.halted_tasks | where {|t| $"resume-($t)" == $resume_tag }
-                if ($matched | length) > 0 {
-                    let task = $matched | first
-                    let action_hdr = $msg.headers | get "X-Resume-Action"? | default "retry"
-                    log-event "halted_resume_action" {
-                        task_id:    $task
-                        resume_tag: $resume_tag
-                        action:     $action_hdr
-                    }
-                    if $action_hdr == "retry" or $action_hdr == "edit" {
-                        # Remove from halted_tasks; delete per-task HALT marker
-                        let per_halt = [$root, "var", "mail", $"HALT.($task)"] | path join
-                        if ($per_halt | path exists) { rm $per_halt }
-                        # Return state with task removed from halted_tasks, back to idle for re-dispatch
-                        return ($state
-                            | update halted_tasks ($state.halted_tasks | where {|t| $t != $task})
-                            | update fsm_state "idle")
-                    } else {
-                        # abort — keep halted, do nothing
-                        log-event "halted_abort" {task_id: $task}
-                    }
-                }
-            }
-        }
+    let resumed_state = process-resume-actions $state $root $spool "halted"
+    if $resumed_state != $state {
+        return $resumed_state
     }
 
     $state | update fsm_state "halted"
@@ -617,13 +593,17 @@ def tick [state: record, spool: string, root: string, remaining: int] {
         return $state
     }
 
+    # Process per-task resumes on every tick so HALT.<task_id> can be cleared
+    # without requiring a global HALT marker.
+    let resumed_state = process-resume-actions $state $root $spool "tick"
+
     # O(1) HALT check before every state dispatch — spec §13.
     if (halt-present $root) {
-        return (state-halted $state $root $spool)
+        return (state-halted $resumed_state $root $spool)
     }
 
-    let next_count = $state.tick_count + 1
-    let stamped = $state
+    let next_count = $resumed_state.tick_count + 1
+    let stamped = $resumed_state
         | update tick_count $next_count
         | update last_tick_at (date now | format date "%Y-%m-%dT%H:%M:%SZ")
 
