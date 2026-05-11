@@ -53,6 +53,10 @@ jobs:
       - name: coord-tick integration tests
         run: nu tests/coord-tick-test.nu
 
+      - name: spawn-subagent integration tests
+        working-directory: .
+        run: nu tests/spawn-subagent-test.nu
+
   # ── Shell script linting ─────────────────────────────────────────────────────
   shellcheck:
     name: Shellcheck
