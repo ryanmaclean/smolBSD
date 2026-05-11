@@ -398,6 +398,97 @@ do {
     ^rm -rf $tmp
 }
 
+print "test 12b: request-level attestation requirement enforced on reply"
+do {
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    let req_id = "<req.attest.t-attest-req@host>"
+    let req_body = "task_id = \"t-attest-req\"\nattestation_required = true"
+    # Mark this as a historical request context message (non-dispatchable via in-reply-to).
+    let req_msg = make-msg "coordinator@smolbsd.local" "builder@smolbsd.local" $req_id $req_body --in-reply-to "<seed@host>"
+
+    let reply_id = "<reply.attest.t-attest-req@host>"
+    let reply_body = "verdict = \"pass\"\ntask_id = \"t-attest-req\""
+    let reply_msg = make-msg "builder@smolbsd.local" "coordinator@smolbsd.local" $reply_id $reply_body --in-reply-to $req_id
+
+    write-spool $spool_abs ($req_msg + "\n" + $reply_msg)
+
+    run-tick $tmp $state_rel $spool_rel
+
+    let state = read-state $state_abs
+    # request required attestation + reply has no claims -> MALFORMED -> retry -> waiting
+    assert equal $state.fsm_state "waiting"
+    assert (($state.attempt_counts | get "t-attest-req"? | default 0) >= 1)
+
+    ^rm -rf $tmp
+}
+
+print "test 12c: request-level attestation satisfied by claims in reply"
+do {
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    let req_id = "<req.attest.t-attest-ok@host>"
+    let req_body = "task_id = \"t-attest-ok\"\nattestation_required = true"
+    let req_msg = make-msg "coordinator@smolbsd.local" "builder@smolbsd.local" $req_id $req_body --in-reply-to "<seed@host>"
+
+    let reply_id = "<reply.attest.t-attest-ok@host>"
+    let reply_body = "verdict = \"pass\"\ntask_id = \"t-attest-ok\"\n\n[[claims]]\nsubject = \"proof\"\nverdict = \"pass\""
+    let reply_msg = make-msg "builder@smolbsd.local" "coordinator@smolbsd.local" $reply_id $reply_body --in-reply-to $req_id
+
+    write-spool $spool_abs ($req_msg + "\n" + $reply_msg)
+
+    run-tick $tmp $state_rel $spool_rel
+
+    let state = read-state $state_abs
+    assert equal $state.fsm_state "idle"
+    assert ($reply_id in $state.seen_ids)
+
+    ^rm -rf $tmp
+}
+
+print "test 12d: attestation required on original request is enforced for replies to dispatched message"
+do {
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    # Tick 1: original request requires attestation, coordinator dispatches and enters waiting.
+    let req_id = "<req.attest.dispatch.chain@host>"
+    let req_body = "task_id = \"t-attest-chain\"\nattestation_required = true"
+    let req_msg = make-msg "user@smolbsd.local" "builder@smolbsd.local" $req_id $req_body
+    write-spool $spool_abs $req_msg
+    run-tick $tmp $state_rel $spool_rel
+
+    let st1 = read-state $state_abs
+    assert equal $st1.fsm_state "waiting"
+    let dispatch_id = $st1.pending_request_id
+
+    # Tick 2: agent replies to coordinator dispatch without claims.
+    # Coordinator must follow In-Reply-To chain to enforce original requirement.
+    let reply_id = "<reply.attest.dispatch.chain@host>"
+    let reply_body = "verdict = \"pass\"\ntask_id = \"t-attest-chain\""
+    let reply_msg = make-msg "builder@smolbsd.local" "coordinator@smolbsd.local" $reply_id $reply_body --in-reply-to $dispatch_id
+    $reply_msg | save --append $spool_abs
+    run-tick $tmp $state_rel $spool_rel
+
+    let st2 = read-state $state_abs
+    # pass without claims should be treated as malformed/retry, not accepted.
+    assert equal $st2.fsm_state "waiting"
+    assert (($st2.attempt_counts | get "t-attest-chain"? | default 0) >= 2)
+
+    ^rm -rf $tmp
+}
+
 print "test 13: blocked+no-unblocker → immediate HALT, no retry"
 do {
     let tmp = make-temp-dir
@@ -594,6 +685,63 @@ do {
     let halted = $st.halted_tasks
     let task_still_halted = ("t15" in $halted) or ($st.fsm_state == "halted")
     assert $task_still_halted
+
+    ^rm -rf $tmp
+}
+
+print "test 16b: retry resume clears per-task halt without global HALT marker"
+do {
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    let mail_dir = [$tmp, "var", "mail"] | path join
+    mkdir $mail_dir
+    let state_dir = [$tmp, "var", "run"] | path join
+    mkdir $state_dir
+
+    (
+        "version = \"1\"\n" +
+        "tick_count = 0\n" +
+        "fsm_state = \"idle\"\n" +
+        "seen_ids = []\n" +
+        "last_tick_at = \"2026-01-01T00:00:00Z\"\n" +
+        "pending_request_id = \"\"\n" +
+        "pending_task_id = \"\"\n" +
+        "pending_to_addr = \"\"\n" +
+        "dispatched_at = \"\"\n" +
+        "halted_tasks = [\"t16b\"]\n\n" +
+        "[attempt_counts]\n"
+    ) | save --force $state_abs
+
+    # Per-task marker exists; no global HALT marker.
+    (
+        "task_id = \"t16b\"\n" +
+        "reason = \"retry-exhausted\"\n"
+    ) | save --force ([$mail_dir, "HALT.t16b"] | path join)
+
+    let resume_raw = (
+        "From user@smolbsd.local Mon Jan  1 00:00:00 2026\n" +
+        "From: user@smolbsd.local\n" +
+        "To: coordinator@smolbsd.local\n" +
+        "Message-ID: <resume.t16b@host>\n" +
+        "X-Resume-Tag: resume-t16b\n" +
+        "X-Resume-Action: retry\n" +
+        "Content-Type: text/toml; charset=utf-8\n" +
+        "\n" +
+        "task_id = \"t16b\"\n" +
+        "action = \"retry\"\n"
+    )
+    write-spool $spool_abs $resume_raw
+
+    run-tick $tmp $state_rel $spool_rel
+
+    let st = read-state $state_abs
+    assert (not ("t16b" in $st.halted_tasks))
+    assert (not (([$tmp, "var", "mail", "HALT.t16b"] | path join) | path exists))
+    assert ($st.fsm_state != "halted")
 
     ^rm -rf $tmp
 }
