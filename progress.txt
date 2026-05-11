@@ -1,0 +1,25 @@
+## Codebase Patterns
+- Coordinator per-task halt behavior is governed by `halted_tasks` plus `HALT.<task_id>` markers; dispatch skips tasks listed in `halted_tasks`.
+- Resume actions are carried via spool headers `X-Resume-Tag` and `X-Resume-Action` and must remove both state and per-task marker for retry/edit.
+- Global halt (`var/mail/HALT`) and per-task halt (`var/mail/HALT.<task_id>`) are separate controls; per-task resume should not require global halt.
+- Nushell tests are authoritative for coordinator FSM behavior: `tests/coord-tick-test.nu` and `tests/mbox-parse-test.nu`.
+
+## 2026-05-11T06:48:15Z - S-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Continued Ralph loop on S-002 (highest `passes:false`) after restoring tracking files in this workspace.
+- Implemented tick-level resume processing so per-task halt recovery works without requiring global HALT marker.
+- Added integration test coverage for retry resume clearing `HALT.<task_id>` while no `HALT` file exists.
+- Quality checks attempted:
+  - `nu tests/coord-tick-test.nu` (failed: `nu` not installed in sandbox)
+  - `nu tests/mbox-parse-test.nu` (failed: `nu` not installed in sandbox)
+  - `sh tests/run-all.sh` (fails because Nushell runtime is unavailable)
+- Files changed:
+  - prd.json
+  - progress.txt
+  - bin/coord-tick.nu
+  - tests/coord-tick-test.nu
+- **Learnings for future iterations:**
+  - Patterns discovered: resume handling must run every tick, not only in halted state, otherwise halted tasks can become permanently skipped.
+  - Gotchas encountered: this sandbox still lacks Nushell, so quality gates remain CI-dependent.
+  - Useful context: per-task halts are persisted in two places (`halted_tasks` and `HALT.<task_id>`), and both must be cleared on retry/edit.
+---
