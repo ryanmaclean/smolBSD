@@ -168,6 +168,37 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
     log-event "irc_fallback" {task_id: $task_id, status: $result}
 }
 
+# Follow an In-Reply-To chain and return true if any linked request message
+# in the thread declared attestation_required = true.
+def request-thread-attestation-required [messages: list, in_reply_to: string] {
+    mut current_id = $in_reply_to
+    mut visited = []
+
+    while $current_id != "" {
+        if $current_id in $visited {
+            break
+        }
+        $visited = $visited | append $current_id
+
+        let linked_matches = ($messages | where {|m| (msg-id $m) == $current_id } | first 1)
+        if (($linked_matches | length) == 0) {
+            break
+        }
+
+        let linked_msg = $linked_matches | first
+        let linked_payload = extract-toml $linked_msg
+        if not ("_parse_error" in $linked_payload) {
+            if ($linked_payload | get "attestation_required"? | default false) {
+                return true
+            }
+        }
+
+        $current_id = $linked_msg.headers | get "In-Reply-To"? | default ""
+    }
+
+    false
+}
+
 # ── FSM states ────────────────────────────────────────────────────────────────
 
 # idle: scan spool for new messages not in seen_ids.
@@ -252,8 +283,13 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                 let attempt_n = $current_state.attempt_counts | get -o $task_id | default 0
 
                 if $verdict == "pass" {
-                    # Check attestation requirement
-                    let attestation_required = $payload | get "attestation_required"? | default false
+                    # Check attestation requirement from both reply and originating request.
+                    # Agents may omit attestation_required in replies; coordinator must enforce
+                    # the requirement declared in the request envelope.
+                    let in_reply_to = $msg.headers | get "In-Reply-To"? | default ""
+                    let request_attestation_required = if $in_reply_to != "" { request-thread-attestation-required $messages $in_reply_to } else { false }
+                    let reply_attestation_required = $payload | get "attestation_required"? | default false
+                    let attestation_required = $request_attestation_required or $reply_attestation_required
                     let claims = $payload | get "claims"? | default []
 
                     if $attestation_required and (($claims | length) == 0) {

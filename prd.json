@@ -1,0 +1,70 @@
+{
+  "project": "smolBSD coordinator",
+  "version": "1.0",
+  "branchName": "main",
+  "qualityChecks": [
+    "nu tests/mbox-parse-test.nu",
+    "nu tests/coord-tick-test.nu",
+    "sh tests/run-all.sh"
+  ],
+  "userStories": [
+    {
+      "id": "S-001",
+      "priority": 1,
+      "title": "Enforce spool message attestation checks",
+      "description": "As a coordinator operator, I need attestation-required messages to be validated so untrusted task completions do not advance the FSM.",
+      "filesHint": [
+        "bin/coord-tick.nu",
+        "bin/mbox-parse.nu",
+        "tests/coord-tick-test.nu"
+      ],
+      "passes": false
+    },
+    {
+      "id": "S-002",
+      "priority": 2,
+      "title": "Implement per-task halt and resume handling",
+      "description": "As an operator, I need HALT.<task_id> and X-Resume-Action support so risky tasks can be isolated and resumed safely.",
+      "filesHint": [
+        "bin/coord-tick.nu",
+        "bin/coord-run.sh",
+        "tests/coord-tick-test.nu"
+      ],
+      "passes": false
+    },
+    {
+      "id": "S-003",
+      "priority": 3,
+      "title": "Apply bounded retry policy with escalation",
+      "description": "As a maintainer, I need retries capped with backoff and escalation so blocked work does not loop forever.",
+      "filesHint": [
+        "bin/coord-tick.nu",
+        "tests/coord-fsm-tests.nu",
+        "docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.md"
+      ],
+      "passes": false
+    },
+    {
+      "id": "S-004",
+      "priority": 4,
+      "title": "Add capability gate checks during dispatch",
+      "description": "As a coordinator, I need tools_required to be checked against AGENT_CAPABILITIES so tasks are sent only to capable agents.",
+      "filesHint": [
+        "bin/coord-tick.nu",
+        "tests/coord-tick-test.nu"
+      ],
+      "passes": false
+    },
+    {
+      "id": "S-005",
+      "priority": 5,
+      "title": "Emit deterministic state transition telemetry fields",
+      "description": "As an SRE, I need stable fields for state transitions and verdict outcomes so dashboards and lineage checks can be trusted.",
+      "filesHint": [
+        "bin/coord-tick.nu",
+        "tests/coord-fsm-tests.nu"
+      ],
+      "passes": false
+    }
+  ]
+}
