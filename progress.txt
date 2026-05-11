@@ -1,0 +1,30 @@
+## Codebase Patterns
+- Coordinator per-task HALT recovery must clear both `halted_tasks` and `var/mail/HALT.<task_id>`.
+- Resume headers are `X-Resume-Tag` and `X-Resume-Action`; tag format is `resume-<task_id>`.
+- Per-task resume handling should run even when global `var/mail/HALT` is absent.
+
+## 2026-05-11T06:48:15Z - S-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented tick-level per-task resume handling so retry/edit can clear task halts without requiring global HALT.
+- Added integration test coverage for retry resume with only `HALT.<task_id>` present.
+- Quality checks attempted but blocked by missing Nushell runtime in sandbox.
+- Files changed:
+  - bin/coord-tick.nu
+  - tests/coord-tick-test.nu
+  - prd.json
+  - progress.txt
+- **Learnings for future iterations:**
+  - Patterns discovered: resume action processing belongs in shared helper reused by both halted and normal tick paths.
+  - Gotchas encountered: `nu` remains unavailable in this sandbox; tests must be verified via CI.
+  - Useful context: dispatch skip logic relies on `halted_tasks`, so stale entries cause silent non-dispatch.
+---
+## 2026-05-11T06:55:31Z - S-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Re-ran required quality checks after applying S-002 changes and restoring tracker files.
+- Validation results:
+  - `python -m json.tool prd.json` => pass
+  - `nu tests/coord-tick-test.nu` => fail (`nu: command not found`)
+  - `nu tests/mbox-parse-test.nu` => fail (`nu: command not found`)
+  - `sh tests/run-all.sh` => fail (depends on `nu`)
+- Story remains pending verification because Nushell runtime is unavailable in sandbox.
+---
