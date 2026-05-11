@@ -57,8 +57,12 @@ exit 0
     write-spool $spool_abs $msg
 
     # Run tick with the stub dir prepended to PATH.
-    let prev_path = $env.PATH
-    with-env { PATH: ([$stub_dir] | append ($prev_path | split row ":")) } {
+    let prev_path = (if (($env.PATH | describe) == "list<string>") {
+        $env.PATH
+    } else {
+        $env.PATH | split row (char esep)
+    })
+    with-env { PATH: ($prev_path | prepend $stub_dir) } {
         ^nu bin/coord-tick.nu --state-file $state_rel --spool $spool_rel --root $tmp | ignore
     }
 
