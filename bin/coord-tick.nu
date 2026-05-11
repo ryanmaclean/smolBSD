@@ -169,7 +169,7 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
 }
 
 # Process X-Resume-* messages and clear matching per-task HALTs.
-# Returns updated state; retry/edit resumes remove task from halted_tasks.
+# Returns updated state; retry/edit resumes remove the task from halted_tasks.
 def process-resume-actions [state: record, root: string, spool: string, event_prefix: string] {
     if (($state.halted_tasks | length) == 0) { return $state }
     if not ($spool | path exists) { return $state }
