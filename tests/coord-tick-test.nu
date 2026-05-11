@@ -689,6 +689,63 @@ do {
     ^rm -rf $tmp
 }
 
+print "test 16b: retry resume clears per-task halt without global HALT marker"
+do {
+    let tmp = make-temp-dir
+    let state_rel = "var/run/coord-state.toml"
+    let state_abs = [$tmp, $state_rel] | path join
+    let spool_rel = "var/mail/spool"
+    let spool_abs = [$tmp, $spool_rel] | path join
+
+    let mail_dir = [$tmp, "var", "mail"] | path join
+    mkdir $mail_dir
+    let state_dir = [$tmp, "var", "run"] | path join
+    mkdir $state_dir
+
+    (
+        "version = \"1\"\n" +
+        "tick_count = 0\n" +
+        "fsm_state = \"idle\"\n" +
+        "seen_ids = []\n" +
+        "last_tick_at = \"2026-01-01T00:00:00Z\"\n" +
+        "pending_request_id = \"\"\n" +
+        "pending_task_id = \"\"\n" +
+        "pending_to_addr = \"\"\n" +
+        "dispatched_at = \"\"\n" +
+        "halted_tasks = [\"t16b\"]\n\n" +
+        "[attempt_counts]\n"
+    ) | save --force $state_abs
+
+    # Per-task marker exists; no global HALT marker.
+    (
+        "task_id = \"t16b\"\n" +
+        "reason = \"retry-exhausted\"\n"
+    ) | save --force ([$mail_dir, "HALT.t16b"] | path join)
+
+    let resume_raw = (
+        "From user@smolbsd.local Mon Jan  1 00:00:00 2026\n" +
+        "From: user@smolbsd.local\n" +
+        "To: coordinator@smolbsd.local\n" +
+        "Message-ID: <resume.t16b@host>\n" +
+        "X-Resume-Tag: resume-t16b\n" +
+        "X-Resume-Action: retry\n" +
+        "Content-Type: text/toml; charset=utf-8\n" +
+        "\n" +
+        "task_id = \"t16b\"\n" +
+        "action = \"retry\"\n"
+    )
+    write-spool $spool_abs $resume_raw
+
+    run-tick $tmp $state_rel $spool_rel
+
+    let st = read-state $state_abs
+    assert (not ("t16b" in $st.halted_tasks))
+    assert (not (([$tmp, "var", "mail", "HALT.t16b"] | path join) | path exists))
+    assert ($st.fsm_state != "halted")
+
+    ^rm -rf $tmp
+}
+
 print "test 17: IRC fallback — coordinator halts cleanly when IRC is unreachable"
 do {
     let tmp = make-temp-dir
