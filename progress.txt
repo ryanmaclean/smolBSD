@@ -1,0 +1,59 @@
+## Codebase Patterns
+- Coordinator behavior is centered in `bin/coord-tick.nu`; most user stories touching FSM logic should start there.
+- mbox message parsing and TOML extraction conventions live in `bin/mbox-parse.nu`; parser changes must be covered by `tests/mbox-parse-test.nu`.
+- HALT semantics are split: per-task markers (`HALT.<task_id>`) and global halt marker (`HALT`) are handled differently by runner and tick scripts.
+- Test-first validation should use Nushell test scripts before broader shell wrappers for faster feedback.
+- For attestation gating, infer `attestation_required` from the originating request via reply `In-Reply-To` linkage; do not trust only reply-local flags.
+- For coordinator-dispatched flows, attestation checks must follow the full `In-Reply-To` chain (reply -> dispatched message -> original request), not just one hop.
+
+## 2026-05-11T00:00:00Z - INIT
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Initialized project tracking files for Ralph iterations (`prd.json`, `progress.txt`).
+- Seeded prioritized user stories with `passes: false` so the next iteration can select the highest-priority unpassed story deterministically.
+- Added reusable codebase patterns observed from repository docs and coordinator layout.
+- Files changed:
+  - prd.json
+  - progress.txt
+- **Learnings for future iterations:**
+  - Patterns discovered: prioritize `bin/coord-tick.nu` + targeted tests for FSM stories.
+  - Gotchas encountered: without `prd.json` and `progress.txt`, Ralph loop cannot determine branch/story state.
+  - Useful context: project-level acceptance checks are Nushell-first (`tests/*.nu`) with `tests/run-all.sh` as aggregate.
+---
+## 2026-05-11T06:26:21Z - S-001
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Implemented request-linked attestation enforcement for pass replies in coordinator harvesting.
+- Added integration coverage for request-level attestation requirement (missing claims retries; present claims passes).
+- Files changed:
+  - bin/coord-tick.nu
+  - tests/coord-tick-test.nu
+- **Learnings for future iterations:**
+  - Patterns discovered: attestation policy is most reliable when bound to originating request metadata, not reply-provided booleans.
+  - Gotchas encountered: `nu` is not installed in this sandbox, so Nushell tests cannot be executed locally.
+  - Useful context: test fixtures can include a non-empty `In-Reply-To` on coordinator→agent messages to keep them non-dispatchable while still providing request context.
+---
+
+## 2026-05-11T06:34:17Z - S-001
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Extended attestation enforcement to traverse `In-Reply-To` chains so pass replies to coordinator-dispatched messages still honor original request `attestation_required=true`.
+- Added regression test for dispatch-chain attestation bypass scenario to ensure pass-without-claims is retried.
+- Files changed:
+  - bin/coord-tick.nu
+  - tests/coord-tick-test.nu
+  - progress.txt
+- **Learnings for future iterations:**
+  - Patterns discovered: request metadata can be one envelope hop behind the coordinator dispatch; chain traversal is required for policy integrity.
+  - Gotchas encountered: local sandbox still lacks `nu`, so required Nushell tests remain blocked.
+  - Useful context: `pending_request_id` in waiting state points to coordinator-dispatched message, which is why one-hop attestation lookup can miss the original request policy.
+---
+
+## 2026-05-11T06:35:58Z - S-001
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Re-ran the Ralph loop gate for the highest-priority failing story (`S-001`) to verify completion eligibility.
+- Confirmed branch remains `main` (matches `prd.json` branchName) and that Nushell runtime is still unavailable in this sandbox.
+- Files changed:
+  - progress.txt
+- **Learnings for future iterations:**
+  - Patterns discovered: story completion gating currently depends on external Nushell-capable execution environment.
+  - Gotchas encountered: `sh tests/run-all.sh` fails consistently when `nu` is absent because it shells into Nushell tests.
+  - Useful context: keep `S-001` as `passes: false` until real Nushell test outputs are available.
+---
