@@ -287,8 +287,13 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                 let attempt_n = $current_state.attempt_counts | get -o $task_id | default 0
 
                 if $verdict == "pass" {
-                    # Check attestation requirement
-                    let attestation_required = $payload | get "attestation_required"? | default false
+                    # Check attestation requirement from both reply and originating request.
+                    # Agents may omit attestation_required in replies; coordinator must enforce
+                    # the requirement declared in the request envelope.
+                    let in_reply_to = $msg.headers | get "In-Reply-To"? | default ""
+                    let request_attestation_required = if $in_reply_to != "" { request-thread-attestation-required $messages $in_reply_to } else { false }
+                    let reply_attestation_required = $payload | get "attestation_required"? | default false
+                    let attestation_required = $request_attestation_required or $reply_attestation_required
                     let claims = $payload | get "claims"? | default []
 
                     if $attestation_required and (($claims | length) == 0) {
