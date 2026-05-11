@@ -1,177 +1,105 @@
 # smolBSD
 
-A minimal FreeBSD image for embedded and edge deployments, coordinated by an
-actor-model mailbox system.
+## What it is
 
-## What is smolBSD?
+smolBSD is a minimal FreeBSD 15 VM (aarch64 primary, amd64 secondary) paired
+with a Nushell coordinator finite-state machine that dispatches build,
+review, and ops tasks to agents over an mbox+TOML mail spool. The goal is a
+small qcow2 artifact that boots unattended to a login prompt in under 30
+seconds on HVF/KVM hosts, driven end-to-end by the coordinator without
+shared conversation history.
 
-smolBSD is a project to build the smallest stable FreeBSD VM that boots
-unattended to a login prompt in 30 seconds or less. The target image fits inside
-512 MiB on disk (aspirational: qcow2 artifact under 128 MiB) and ships only the
-packages required to run `sh`, `vi`/`ed`, `rc.d`, and `pkg`.
+## Status
 
-Coordination across build tasks is handled by an actor-model mailbox: each agent
-(architect, builder, reviewer, researcher) reads tasks addressed to it from a
-shared mbox spool (`var/mail/spool`) and replies in-thread using RFC 822 envelopes
-with TOML bodies. The coordinator harvests replies on each tick and dispatches the
-next task. No shared conversation history is required — Just-Enough-Context (JEC)
-drops carry all necessary state between agents.
+As of 2026-05-08:
 
-## Current Status
+| Leg     | Boot gate              | Image size            | Notes                                  |
+|---------|------------------------|-----------------------|----------------------------------------|
+| aarch64 | 11s on HVF — PASS      | 1.41 GiB (INVESTIGATING vs 512 MiB target) | Native build on `fbuild` |
+| amd64   | KVM gate pending       | 2.5 GiB (official VM image) | Use Vultr/x86 KVM host for gate run |
 
-Two `buildworld` runs are in flight (as of 2026-05-04):
+See `docs/PHASE-1-RESULTS.md` for the full report (sha256s, fleet deploy on
+fbrpi403, amd64 BIOS-boot verification).
 
-- **aarch64** — `smolbsd-world` screen session on `fbuild`, started 2026-05-04
-  21:01:17 UTC. Native arm64 build; no cross-compile needed.
-- **amd64** — building on Vultr instance `107.191.39.47`
-  (`171abe56-fd68-4041-9376-9f235d9b9775`); KVM-native x86.
+## Build
 
-## Phase I Targets
-
-Two legs run in parallel; aarch64 is primary.
-
-### aarch64 — HVF-native on Apple Silicon (`minim4-24`)
-
-FreeBSD 15.0-RELEASE arm64, built natively on `fbuild` (a FreeBSD 15 aarch64 VM
-hosted on an Apple Silicon Mac). HVF (Hypervisor.framework) provides near-bare-
-metal acceleration for the aarch64 guest. The 30-second time-to-login acceptance
-gate is only achievable here; amd64 under TCG is 5-10x slower.
-
-### amd64 — KVM on Vultr
-
-FreeBSD 15.0-RELEASE amd64, cross-compiled from the aarch64 fbuild host and
-deployed to a KVM-capable x86 Vultr instance (`107.191.39.47`) for its timing
-gate.
-
-## Build Approach
-
-### Version control: jj
-
-All commits use [jj](https://github.com/martinvonz/jj) (Jujutsu VCS). Drop to
-raw git only when an external tool requires it.
+Full pipeline lives in `docs/BUILDING.md`. The one-liner from a FreeBSD 15
+aarch64 host with `/usr/src` checked out at `releng/15.0`:
 
 ```sh
-jj log --no-graph -r '@' --limit 5    # recent history
-jj describe -m "your message"         # update working-copy description
-jj new                                # open a new change
+sudo nu bin/build-smolbsd.nu
 ```
 
-### Nushell coordinator
+This runs setup, `buildworld`, `buildkernel KERNCONF=SMOLBSD`, kernel obj
+cleanup, and `make vm-image`. Output streams to `/var/tmp/smolbsd-build.log`.
+Use `--check` for a read-only preflight, `--skip-buildworld` to resume after
+a long build, or `--arch amd64` to cross-compile.
 
-`bin/coord-tick.nu` — the main coordinator loop. On each tick it:
+## Harvest and acceptance gates
 
-1. Reads `var/mail/spool` and harvests agent replies.
-2. Evaluates verdicts and acceptance criteria.
-3. Appends the next task envelope to the spool.
-
-`bin/mbox-parse.nu` — helper that parses mbox + TOML bodies into structured
-records for downstream processing.
-
-### Mailbox spool
-
-`var/mail/spool` — a single RFC 822 mbox file. Every message (coordinator
-request and agent reply) lives here. Addresses follow the pattern
-`<role>@smolbsd.local`. The TOML body carries the structured task payload.
-
-Example roles:
-- `coordinator@smolbsd.local`
-- `architect@smolbsd.local`
-- `builder@smolbsd.local`
-- `reviewer@smolbsd.local`
-
-## Quick Start
-
-### Prerequisites
-
-- Apple Silicon Mac (for aarch64/HVF path) or a Vultr KVM instance (amd64 path)
-- FreeBSD 15.0-RELEASE `fbuild` VM accessible via SSH jump:
+`bin/harvest.sh` fetches qcow2 artifacts from the remote build hosts (fbuild
+via jump host for aarch64, Vultr for amd64) into `var/artifacts/`, then runs
+the size and boot gates and writes `var/artifacts/harvest-report.txt`:
 
 ```sh
-ssh -J minim4-24 -p 2222 builder@localhost
+sh bin/harvest.sh
 ```
 
-- Nushell (`nu`) available locally for coordinator scripts
-- `expect` available for acceptance tests
+Gates:
+- size <= 512 MiB (`wc -c` on the qcow2)
+- boot via `expect tests/time-to-ready-arm64.exp` / `tests/time-to-ready.exp`
 
-### Build the kernel
-
-SSH into fbuild and run:
+For diagnosing image bloat, mount the rootfs and dump the top directories,
+files, and pkgbase packages by size:
 
 ```sh
-make -j4 -C /usr/src buildworld buildkernel KERNCONF=SMOLBSD
+bin/analyze-image.sh path/to/FreeBSD-15-aarch64-smolbsd.qcow2
 ```
 
-For the aarch64 native path no cross-compile flags are needed. For the amd64
-cross-compile leg from the arm64 host:
+Works on Linux (qemu-nbd) and FreeBSD (mdconfig). Writes a `.size-report.txt`
+beside the image and exits non-zero if usage exceeds 512 MiB.
+
+## Coordinator
+
+The Nushell coordinator is documented in `CLAUDE.md`. To run the loop:
 
 ```sh
-make -j4 -C /usr/src buildworld buildkernel \
-    KERNCONF=SMOLBSD \
-    TARGET=amd64 \
-    TARGET_ARCH=amd64
+sh bin/coord-run.sh
 ```
 
-### Run acceptance tests
-
-```sh
-# aarch64 path (HVF, requires Apple Silicon + EDK2 firmware):
-expect tests/time-to-ready-arm64.exp
-
-# amd64 path (KVM or TCG):
-expect tests/time-to-ready.exp
-
-# Full suite via Nushell runner:
-nu tests/run-tests.nu --suite unit
-nu tests/run-tests.nu --suite e2e --arch aarch64
-```
-
-Each test measures wall-clock time from VM boot to login prompt; fails if it
-exceeds 30 seconds. e2e tests skip gracefully when the qcow2 artifact is absent.
-
-### Advance the coordinator
+To advance one tick by hand:
 
 ```sh
 nu bin/coord-tick.nu
 ```
 
-## Project Layout
+Environment overrides (all optional):
 
+| Var             | Default                       | Purpose                          |
+|-----------------|-------------------------------|----------------------------------|
+| `ROOT`          | `.`                           | Repo root                        |
+| `INTERVAL`      | `60`                          | Seconds between normal ticks     |
+| `HALT_INTERVAL` | `10`                          | Seconds to sleep while halted    |
+| `STATE_FILE`    | `var/run/coord-state.toml`    | Persisted FSM state              |
+| `SPOOL`         | `var/mail/spool`              | mbox spool path                  |
+
+FSM states are `idle -> dispatching -> waiting -> harvesting -> halted`. On
+`dispatching`, the coordinator auto-spawns the `claude` CLI for the target
+agent if it is on `PATH` (Phase II wiring); otherwise it queues the request
+and waits for an external agent to reply into the spool. Global emergency
+stop: `touch var/mail/HALT`; per-task halt: `var/mail/HALT.<task_id>`.
+
+## Tests
+
+```sh
+sh tests/run-all.sh
 ```
-bin/
-  coord-tick.nu               # coordinator actor loop
-  mbox-parse.nu               # mbox+TOML parser
-docs/
-  superpowers/specs/          # design specifications
-plans/
-  tinyos/                     # per-phase build plans
-release/
-  tools/smolbsd-qemu.conf     # amd64 QEMU VM release config
-sys/
-  amd64/conf/SMOLBSD          # amd64 minimal kernel config
-  arm64/conf/SMOLBSD          # arm64 minimal kernel config
-tests/
-  time-to-ready.exp           # expect script: boot-to-login timing gate (amd64)
-  time-to-ready-arm64.exp     # same gate for aarch64 HVF path
-  run-tests.nu                # Nushell test runner (unit + e2e + graceful skip)
-var/
-  mail/spool                  # shared mbox — full project state in one file
-```
 
-## Technical Inspirations
-
-- **Actor framework** — agents communicate only through the spool; no shared
-  state beyond the mbox file
-- **Tail-recursive FSMs** — coordinator is a pure state machine: read spool,
-  compute next state, append message, repeat
-- **SIMD / vector** — future workloads target NEON on aarch64 and AVX-512 on
-  amd64 for signal-processing edge tasks
-- **Secure enclaves** — long-term goal: run sensitive workloads inside FreeBSD
-  bhyve enclaves on capable hardware
-- **\*BSD substrate** — FreeBSD base provides a clean, permissively-licensed
-  foundation; NetBSD pkgsrc considered for cross-arch package tooling
+Runs three Nu suites: `mbox-parse-test.nu`, `coord-tick-test.nu`, and
+`spawn-subagent-test.nu`. Individual suites can be invoked directly with
+`nu tests/<file>.nu`.
 
 ## License
 
-Apache-2.0 for project-specific code. FreeBSD base system components retain
-their BSD-2-Clause / BSD-3-Clause licenses. No GPL, LGPL, or AGPL dependencies
-are permitted.
+Apache-2.0 for project code. FreeBSD base components retain their original
+BSD-2-Clause / BSD-3-Clause licenses. No GPL/LGPL/AGPL dependencies.
