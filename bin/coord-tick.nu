@@ -36,7 +36,7 @@ def default-state [] {
         tick_count:         0
         fsm_state:          "idle"
         seen_ids:           []
-        last_tick_at:       (date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ")
+        last_tick_at:       (date now | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%SZ")
         pending_request_id: ""
         pending_task_id:    ""
         pending_to_addr:    ""
@@ -74,7 +74,7 @@ def save-state [state: record, path: string] {
 # Emit a structured TOML log line to stdout.
 # Every coordinator action is observable via stdout — pipe to `tee` if needed.
 def log-event [event: string, payload: record] {
-    let ts  = date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ"
+    let ts  = date now | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%SZ"
     let row = {ts: $ts, event: $event} | merge $payload
     $row | to toml | print
     print "---"
@@ -96,7 +96,7 @@ def write-halt-marker [root: string, task_id: string, reason: string, verdict: s
         task_id:    $task_id
         verdict:    $verdict
         message_id: $message_id
-        halted_at:  (date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ")
+        halted_at:  (date now | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%SZ")
         reason:     $reason
         attempts:   $attempts
         halt_msgid: $"<halt-($task_id).coord@smolbsd.local>"
@@ -189,6 +189,36 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
     log-event "irc_fallback" {task_id: $task_id, status: $result}
 }
 
+# Check whether the originating request for a reply required attestation.
+# Walks the message thread up to two hops:
+#   reply → coordinator-dispatch → original-user-request
+# Returns true when any message in the chain has attestation_required = true.
+# Returns false when the chain cannot be found or no message sets the field.
+def request-thread-attestation-required [messages: list, in_reply_to: string] {
+    # Helper: find a message by Message-ID and return its parsed TOML body.
+    def find-msg [mid: string] {
+        $messages | where {|m|
+            ($m.headers | get "Message-ID"? | default "") == $mid
+        } | get 0?
+    }
+
+    # Walk up to two hops to find the original request.
+    let hop1 = find-msg $in_reply_to
+    if $hop1 == null { return false }
+
+    let hop1_attested = try { $hop1.body | from toml | get "attestation_required"? | default false } catch { false }
+    if $hop1_attested { return true }
+
+    # Follow one more hop: coordinator dispatch → original request.
+    let hop1_irt = $hop1.headers | get "In-Reply-To"? | default ""
+    if $hop1_irt == "" { return false }
+
+    let hop2 = find-msg $hop1_irt
+    if $hop2 == null { return false }
+
+    try { $hop2.body | from toml | get "attestation_required"? | default false } catch { false }
+}
+
 # Spawn a subagent (claude CLI) in the background to execute a dispatched task.
 # Non-blocking: writes a prompt file and launches `claude -p` via `sh -c ... &`.
 # If the `claude` CLI is not on PATH, logs `subagent_spawn_skipped` and returns —
@@ -253,6 +283,9 @@ def process-resume-actions [state: record, root: string, spool: string, event_pr
     mut next_state = $state
 
     for msg in $messages {
+        let id = msg-id $msg
+        if $id != "" and ($id in $next_state.seen_ids) { continue }
+
         let resume_tag = $msg.headers | get "X-Resume-Tag"? | default ""
         if $resume_tag == "" { continue }
 
@@ -260,10 +293,11 @@ def process-resume-actions [state: record, root: string, spool: string, event_pr
         if (($matched | length) == 0) { continue }
 
         let task = $matched | first
-        let action_hdr = $msg.headers | get "X-Resume-Action"? | default "retry"
+        let action_hdr = (($msg.headers | get "X-Resume-Action"? | default "retry") | str downcase)
+        let is_retry_as = ($action_hdr | str starts-with "retry-as-")
         log-event $"($event_prefix)_resume_action" {task_id: $task, resume_tag: $resume_tag, action: $action_hdr}
 
-        if $action_hdr == "retry" or $action_hdr == "edit" {
+        if $action_hdr == "retry" or $action_hdr == "edit" or $is_retry_as {
             let per_halt = [$root, "var", "mail", $"HALT.($task)"] | path join
             if ($per_halt | path exists) { rm $per_halt }
             $next_state = ($next_state
@@ -271,6 +305,10 @@ def process-resume-actions [state: record, root: string, spool: string, event_pr
                 | update fsm_state "idle")
         } else {
             log-event $"($event_prefix)_abort" {task_id: $task}
+        }
+
+        if $id != "" {
+            $next_state = ($next_state | update seen_ids ($next_state.seen_ids | append $id))
         }
     }
 
@@ -634,7 +672,7 @@ action = \"dispatch\"
         | update fsm_state          "waiting"
         | update attempt_counts     $updated_counts
         | update pending_request_id $msg_id
-        | update dispatched_at      (date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ")
+        | update dispatched_at      (date now | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%SZ")
     ) $spool $root ($remaining - 1)
 }
 
@@ -684,7 +722,7 @@ def tick [state: record, spool: string, root: string, remaining: int] {
     let next_count = $resumed_state.tick_count + 1
     let stamped = $resumed_state
         | update tick_count $next_count
-        | update last_tick_at (date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ")
+        | update last_tick_at (date now | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%SZ")
 
     log-event "tick_enter" {tick: $next_count, fsm_state: $stamped.fsm_state, remaining: $remaining}
 
