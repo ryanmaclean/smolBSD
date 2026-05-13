@@ -48,7 +48,7 @@ def run-cmd [label: string, args: list<string>, dry_run: bool] {
     $result.stdout | str trim
 }
 
-# Emit the final TOML claims block consumed by the proveryay hook.
+# Emit the final TOML claims block consumed by the proveryay hook (`proveryay` hook — intentional name, not a typo).
 def emit-claims [verdict: string, detail: record] {
     let ts = date now | format date "%Y-%m-%dT%H:%M:%SZ"
     let claims = {
