@@ -168,6 +168,36 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
     log-event "irc_fallback" {task_id: $task_id, status: $result}
 }
 
+# Check whether the originating request for a reply required attestation.
+# Walks the message thread up to two hops:
+#   reply → coordinator-dispatch → original-user-request
+# Returns true when any message in the chain has attestation_required = true.
+# Returns false when the chain cannot be found or no message sets the field.
+def request-thread-attestation-required [messages: list, in_reply_to: string] {
+    # Helper: find a message by Message-ID and return its parsed TOML body.
+    def find-msg [mid: string] {
+        $messages | where {|m|
+            ($m.headers | get "Message-ID"? | default "") == $mid
+        } | get 0?
+    }
+
+    # Walk up to two hops to find the original request.
+    let hop1 = find-msg $in_reply_to
+    if $hop1 == null { return false }
+
+    let hop1_attested = try { $hop1.body | from toml | get "attestation_required"? | default false } catch { false }
+    if $hop1_attested { return true }
+
+    # Follow one more hop: coordinator dispatch → original request.
+    let hop1_irt = $hop1.headers | get "In-Reply-To"? | default ""
+    if $hop1_irt == "" { return false }
+
+    let hop2 = find-msg $hop1_irt
+    if $hop2 == null { return false }
+
+    try { $hop2.body | from toml | get "attestation_required"? | default false } catch { false }
+}
+
 # Spawn a subagent (claude CLI) in the background to execute a dispatched task.
 # Non-blocking: writes a prompt file and launches `claude -p` via `sh -c ... &`.
 # If the `claude` CLI is not on PATH, logs `subagent_spawn_skipped` and returns —
@@ -219,6 +249,8 @@ Do not modify any other messages in the spool. Append only.
         prompt_file:  $prompt_file
         log_file:     $log_file
     }
+}
+
 # Process X-Resume-* messages and clear matching per-task HALTs.
 # Returns updated state; retry/edit resumes remove the task from halted_tasks.
 def process-resume-actions [state: record, root: string, spool: string, event_prefix: string] {
@@ -606,7 +638,7 @@ action = \"dispatch\"
     let agent_type = ($to_addr | split row "@" | first | default "general-purpose")
     spawn-subagent $agent_type $task_id $spool $root
 
-    let updated_counts = $state.attempt_counts | insert $task_id $next_attempt
+    let updated_counts = $state.attempt_counts | upsert $task_id $next_attempt
     tick ($state
         | update fsm_state          "waiting"
         | update attempt_counts     $updated_counts
