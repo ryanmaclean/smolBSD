@@ -140,3 +140,8 @@ nooptions FULL_BUF_TRACKING
 # COMPAT_FREEBSD10, COMPAT_FREEBSD11 can be dropped for size
 nooptions COMPAT_FREEBSD10
 nooptions COMPAT_FREEBSD11
+
+# -----------------------------------------------------------------------
+# TPM 2.0 support
+# -----------------------------------------------------------------------
+device tpm              # TPM 2.0 (CRB + FIFO interfaces)
