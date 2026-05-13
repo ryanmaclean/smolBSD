@@ -86,3 +86,18 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Gotchas encountered: `sh tests/run-all.sh` fails consistently when `nu` is absent because it shells into Nushell tests.
   - Useful context: keep `S-001` as `passes: false` until real Nushell test outputs are available.
 ---
+
+## 2026-05-13T04:29:48Z - S-002
+Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+- Extended resume handling to support `X-Resume-Action: retry-as-<role>` in addition to `retry|edit|abort`.
+- Added idempotency guard for resume processing by skipping already-seen resume messages and recording consumed resume `Message-ID`s in `seen_ids`.
+- Added regression coverage for retry-as-role flow to ensure per-task HALT marker and halted task state are cleared.
+- Files changed:
+  - bin/coord-tick.nu
+  - tests/coord-tick-test.nu
+  - progress.txt
+- **Learnings for future iterations:**
+  - Patterns discovered: resume actions are safer when treated as idempotent control messages keyed by `Message-ID`.
+  - Gotchas encountered: Nushell runtime remains unavailable in this sandbox (`nu: command not found`), so tests are updated but not executed here.
+  - Useful context: `retry-as-<role>` currently clears halt state and returns to idle; any role-specific rerouting semantics remain a separate enhancement.
+---
