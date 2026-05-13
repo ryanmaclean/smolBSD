@@ -1,0 +1,224 @@
+#!/usr/bin/env expect
+# SPDX-License-Identifier: Apache-2.0
+# bhyve-crash-recovery.exp — smolBSD bhyve crash-recovery gate.
+# Materialized from plans/tinyos/PHASE-3-TPM.md §4
+# Authoring chain: planner@smolbsd.local <task-0024.builder@smolbsd.local>
+#
+# tests/bhyve-crash-recovery.exp
+#
+# Measures how long smolBSD takes to reach a login prompt after the bhyve
+# process is killed (simulating an abrupt host-side VM crash or power loss).
+#
+# Design:
+#   Step 1 — Kill the bhyve process for $SMOLBSD_VM_NAME via
+#             `kill -KILL $(pgrep -f "bhyve.*<vmname>")`.
+#             This simulates a crash without a graceful shutdown.
+#   Step 2 — Record T0 immediately after the kill.
+#   Step 3 — Relaunch bhyve.  The caller is responsible for the relaunch
+#             command; this script waits for it via a brief poll loop using
+#             `bhyvectl --get-lowmem` to confirm the old VM slot is gone,
+#             then sends a SIGUSR1 to the caller-provided relaunch PID or
+#             simply trusts the caller to relaunch before the timeout.
+#             NOTE: If SMOLBSD_RELAUNCH_CMD is set, this script will exec it
+#             in the background before attaching to the console.
+#   Step 4 — Attach to $SMOLBSD_CONSOLE via `cu`, wait for `login:`.
+#   Step 5 — Record T1; emit CRASH_RECOVERY_TIME=$((T1-T0))s.
+#
+# Environment variables:
+#   SMOLBSD_VM_NAME     — bhyve VM name (default: smolbsd)
+#                         used as pattern in: pgrep -f "bhyve.*<name>"
+#   SMOLBSD_CONSOLE     — nmdm B-side device (default: /dev/nmdm0B)
+#   SMOLBSD_SERIAL      — alias for SMOLBSD_CONSOLE (physical-board compat)
+#   SMOLBSD_RELAUNCH_CMD — shell command to relaunch bhyve after the kill
+#                         (optional; if absent the caller must relaunch
+#                         before this script's attach timeout is reached)
+#
+# Threshold: 90s from kill to login prompt.
+# This is 30s more than the cold-boot gate (60s) to account for:
+#   - bhyve process cleanup + VM slot teardown (~1–3s)
+#   - UEFI POST re-run on relaunch (~5–10s)
+#   - FreeBSD fsck on unclean UFS shutdown (~5–15s, depends on dirty state)
+#
+# Exit codes:
+#   0 — login prompt appeared within 90s of kill  → prints CRASH_RECOVERY_TIME=Ns
+#   1 — timeout
+#   2 — hard failure pattern (panic / mountroot / UEFI shell)
+#   3 — could not kill bhyve process (VM not running, wrong name, or permission)
+
+# ── Configuration ──────────────────────────────────────────────────────────────
+
+set threshold_sec 90
+# Total expect timeout includes the time for bhyve to die, relaunch, and boot.
+# We add 20s grace on top of threshold.
+set timeout [expr {$threshold_sec + 20}]
+
+# ── Environment variable resolution ───────────────────────────────────────────
+
+if {[info exists env(SMOLBSD_VM_NAME)]} {
+    set vm_name $env(SMOLBSD_VM_NAME)
+} else {
+    set vm_name "smolbsd"
+}
+
+if {[info exists env(SMOLBSD_CONSOLE)]} {
+    set console_dev $env(SMOLBSD_CONSOLE)
+} elseif {[info exists env(SMOLBSD_SERIAL)]} {
+    set console_dev $env(SMOLBSD_SERIAL)
+} else {
+    set console_dev "/dev/nmdm0B"
+}
+
+set relaunch_cmd ""
+if {[info exists env(SMOLBSD_RELAUNCH_CMD)]} {
+    set relaunch_cmd $env(SMOLBSD_RELAUNCH_CMD)
+}
+
+puts "VM_NAME=$vm_name"
+puts "CONSOLE=$console_dev"
+puts "THRESHOLD=${threshold_sec}s"
+
+# ── Step 1: find and kill the bhyve process ────────────────────────────────────
+#
+# pgrep -f matches the full command line, so "bhyve.*<vmname>" will match
+# both `bhyve smolbsd` and `bhyve -c 2 -m 512M ... smolbsd` command lines.
+# Using SIGKILL (not SIGTERM) to simulate an abrupt crash — no graceful exit.
+
+puts "STEP=kill"
+set pgrep_result [catch {exec pgrep -f "bhyve.*${vm_name}"} pids]
+
+if {$pgrep_result != 0} {
+    puts stderr "ERROR: no bhyve process found matching 'bhyve.*${vm_name}'"
+    puts stderr "  Is the VM running?  Check: pgrep -f bhyve"
+    puts stderr "  Override vm name with: SMOLBSD_VM_NAME=<name>"
+    exit 3
+}
+
+# pids may be a newline-separated list if multiple bhyve processes match.
+# Kill each one.
+set pid_list [split [string trim $pids] "\n"]
+puts "KILLING_PIDS=$pid_list"
+
+foreach pid $pid_list {
+    set kill_result [catch {exec kill -KILL $pid} kill_err]
+    if {$kill_result != 0} {
+        puts stderr "WARN: kill -KILL $pid failed: $kill_err"
+        # Non-fatal: process may have already exited between pgrep and kill.
+    } else {
+        puts "KILLED_PID=$pid"
+    }
+}
+
+# ── Step 2: record T0 immediately after kill ───────────────────────────────────
+
+set t0 [clock seconds]
+puts "T0=[clock format $t0 -format {%H:%M:%S}]"
+
+# ── Step 3a: poll bhyvectl to confirm VM slot is gone ─────────────────────────
+#
+# bhyvectl --get-lowmem --vm=<name> returns 0 while the VM slot exists in
+# vmm.ko; it returns non-zero once bhyve has exited and the slot is freed.
+# We poll for up to 10s; if the slot persists beyond that we continue anyway
+# (some bhyve versions hold the slot briefly after SIGKILL).
+
+puts "STEP=wait_vm_gone"
+set vm_gone 0
+for {set i 0} {$i < 20} {incr i} {
+    set check [catch {exec bhyvectl --get-lowmem --vm=$vm_name}]
+    if {$check != 0} {
+        set vm_gone 1
+        puts "VM_SLOT_GONE=yes (after [expr {$i * 500}]ms)"
+        break
+    }
+    after 500
+}
+if {!$vm_gone} {
+    puts "WARN: VM slot still present after 10s; continuing anyway"
+}
+
+# ── Step 3b: optional relaunch ────────────────────────────────────────────────
+#
+# If SMOLBSD_RELAUNCH_CMD is set, execute it in the background now.
+# The command is exec'd via /bin/sh -c so that pipes and env vars work.
+# The caller is responsible for ensuring the relaunch command attaches bhyve
+# to the same nmdm device pair.
+
+if {$relaunch_cmd ne ""} {
+    puts "STEP=relaunch"
+    puts "RELAUNCH_CMD=$relaunch_cmd"
+    # exec in background — we do not wait for it; we attach to the console
+    # immediately and wait for the boot output to arrive.
+    set relaunch_pid [exec /bin/sh -c "$relaunch_cmd &"; subst {[exec /bin/sh -c "echo \$!"]}]
+    # Simpler: just background it without capturing PID
+    catch {exec /bin/sh -c "$relaunch_cmd &"}
+    # Brief pause to let bhyve open the nmdm device before cu tries to attach.
+    after 500
+} else {
+    puts "INFO: SMOLBSD_RELAUNCH_CMD not set; assuming caller has relaunched bhyve"
+}
+
+# ── Step 4: attach to console and wait for login: ─────────────────────────────
+
+puts "STEP=attach_console"
+
+if {![file exists $console_dev]} {
+    puts stderr "WARN: console device $console_dev not found (nmdm.ko loaded?)"
+}
+
+spawn cu -l $console_dev -s 115200
+
+expect {
+    "login:" {
+        set t1 [clock seconds]
+        set elapsed [expr {$t1 - $t0}]
+        puts "CRASH_RECOVERY_TIME=${elapsed}s"
+        if {$elapsed > $threshold_sec} {
+            puts "VERDICT=fail (${elapsed}s > threshold ${threshold_sec}s)"
+            exit 1
+        }
+        puts "VERDICT=pass"
+        exit 0
+    }
+
+    # Hard failure: kernel panic on boot after crash (possible UFS corruption).
+    "Kernel panic" {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "CRASH_RECOVERY_TIME=${elapsed}s (at panic)"
+        puts "VERDICT=fail (kernel panic on recovery boot)"
+        puts "FAILURE_REASON=kernel_panic"
+        exit 2
+    }
+
+    # Hard failure: loader dropped to mountroot.
+    # Can happen if UFS root partition was dirty and fsck cannot recover.
+    "mountroot>" {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "CRASH_RECOVERY_TIME=${elapsed}s (at mountroot)"
+        puts "VERDICT=fail (mountroot prompt — UFS may be unrecoverable)"
+        puts "FAILURE_REASON=mountroot_prompt"
+        exit 2
+    }
+
+    # Hard failure: UEFI shell means bhyve relaunched but disk is not bootable.
+    "UEFI Interactive Shell" {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "CRASH_RECOVERY_TIME=${elapsed}s (at UEFI shell)"
+        puts "VERDICT=fail (UEFI shell — bhyve may have wrong disk argument)"
+        puts "FAILURE_REASON=uefi_interactive_shell"
+        exit 2
+    }
+
+    eof {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "VERDICT=fail (console connection closed after ${elapsed}s)"
+        puts "FAILURE_REASON=console_eof"
+        exit 1
+    }
+
+    timeout {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIMEOUT after ${elapsed}s (threshold ${threshold_sec}s)"
+        puts "VERDICT=fail"
+        puts "FAILURE_REASON=timeout"
+        exit 1
+    }
+}
