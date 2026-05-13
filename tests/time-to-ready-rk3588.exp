@@ -1,0 +1,94 @@
+#!/usr/bin/env expect
+# Physical board boot gate — RK3588 (reference: ROCK 5B)
+# Materialized from plans/tinyos/PHASE-2-PHYSICAL-BOOT.md §6-7
+# Authoring chain: planner@smolbsd.local <task-0023.coord@smolbsd.local>
+#
+# tests/time-to-ready-rk3588.exp
+#
+# Prerequisites:
+#   - CP2102 or similar 3.3V USB-UART adapter connected to RK3588 debug UART
+#   - Default board: ROCK 5B — UART2 (TX=pin 8, RX=pin 10 of 40-pin header)
+#   - Serial device available at $env(SMOLBSD_SERIAL) or default /dev/ttyUSB0
+#   - Board powered off before running; script waits for serial output
+#   - smolbsd-aarch64-rk3588.raw written to SD/eMMC (tests/sd-write.nu)
+#
+# Console: UART2 at 0xff1a0000 (RK3588, ROCK 5B) — 115200 8N1
+# Serial device: override with env var SMOLBSD_SERIAL (e.g. /dev/tty.usbserial-0002)
+#
+# Acceptance: login prompt appears within 90s of first serial output
+# (PHASE-2-PHYSICAL-BOOT.md §7.2 RK3588 gate — relaxed for slower eMMC init + edk2-rk35xx POST)
+# Board variant: override with env var SMOLBSD_BOARD (default: rock5b)
+#
+# Exit codes: 0 = pass, 1 = timeout or serial error
+
+set threshold_sec 90
+set timeout [expr {$threshold_sec + 10}]
+
+# Resolve serial device: env var > default
+if {[info exists env(SMOLBSD_SERIAL)]} {
+    set serial_dev $env(SMOLBSD_SERIAL)
+} else {
+    set serial_dev /dev/ttyUSB0
+}
+
+# Resolve board variant for diagnostic output
+if {[info exists env(SMOLBSD_BOARD)]} {
+    set board_variant $env(SMOLBSD_BOARD)
+} else {
+    set board_variant rock5b
+}
+
+# Verify device node exists before spawning
+if {![file exists $serial_dev]} {
+    puts stderr "ERROR: serial device $serial_dev not found"
+    puts stderr "Set SMOLBSD_SERIAL to override (e.g. /dev/tty.usbserial-0002)"
+    exit 1
+}
+
+puts "BOARD=rk3588 ($board_variant)"
+puts "SERIAL_DEV=$serial_dev"
+puts "THRESHOLD=${threshold_sec}s"
+puts "--- power the board on now if not already running ---"
+
+# Spawn cu against the serial port (115200 8N1, no flow control)
+# cu is available on both macOS and FreeBSD (BSD-licensed)
+# Alternative: replace with: spawn screen $serial_dev 115200
+set t0 [clock seconds]
+spawn cu -l $serial_dev -s 115200
+
+expect {
+    "login:" {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIME_TO_LOGIN=${elapsed}s"
+        if {$elapsed > $threshold_sec} {
+            puts "VERDICT=fail (${elapsed}s > threshold ${threshold_sec}s)"
+            exit 1
+        }
+        puts "VERDICT=pass"
+        exit 0
+    }
+    "Kernel panic" {
+        puts "VERDICT=fail (kernel panic)"
+        exit 1
+    }
+    "mountroot>" {
+        puts "VERDICT=fail (dropped to mountroot — check loader.conf UART console setting for uart2 0xff1a0000)"
+        exit 1
+    }
+    "EDK II" {
+        # edk2-rk35xx POST banner seen — still counting toward threshold
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "NOTE: edk2-rk35xx POST detected at ${elapsed}s — continuing"
+        exp_continue
+    }
+    eof {
+        puts "VERDICT=fail (serial connection closed unexpectedly)"
+        exit 1
+    }
+    timeout {
+        set elapsed [expr {[clock seconds] - $t0}]
+        puts "TIMEOUT after ${elapsed}s (threshold ${threshold_sec}s)"
+        puts "VERDICT=fail"
+        exit 1
+    }
+}

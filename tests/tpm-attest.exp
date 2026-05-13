@@ -1,0 +1,170 @@
+#!/usr/bin/env expect
+# SPDX-License-Identifier: Apache-2.0
+# tpm-attest.exp — smolBSD bhyve guest TPM 2.0 attestation test.
+#
+# Connects to the guest console (nmdm null-modem device or $SMOLBSD_CONSOLE),
+# logs in as root, and verifies:
+#   1. /dev/tpm0 character device exists  → TPM_PRESENT
+#   2. tpmctl -G succeeds (FreeBSD base tpmctl) or tpm2_getcap fallback reports
+#      TPM 2.0 properties, confirming the device is functional
+#   3. PCR 0 can be read via tpmctl -r 0
+#
+# Exit codes:
+#   0 — all checks passed (TPM present and responsive)
+#   1 — any check failed or global timeout exceeded
+#
+# Environment:
+#   SMOLBSD_CONSOLE — path to console device (default: /dev/nmdm0B)
+#
+# Total timeout: 90s (bhyve boot is slower than QEMU/HVF).
+
+# ── Configuration ─────────────────────────────────────────────────────────────
+
+set timeout 90
+
+# Resolve console path: prefer env var, fall back to /dev/nmdm0B.
+if {[info exists env(SMOLBSD_CONSOLE)]} {
+    set console $env(SMOLBSD_CONSOLE)
+} else {
+    set console "/dev/nmdm0B"
+}
+
+puts "tpm-attest: connecting to console $console"
+
+# ── Connect to console ────────────────────────────────────────────────────────
+
+spawn -open [open $console r+]
+
+# ── Wait for login prompt ─────────────────────────────────────────────────────
+
+expect {
+    -re {login:\s*$} {
+        puts "tpm-attest: login prompt received"
+    }
+    timeout {
+        puts "FAIL: timed out waiting for login prompt (${timeout}s)"
+        exit 1
+    }
+}
+
+# ── Log in as root ────────────────────────────────────────────────────────────
+
+send "root\r"
+expect {
+    -re {[Pp]assword:\s*$} {
+        send "smolbsd\r"
+    }
+    -re {[#\$]\s*$} {
+        # Passwordless root shell — some minimal images skip password prompt.
+        puts "tpm-attest: got shell without password prompt"
+    }
+    timeout {
+        puts "FAIL: timed out waiting for password prompt"
+        exit 1
+    }
+}
+
+# Wait for shell prompt after authentication.
+expect {
+    -re {[#\$]\s*$} {
+        puts "tpm-attest: authenticated, shell ready"
+    }
+    timeout {
+        puts "FAIL: timed out waiting for shell prompt after login"
+        exit 1
+    }
+}
+
+# ── Check 1: /dev/tpm0 character device ──────────────────────────────────────
+
+send "test -c /dev/tpm0 && echo TPM_PRESENT || echo TPM_ABSENT\r"
+expect {
+    "TPM_PRESENT" {
+        puts "PASS: /dev/tpm0 character device exists"
+    }
+    "TPM_ABSENT" {
+        puts "FAIL: /dev/tpm0 not found or not a character device"
+        exit 1
+    }
+    timeout {
+        puts "FAIL: timed out waiting for /dev/tpm0 check"
+        exit 1
+    }
+}
+
+# Wait for next shell prompt.
+expect {
+    -re {[#\$]\s*$} {}
+    timeout {
+        puts "FAIL: timed out after /dev/tpm0 check"
+        exit 1
+    }
+}
+
+# ── Check 2: TPM 2.0 capability query ────────────────────────────────────────
+#
+# FreeBSD base tpmctl(8) reports TPM properties via -G.
+# If tpmctl is absent (older or stripped image), fall back to tpm2_getcap
+# from security/tpm2-tools.  If neither is available the check fails.
+
+send "tpmctl -G 2>/dev/null && echo TPM_CAP_OK || tpm2_getcap -c properties-fixed 2>/dev/null && echo TPM_CAP_OK || echo TPM_CAP_FAIL\r"
+expect {
+    "TPM_CAP_OK" {
+        puts "PASS: TPM 2.0 capability query succeeded"
+    }
+    "TPM_CAP_FAIL" {
+        puts "FAIL: neither tpmctl -G nor tpm2_getcap succeeded"
+        exit 1
+    }
+    timeout {
+        puts "FAIL: timed out waiting for TPM capability query"
+        exit 1
+    }
+}
+
+expect {
+    -re {[#\$]\s*$} {}
+    timeout {
+        puts "FAIL: timed out after capability query"
+        exit 1
+    }
+}
+
+# ── Check 3: Read PCR 0 ───────────────────────────────────────────────────────
+#
+# tpmctl -r 0 prints the SHA-256 PCR 0 value.  We capture and echo it for
+# the test log; we do not assert a specific hash (it varies by firmware).
+
+send "tpmctl -r 0 2>&1\r"
+set pcr0_output ""
+expect {
+    -re {([0-9a-fA-F]{8,})} {
+        set pcr0_output $expect_out(1,string)
+        puts "tpm-attest: PCR 0 = $pcr0_output"
+        puts "PASS: PCR 0 readable"
+    }
+    -re {error|Error|cannot|Cannot|failed|Failed} {
+        puts "FAIL: tpmctl -r 0 reported an error: $expect_out(buffer)"
+        exit 1
+    }
+    timeout {
+        puts "FAIL: timed out reading PCR 0"
+        exit 1
+    }
+}
+
+expect {
+    -re {[#\$]\s*$} {}
+    timeout {
+        puts "FAIL: timed out after PCR 0 read"
+        exit 1
+    }
+}
+
+# ── All checks passed ─────────────────────────────────────────────────────────
+
+send "exit\r"
+puts ""
+puts "tpm-attest: ALL CHECKS PASSED"
+puts "TPM_ATTEST_RESULT=pass"
+exit 0
