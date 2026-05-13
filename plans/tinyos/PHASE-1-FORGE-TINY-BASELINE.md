@@ -7,6 +7,12 @@
 - **Date**: 2026-04-30
 - **Status**: design-complete — DO NOT BUILD until this file is accepted
 
+> **Scope note (2026-05-04):** Per `PHASE-1-ARCH-DECISION.md`, amd64 is the
+> secondary Phase I leg. aarch64 (see `PHASE-1-AARCH64-TINY-BASELINE.md`) is
+> primary. The amd64 leg targets a KVM-capable x86 host (Vultr) for its
+> acceptance gate — not Apple Silicon, where TCG emulation cannot meet the ≤30s
+> time-to-login constraint.
+
 ---
 
 ## 1. Mission Statement
