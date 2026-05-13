@@ -55,7 +55,7 @@ def main [
         error make { msg: $"Device not found: ($device) — is the SD card inserted?" }
     }
 
-    print $"IMAGE:  ($image) \(($image_size)\)"
+    print $"IMAGE:  ($image) (($image_size))"
     print $"DEVICE: ($device)"
     print $"BS:     ($bs)"
 
@@ -66,7 +66,7 @@ def main [
 
     if not $is_removable {
         error make {
-            msg: $"SAFETY ABORT: ($device) does not appear to be a removable device.\nVerify the device with `diskutil list` \(macOS\) or `geom disk list` \(FreeBSD\) and pass the correct --device."
+            msg: $"SAFETY ABORT: ($device) does not appear to be a removable device.\nVerify the device with `diskutil list` (macOS) or `geom disk list` (FreeBSD) and pass the correct --device."
         }
     }
 

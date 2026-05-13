@@ -136,6 +136,27 @@ proposed_actions  = [($proposed_actions | each {|a| ('"' + $a + '"')} | str join
 }
 
 # Best-effort IRC DM to operator per spec §13.
+# Walk the In-Reply-To chain from in_reply_to_id upward (up to 8 hops) and
+# return true if ANY message in the thread declared attestation_required = true.
+# This handles chains where a coordinator dispatch wraps an original user request
+# that carried the attestation requirement.
+def request-thread-attestation-required [messages: list, in_reply_to_id: string] {
+    mut current_id = $in_reply_to_id
+    mut hops = 0
+    loop {
+        if $current_id == "" or $hops >= 8 { break }
+        let found = $messages | where {|m| (msg-id $m) == $current_id} | first 1
+        if ($found | length) == 0 { break }
+        let msg = $found | first
+        let payload = extract-toml $msg
+        if ($payload | get "attestation_required"? | default false) { return true }
+        # Follow the chain one more hop
+        $current_id = $msg.headers | get "In-Reply-To"? | default ""
+        $hops = $hops + 1
+    }
+    false
+}
+
 # One TLS attempt on 6697, one plain fallback on 6667, then give up.
 # Result is logged but never fatal — HALT proceeds regardless.
 def try-irc-dm [task_id: string, reason: string, root: string] {

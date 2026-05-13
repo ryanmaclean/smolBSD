@@ -60,7 +60,7 @@ def gate-open [results_dir: string, required: int] {
 # Print a one-line run summary to stdout.
 def print-run-summary [n: int, overall: string, duration_s: int] {
     let icon = if $overall == "pass" { "✓" } else { "✗" }
-    print $"Run ($n): ($icon) ($overall) \(($duration_s)s\)"
+    print $"Run ($n): ($icon) ($overall) (($duration_s)s)"
 }
 
 # ── remote dispatch ────────────────────────────────────────────────────────────
@@ -177,12 +177,12 @@ def main [
             exit 0
         }
 
-        print $"  gate: closed \(($consec)/($required_passes) consecutive passes\)"
+        print $"  gate: closed (($consec)/($required_passes) consecutive passes)"
 
         # ── 3b. gap between runs (skip after final iteration) ─────────────────
         if $run_n < $max_runs {
             print $"  sleeping ($gap_seconds)s before next run..."
-            ^sleep $"($gap_seconds)sec"
+            ^sleep ($gap_seconds | into string)
         }
     }
 
