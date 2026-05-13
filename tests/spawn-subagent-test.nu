@@ -57,17 +57,18 @@ exit 0
     write-spool $spool_abs $msg
 
     # Run tick with the stub dir prepended to PATH.
-    let prev_path = (if (($env.PATH | describe) == "list<string>") {
-        $env.PATH
-    } else {
-        $env.PATH | split row (char esep)
-    })
-    with-env { PATH: ($prev_path | prepend $stub_dir) } {
+    with-env { PATH: ($env.PATH | prepend $stub_dir) } {
         ^nu bin/coord-tick.nu --state-file $state_rel --spool $spool_rel --root $tmp | ignore
     }
 
-    # Give the backgrounded sh a moment to exec the stub.
-    sleep 500ms
+    # Poll up to 5s for the marker file (replaces fixed sleep 500ms).
+    let deadline = 10  # 10 × 500ms = 5s
+    mut found = false
+    for _ in 1..$deadline {
+        if ($marker | path exists) { $found = true; break }
+        sleep 500ms
+    }
+    assert $found  # marker file not created within 5s
 
     # Assertions.
     assert ($marker | path exists)
@@ -105,11 +106,9 @@ do {
     mkdir $empty_dir
     let filtered = (
         $env.PATH
-        | split row (char esep)
-        | where {|d| not ([$d, "claude"] | path join | path exists) }
-        | str join ":"
+        | where {|p| not ($p | str contains "claude")}
     )
-    let safe_path = $"($empty_dir):($filtered)"
+    let safe_path = ($filtered | prepend $empty_dir)
 
     let body = "task_id = \"t-no-claude\""
     let msg = make-msg "coordinator@smolbsd.local" "builder@smolbsd.local" "<req.no-claude.001@host>" $body
@@ -117,7 +116,7 @@ do {
 
     # Confirm precondition: claude is NOT on the safe_path. If it is, skip this test.
     let claude_present_on_safe_path = (
-        $safe_path | split row ":" | any {|d| ([$d, "claude"] | path join | path exists) }
+        $safe_path | any {|d| ([$d, "claude"] | path join | path exists) }
     )
     if $claude_present_on_safe_path {
         print "  (skipped: claude binary still present after filtering)"
