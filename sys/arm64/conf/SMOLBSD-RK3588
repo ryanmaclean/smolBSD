@@ -1,0 +1,294 @@
+# Materialized from plans/tinyos/PHASE-2-PHYSICAL-BOOT.md §8
+# Authoring chain: planner@smolbsd.local <task-0023.builder@smolbsd.local>
+#
+# SMOLBSD-RK3588 — FreeBSD 15 arm64 kernel for RK3588 (ROCK 5B reference)
+# Target: headless physical boot, eMMC/SD root (UFS), PCIe NVMe optional,
+#         RTL8125BG 2.5GbE via PCIe, UART2 serial console,
+#         edk2-rk35xx UEFI (preferred) or u-boot EFI fallback.
+# Derived from sys/arm64/conf/SMOLBSD (QEMU-only baseline).
+#
+# Reference board: Radxa ROCK 5B (RK3588, 8/16 GiB LPDDR5).
+# Other RK3588 boards (Orange Pi 5 Plus, Khadas Edge2) use the same SoC
+# and driver set; only DTB and UART base address differ.
+#
+# -----------------------------------------------------------------------
+# KEY DIFFERENCES FROM SMOLBSD (QEMU)
+# -----------------------------------------------------------------------
+# 1. NO virtio — physical hardware.  All nodevice virtio_* lines from
+#    SMOLBSD are retained (prevents std.virt from compiling them in).
+#
+# 2. RK3588 SoC drivers added:
+#    - rk_gpio, rk_pinctrl  : Rockchip GPIO and pin-mux controller
+#    - rk_i2c               : Rockchip I2C controller
+#    - rk_spi               : Rockchip SPI controller
+#    - rk_clk               : Rockchip clock/reset driver (clk framework)
+#    - rk_pmic              : Rockchip PMIC (RK806/RK860 on ROCK 5B)
+#    - rk_usb2phy           : Rockchip USB 2.0 PHY
+#    - rk_pcie_phy          : Rockchip PCIe PHY (combo PHY for PCIe 3.0)
+#    - pcie_rockchip        : Rockchip PCIe 3.0 host controller (NVMe path)
+#    - gpioc, gpiobus       : GPIO infrastructure (required by rk_gpio)
+#
+# 3. eMMC / SD storage — RK3588 uses DesignWare MMC IP:
+#    - dwmmc                : DesignWare MMC/SDIO host controller
+#      (covers both eMMC on ROCK 5B and SD card slot)
+#    - mmc, mmcsd           : MMC bus + block device
+#    Note: sdhci/bcm2835_sdhci are NOT used; RK3588 uses dwmmc, not SDHCI.
+#
+# 4. USB — RK3588 USB 3.0 via Synopsys DWC3 on PCIe:
+#    - xhci                 : USB 3.0 xHCI (DWC3 in host mode)
+#    - usb, uhub, umass     : USB bus, hub, mass storage
+#    - ue                   : USB-to-Ethernet (for USB dongles; optional)
+#    dwc_otg is NOT used — RK3588 USB3 is DWC3 (xHCI-compatible), not OTG.
+#    dwc_otg was BCM2835/2836-era; RK3588 has distinct IP.
+#
+# 5. Ethernet — ROCK 5B: Realtek RTL8125BG 2.5GbE via PCIe root complex:
+#    - re                   : Realtek 8125/8169 driver (rge in some FreeBSD
+#                             versions; if re does not bind, use rge or
+#                             rtl8125 depending on FreeBSD 15 driver naming)
+#    - pci                  : PCI bus (required for PCIe-attached NIC)
+#
+# 6. NVMe via PCIe — RK3588 PCIe 3.0 supports M.2 NVMe (Phase II optional):
+#    - nvme, nvd            : NVMe host driver + block device
+#    - pcie_rockchip        : Rockchip PCIe host controller (declared above)
+#    Note: pcie_rockchip binds the PCIe root complex; nvme attaches to the
+#    endpoint.  Both are needed for NVMe boot preparation (Phase III target).
+#
+# 7. FDT required — RK3588 is FDT-only (no ACPI).  edk2-rk35xx passes
+#    the board DTB (e.g. rk3588-rock-5b.dtb) to loader.efi.
+#
+# 8. ACPI disabled — RK3588 has no ACPI support.  nodevice acpi prevents
+#    the acpi driver (pulled in by std.arm64) from probing and panicking.
+#
+# 9. UART2 console — RK3588 debug UART is UART2 (base 0xff1a0000 on ROCK
+#    5B).  loader.conf uses: console="uart,io,0xff1a0000"
+#    FreeBSD arm64 uart driver binds via FDT 'rockchip,rk3588-uart' compat.
+#
+# Build host: fbuild (FreeBSD 15 aarch64); native arm64 build.
+# See: release/tools/smolbsd-rk3588.conf, plans/tinyos/PHASE-2-PHYSICAL-BOOT.md
+#
+# Maintainer: planner@smolbsd.local
+
+cpu     ARM64
+ident   SMOLBSD-RK3588
+
+include "std.arm64"
+include "std.dev"
+include "std.virt"
+
+# -----------------------------------------------------------------------
+# FDT — mandatory for RK3588. edk2-rk35xx passes the board DTB to
+# loader.efi; all device enumeration is FDT-driven.  RK3588 has no ACPI.
+# -----------------------------------------------------------------------
+options FDT                         # Flattened Device Tree; mandatory for RK3588
+
+# -----------------------------------------------------------------------
+# ACPI: disable — RK3588 does not support ACPI. Prevents acpi from probing.
+# -----------------------------------------------------------------------
+nodevice acpi                       # FDT-only SoC; ACPI not supported on RK3588
+
+# -----------------------------------------------------------------------
+# RK3588 SoC core drivers
+# All bind via FDT compatible strings (e.g. 'rockchip,rk3588-gpio0').
+# -----------------------------------------------------------------------
+device  gpioc                       # GPIO character device (/dev/gpioc*)
+device  gpiobus                     # GPIO bus infrastructure
+device  rk_gpio                     # Rockchip RK3588 GPIO controller
+device  rk_pinctrl                  # Rockchip pin-mux / IOMUX controller
+device  rk_i2c                      # Rockchip I2C controller (PMIC, sensors)
+device  rk_spi                      # Rockchip SPI controller
+device  rk_clk                      # Rockchip clock/reset controller framework
+device  rk_pmic                     # Rockchip PMIC (RK806 on ROCK 5B)
+
+# -----------------------------------------------------------------------
+# RK3588 PCIe and PHY drivers
+# pcie_rockchip is the PCIe 3.0 host controller (DesignWare PCIe IP with
+# Rockchip integration layer).  rk_pcie_phy drives the combo PHY for the
+# PCIe 3.0 lanes.  Both are needed for NVMe + RTL8125BG NIC enumeration.
+# -----------------------------------------------------------------------
+device  rk_pcie_phy                 # Rockchip PCIe 3.0 combo PHY
+device  pcie_rockchip               # Rockchip PCIe 3.0 host controller
+device  pci                         # PCI/PCIe bus layer
+
+# -----------------------------------------------------------------------
+# eMMC / SD — RK3588 uses DesignWare MMC IP (dwmmc), NOT SDHCI.
+# dwmmc covers both the eMMC slot (primary boot) and the SD card slot.
+# sdhci/bcm2835_sdhci are NOT used on RK3588.
+# -----------------------------------------------------------------------
+device  mmc                         # MMC/SD bus
+device  mmcsd                       # MMC/SD block device (/dev/mmcsd0)
+device  dwmmc                       # DesignWare MMC host controller (eMMC + SD)
+
+# -----------------------------------------------------------------------
+# USB — RK3588 USB 3.0 via DWC3 IP in xHCI host mode.
+# RK3588 uses DWC3 (xHCI-compatible), NOT dwc_otg (which was BCM2835/36).
+# rk_usb2phy provides the USB 2.0 HS PHY required for xHCI SuperSpeed init.
+# -----------------------------------------------------------------------
+device  rk_usb2phy                  # Rockchip USB 2.0 PHY (required by xHCI)
+device  xhci                        # USB 3.0 xHCI host controller (DWC3)
+device  usb                         # USB bus layer
+device  uhub                        # USB hub (root + downstream)
+device  umass                       # USB mass storage
+device  ue                          # USB-to-Ethernet (CDC/ASIX dongles)
+device  scbus                       # CAM SCSI bus (required by umass)
+device  da                          # CAM disk (da*) for USB mass storage
+
+# -----------------------------------------------------------------------
+# Ethernet — ROCK 5B: Realtek RTL8125BG 2.5GbE on PCIe.
+# FreeBSD 15 arm64 driver: re(4) (Realtek 8169/8125 family).
+# If re(4) does not bind on FreeBSD 15, try rge(4) — driver was renamed
+# in some versions.  Both kept here; only one will attach at runtime.
+# -----------------------------------------------------------------------
+device  re                          # Realtek RTL8125/8169 Ethernet (ROCK 5B NIC)
+device  rge                         # Realtek 8125 2.5G (alternate driver name)
+
+# -----------------------------------------------------------------------
+# NVMe — PCIe M.2 NVMe (Phase II optional; Phase III primary boot target).
+# pcie_rockchip (above) enumerates the endpoint; nvme + nvd provide the
+# NVMe host driver and block device.
+# -----------------------------------------------------------------------
+device  nvme                        # NVMe host controller driver
+device  nvd                         # NVMe block device (/dev/nvd0)
+
+# -----------------------------------------------------------------------
+# UART — RK3588 UART2 at 0xff1a0000 (ROCK 5B debug header).
+# FreeBSD arm64 uart driver binds via FDT 'rockchip,rk3588-uart' compat
+# string.  loader.conf: console="uart,io,0xff1a0000"
+# -----------------------------------------------------------------------
+device  uart                        # Generic UART driver (PL011-compatible)
+
+# -----------------------------------------------------------------------
+# Strip virtio — no VirtIO hardware on physical RK3588.
+# Carried from SMOLBSD; prevents std.virt from compiling these in.
+# -----------------------------------------------------------------------
+nodevice vtnet                      # VirtIO NIC — no virtio on physical RK3588
+
+# -----------------------------------------------------------------------
+# Strip physical storage controllers not present on RK3588
+# -----------------------------------------------------------------------
+nodevice ahc
+nodevice ahd
+nodevice hptiop
+nodevice isp
+nodevice mpt
+nodevice mps
+nodevice mpr
+nodevice mpi3mr
+nodevice sym
+nodevice isci
+nodevice ocs_fc
+nodevice pvscsi
+nodevice arcmsr
+nodevice ciss
+nodevice aac
+nodevice mfi
+nodevice mrsas
+nodevice ata
+nodevice mvs
+nodevice siis
+nodevice ufshci
+nodevice vmd
+# Not stripping ahci — RK3588 PCIe may present SATA behind an ASM1061;
+# ahci is a low-cost keep for field compatibility.
+
+# -----------------------------------------------------------------------
+# Strip physical NICs not on ROCK 5B
+# re + rge kept above (ROCK 5B RTL8125BG); everything else removed.
+# -----------------------------------------------------------------------
+nodevice em
+nodevice igc
+nodevice ix
+nodevice ixv
+nodevice ixl
+nodevice iavf
+nodevice ice
+nodevice mlx5
+nodevice aq
+nodevice bxe
+nodevice bge                        # Broadcom GbE — not on ROCK 5B
+nodevice ti
+
+# -----------------------------------------------------------------------
+# Strip wireless (headless; RK3588 WiFi deferred to Phase III)
+# -----------------------------------------------------------------------
+nodevice wlan
+nodevice wlan_amrr
+nodevice wlan_ccmp
+nodevice wlan_tkip
+nodevice wlan_xauth
+nodevice ath
+nodevice ath_pci
+nodevice ath_hal
+nodevice iwn
+nodevice iwi
+nodevice ipw
+nodevice malo
+nodevice mwl
+nodevice ral
+nodevice wpi
+nodevice iwlwifi
+nodevice rtwn
+nodevice rsu
+
+# -----------------------------------------------------------------------
+# Strip USB drivers not needed on RK3588
+# -----------------------------------------------------------------------
+nodevice uhci                       # USB 1.1 UHCI — not on RK3588
+nodevice ohci                       # USB 1.1 OHCI — not on RK3588
+nodevice ehci                       # USB 2.0 EHCI — xHCI covers USB 2.0 too
+nodevice usbhid                     # HID — headless
+nodevice hkbd
+nodevice ukbd                       # USB keyboard — headless
+
+# -----------------------------------------------------------------------
+# Strip Pi 5 / BCM2712 drivers (not applicable to RK3588)
+# -----------------------------------------------------------------------
+nodevice bcm2835_gpio
+nodevice bcm2835_bsc
+nodevice bcm2835_spi
+nodevice bcm2835_wdog
+nodevice bcm2835_mbox
+nodevice bcm2838_pcie
+nodevice bcm2835_sdhci
+nodevice sdhci                      # SDHCI — not used on RK3588 (dwmmc only)
+
+# -----------------------------------------------------------------------
+# Strip parallel port / legacy I/O (arm64)
+# -----------------------------------------------------------------------
+nodevice ppc
+nodevice ppbus
+nodevice lpt
+
+# -----------------------------------------------------------------------
+# Strip sound (headless server image)
+# -----------------------------------------------------------------------
+nooptions SND_SUPPORT
+nodevice sound
+nodevice snd_hda
+nodevice snd_ich
+nodevice snd_via8233
+
+# -----------------------------------------------------------------------
+# Strip Hyper-V (physical board)
+# -----------------------------------------------------------------------
+nodevice hyperv
+
+# -----------------------------------------------------------------------
+# Production tuning (same as SMOLBSD)
+# -----------------------------------------------------------------------
+makeoptions DEBUG=
+nooptions KDB_UNATTENDED
+nooptions WITNESS
+nooptions INVARIANTS
+nooptions INVARIANT_SUPPORT
+nooptions BUF_TRACKING
+nooptions FULL_BUF_TRACKING
+
+nooptions COMPAT_FREEBSD10
+nooptions COMPAT_FREEBSD11
+
+# -----------------------------------------------------------------------
+# TPM 2.0 support
+# RK3588 has no discrete TPM; device tpm enables bhyve swtpm testing and
+# future fTPM via firmware.
+# -----------------------------------------------------------------------
+device tpm              # TPM 2.0 (CRB + FIFO interfaces)
