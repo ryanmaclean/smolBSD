@@ -8,37 +8,54 @@
 # FSM states (per spec §12):
 #   idle         — no work in progress; scan spool for new messages
 #   dispatching  — writing a request into the spool and queuing a subagent launch
-#   waiting      — request dispatched, awaiting reply (not yet implemented)
+#   waiting      — request dispatched, polling spool for matching reply
 #   harvesting   — new replies present; cross-check claims
-#   halted       — var/mail/HALT file exists; block until user clears it
+#   halted       — global var/mail/HALT present OR all tasks failed; clears per-task on resume
 #
 # HALT check: one `stat var/mail/HALT` per tick entry — O(1) per spec §13.
 
-use mbox-parse.nu [parse-mbox, extract-toml, msg-id]
+use ./mbox-parse.nu [parse-mbox, extract-toml, msg-id]
+
+const AGENT_CAPABILITIES = {
+    "general-purpose":          ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebFetch", "WebSearch"]
+    "feature-dev:code-architect": ["Read", "Glob", "Grep", "WebFetch", "TodoWrite"]
+    "architect":                ["Read", "Glob", "Grep", "WebFetch", "TodoWrite"]
+    "researcher":               ["Read", "Glob", "Grep", "WebFetch", "WebSearch"]
+    "security":                 ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+    "ops":                      ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+    "builder":                  ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+    "reviewer":                 ["Read", "Glob", "Grep", "WebFetch"]
+}
 
 const STATE_VERSION = "1"
 
 # Default state for a fresh coordinator with no prior history.
 def default-state [] {
     {
-        version:          $STATE_VERSION
-        tick_count:       0
-        fsm_state:        "idle"
-        seen_ids:         []
-        last_tick_at:     (date now | format date "%Y-%m-%dT%H:%M:%SZ")
-        pending_dispatch: null
-        waiting_for_id:   ""
+        version:            $STATE_VERSION
+        tick_count:         0
+        fsm_state:          "idle"
+        seen_ids:           []
+        last_tick_at:       (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        pending_request_id: ""
+        pending_task_id:    ""
+        pending_to_addr:    ""
+        dispatched_at:      ""
+        attempt_counts:     {}   # record keyed by task_id → int attempt count
+        halted_tasks:       []
     }
 }
 
 # Load state from TOML file, or return the default if file absent / parse fails.
+# Missing keys are filled in from default-state so old state files remain compatible.
 def load-state [path: string] {
     if not ($path | path exists) {
         log-event "state_init" {path: $path, reason: "file absent"}
         return (default-state)
     }
     try {
-        open --raw $path | from toml
+        let loaded = open --raw $path | from toml
+        (default-state) | merge $loaded
     } catch {|err|
         log-event "state_load_error" {path: $path, error: ($err | get msg? | default "parse error")}
         default-state
@@ -68,6 +85,173 @@ def log-event [event: string, payload: record] {
 def halt-present [root: string] {
     let halt_path = [$root, "var", "mail", "HALT"] | path join
     $halt_path | path exists
+}
+
+# Write a per-task HALT marker. Returns the path written.
+def write-halt-marker [root: string, task_id: string, reason: string, verdict: string, message_id: string, attempts: int] {
+    let halt_path = [$root, "var", "mail", $"HALT.($task_id)"] | path join
+    let halt_dir  = $halt_path | path dirname
+    if not ($halt_dir | path exists) { mkdir $halt_dir }
+    {
+        task_id:    $task_id
+        verdict:    $verdict
+        message_id: $message_id
+        halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        reason:     $reason
+        attempts:   $attempts
+        halt_msgid: $"<halt-($task_id).coord@smolbsd.local>"
+        resume_tag: $"resume-($task_id)"
+    } | to toml | save --force $halt_path
+    $halt_path
+}
+
+# Append a spec-compliant HALT mbox message to the spool.
+def append-halt-message [spool: string, task_id: string, reason: string, verdict: string, attempts: int, proposed_actions: list<string>] {
+    let ts        = date now | format date "%Y%m%d%H%M%S"
+    let halt_msgid = $"<halt-($task_id).coord@smolbsd.local>"
+    let resume_tag = $"resume-($task_id)"
+    let x_halt_reason = match $reason {
+        "retry-exhausted"  => "retry-exhausted"
+        "no-unblocker"     => "claim-verification-failed"
+        _                  => $reason
+    }
+    let mbox_msg = $"From coordinator@smolbsd.local ($ts)
+From: coordinator@smolbsd.local
+To: user@smolbsd.local
+Subject: [HALT] ($task_id) — ($reason)
+Message-ID: ($halt_msgid)
+X-Halt-Reason: ($x_halt_reason)
+X-Resume-Tag: ($resume_tag)
+Content-Type: text/toml; charset=utf-8
+
+task_id           = \"($task_id)\"
+halt_msgid        = \"($halt_msgid)\"
+resume_tag        = \"($resume_tag)\"
+reason            = \"($reason)\"
+last_verdict      = \"($verdict)\"
+attempts          = ($attempts)
+proposed_actions  = [($proposed_actions | each {|a| ('"' + $a + '"')} | str join ', ')]
+"
+    $mbox_msg | save --append $spool
+}
+
+# Best-effort IRC DM to operator per spec §13.
+# One TLS attempt on 6697, one plain fallback on 6667, then give up.
+# Result is logged but never fatal — HALT proceeds regardless.
+def try-irc-dm [task_id: string, reason: string, root: string] {
+    let msg = $"HALT ($task_id): ($reason)"
+    let irc_host = "10.0.3.203"
+    let halt_path = [$root, "var", "mail", $"HALT.($task_id)"] | path join
+
+    let result = try {
+        # TLS attempt on 6697 — pipe IRC NICK/USER/PRIVMSG/QUIT sequence
+        let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
+        let out = $irc_cmds | ^openssl s_client -connect $"($irc_host):6697" -quiet -timeout 10 2>/dev/null
+        "tls-ok"
+    } catch {
+        # Plain fallback on 6667
+        try {
+            let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
+            let out = $irc_cmds | ^nc -w 5 $irc_host 6667 2>/dev/null
+            "plain-ok"
+        } catch {
+            "no-route"
+        }
+    }
+
+    # Record outcome in the HALT marker file
+    try {
+        let existing = try { open --raw $halt_path | from toml } catch { {} }
+        ($existing | insert fallback_fired true | insert fallback_status $result) | to toml | save --force $halt_path
+    } catch {}
+
+    log-event "irc_fallback" {task_id: $task_id, status: $result}
+}
+
+# Spawn a subagent (claude CLI) in the background to execute a dispatched task.
+# Non-blocking: writes a prompt file and launches `claude -p` via `sh -c ... &`.
+# If the `claude` CLI is not on PATH, logs `subagent_spawn_skipped` and returns —
+# the operator must launch manually in that case.
+def spawn-subagent [agent_type: string, task_id: string, spool_path: string, root: string] {
+    let claude_found = (which claude | length) > 0
+    if not $claude_found {
+        log-event "subagent_spawn_skipped" {
+            task_id:    $task_id
+            agent_type: $agent_type
+            reason:     "claude CLI not installed"
+        }
+        return
+    }
+
+    let spawn_dir = [$root, "var", "run", "spawned"] | path join
+    if not ($spawn_dir | path exists) { mkdir $spawn_dir }
+    let prompt_file = [$spawn_dir, $"($task_id).prompt.txt"] | path join
+    let log_file    = [$spawn_dir, $"($task_id).log"]        | path join
+
+    let prompt = $"You are a smolBSD subagent of type ($agent_type) handling task ($task_id).
+
+1. Read the mbox spool at: ($spool_path)
+2. Find the message whose Message-ID contains \"<($task_id).\" — that is your task envelope.
+3. Parse its TOML body and execute the value of the `command` field as a shell command.
+4. Append a reply to the spool (($spool_path)) with these headers:
+   - From: ($agent_type)@smolbsd.local
+   - To: coordinator@smolbsd.local
+   - In-Reply-To: <the original Message-ID>
+   - X-Verdict: pass | fail   \(pass iff exit_code == 0\)
+   - Content-Type: text/toml; charset=utf-8
+5. The TOML body MUST contain:
+   - task_id      = \"($task_id)\"
+   - verdict      = \"pass\" | \"fail\"
+   - exit_code    = <int>
+   - stdout       = <captured stdout, truncated to 4 KiB>
+   - one [[claims]] block with at minimum: kind = \"command_executed\", task_id = \"($task_id)\", exit_code = <int>
+
+Do not modify any other messages in the spool. Append only.
+"
+    $prompt | save --force $prompt_file
+
+    let sh_cmd = $"claude --model claude-sonnet-4-6 -p \"$\(cat '($prompt_file)'\)\" >'($log_file)' 2>&1 &"
+    ^sh -c $sh_cmd
+
+    log-event "subagent_spawned" {
+        task_id:      $task_id
+        agent_type:   $agent_type
+        prompt_file:  $prompt_file
+        log_file:     $log_file
+    }
+# Process X-Resume-* messages and clear matching per-task HALTs.
+# Returns updated state; retry/edit resumes remove the task from halted_tasks.
+def process-resume-actions [state: record, root: string, spool: string, event_prefix: string] {
+    if (($state.halted_tasks | length) == 0) { return $state }
+    if not ($spool | path exists) { return $state }
+
+    let content  = open --raw $spool
+    let messages = parse-mbox $content
+    mut next_state = $state
+
+    for msg in $messages {
+        let resume_tag = $msg.headers | get "X-Resume-Tag"? | default ""
+        if $resume_tag == "" { continue }
+
+        let matched = $next_state.halted_tasks | where {|t| $"resume-($t)" == $resume_tag }
+        if (($matched | length) == 0) { continue }
+
+        let task = $matched | first
+        let action_hdr = $msg.headers | get "X-Resume-Action"? | default "retry"
+        log-event $"($event_prefix)_resume_action" {task_id: $task, resume_tag: $resume_tag, action: $action_hdr}
+
+        if $action_hdr == "retry" or $action_hdr == "edit" {
+            let per_halt = [$root, "var", "mail", $"HALT.($task)"] | path join
+            if ($per_halt | path exists) { rm $per_halt }
+            $next_state = ($next_state
+                | update halted_tasks ($next_state.halted_tasks | where {|t| $t != $task})
+                | update fsm_state "idle")
+        } else {
+            log-event $"($event_prefix)_abort" {task_id: $task}
+        }
+    }
+
+    $next_state
 }
 
 # ── FSM states ────────────────────────────────────────────────────────────────
@@ -103,14 +287,21 @@ def state-idle [state: record, spool: string, root: string, remaining: int] {
 }
 
 # harvesting: process each unseen message; update seen_ids.
-# Queues the first unmatched REQUEST found for dispatch (transitions to dispatching).
+# If an unmatched outbound request is found, set pending fields and transition to dispatching.
+# Implements D2 retry table: fail/blocked retries up to 3 attempts, then HALT.
 def state-harvesting [state: record, spool: string, root: string, remaining: int] {
     let content  = open --raw $spool
     let messages = parse-mbox $content
 
-    mut new_seen = $state.seen_ids
+    mut new_seen       = $state.seen_ids
+    mut dispatch_state = $state   # overwritten when a dispatch target is found
+    mut has_dispatch   = false
+    mut current_state  = $state
 
     for msg in $messages {
+        # Stop processing once we've identified a dispatch target.
+        if $has_dispatch { break }
+
         let id = msg-id $msg
         if $id == "" or ($id in $new_seen) { continue }
 
@@ -130,7 +321,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
             let task_id   = $payload | get "task_id"? | default "unknown"
 
             # Determine whether this is a coord→agent request or agent→coord reply.
-            let direction = if ($to_addr | str contains "coordinator@") { "reply" } else { "request" }
+            let direction = if $to_addr == "coordinator@smolbsd.local" { "reply" } else { "request" }
 
             log-event "harvest_message" {
                 message_id: $id
@@ -142,397 +333,307 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
                 verdict:    $verdict
             }
 
-            # If this looks like an unmatched request (no In-Reply-To, not yet seen),
-            # queue it for dispatch by transitioning to dispatching.
+            if $direction == "reply" {
+                # Get current attempt count for this task
+                let attempt_n = $current_state.attempt_counts | get -o $task_id | default 0
+
+                if $verdict == "pass" {
+                    # Check attestation requirement from both reply and originating request.
+                    # Agents may omit attestation_required in replies; coordinator must enforce
+                    # the requirement declared in the request envelope.
+                    let in_reply_to = $msg.headers | get "In-Reply-To"? | default ""
+                    let request_attestation_required = if $in_reply_to != "" { request-thread-attestation-required $messages $in_reply_to } else { false }
+                    let reply_attestation_required = $payload | get "attestation_required"? | default false
+                    let attestation_required = $request_attestation_required or $reply_attestation_required
+                    let claims = $payload | get "claims"? | default []
+
+                    if $attestation_required and (($claims | length) == 0) {
+                        # Treat as MALFORMED (treat as fail for retry purposes)
+                        log-event "harvest_malformed" {
+                            message_id:  $id
+                            task_id:     $task_id
+                            reason:      "attestation_required=true but no [[claims]] block present"
+                        }
+                        if $attempt_n < 3 {
+                            $new_seen = $new_seen | append $id
+                            $dispatch_state = ($current_state
+                                | update seen_ids           $new_seen
+                                | update pending_request_id $id
+                                | update pending_task_id    $task_id
+                                | update pending_to_addr    $from_addr
+                                | update fsm_state          "dispatching")
+                            $has_dispatch = true
+                            log-event "harvest_reply_retry" {message_id: $id, task_id: $task_id, verdict: "fail", attempt: $attempt_n}
+                        } else {
+                            let _ = write-halt-marker $root $task_id "retry-exhausted" $verdict $id $attempt_n
+                            append-halt-message $spool $task_id "retry-exhausted" $verdict $attempt_n ["retry", "abort"]
+                            try-irc-dm $task_id "retry-exhausted" $root
+                            $current_state = ($current_state | update halted_tasks ($current_state.halted_tasks | append $task_id))
+                            log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "retry-exhausted"}
+                            $new_seen = $new_seen | append $id
+                            return ($current_state | update seen_ids $new_seen | update fsm_state "idle")
+                        }
+                    } else {
+                        # pass + verified
+                        log-event "harvest_reply_pass" {message_id: $id, task_id: $task_id}
+                        let cleared_counts = if $task_id in $current_state.attempt_counts { $current_state.attempt_counts | reject $task_id } else { $current_state.attempt_counts }
+                        $new_seen = $new_seen | append $id
+                        $current_state = ($current_state | update seen_ids $new_seen | update attempt_counts $cleared_counts)
+                        continue
+                    }
+                } else if $verdict == "fail" {
+                    # D2 retry table: retry if attempts < 3, else HALT
+                    if $attempt_n < 3 {
+                        $new_seen = $new_seen | append $id
+                        $dispatch_state = ($current_state
+                            | update seen_ids           $new_seen
+                            | update pending_request_id $id
+                            | update pending_task_id    $task_id
+                            | update pending_to_addr    $from_addr
+                            | update fsm_state          "dispatching")
+                        $has_dispatch = true
+                        log-event "harvest_reply_retry" {message_id: $id, task_id: $task_id, verdict: $verdict, attempt: $attempt_n}
+                    } else {
+                        let _ = write-halt-marker $root $task_id "retry-exhausted" $verdict $id $attempt_n
+                        append-halt-message $spool $task_id "retry-exhausted" $verdict $attempt_n ["retry", "abort"]
+                        try-irc-dm $task_id "retry-exhausted" $root
+                        $current_state = ($current_state | update halted_tasks ($current_state.halted_tasks | append $task_id))
+                        log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "retry-exhausted"}
+                        $new_seen = $new_seen | append $id
+                        return ($current_state | update seen_ids $new_seen | update fsm_state "idle")
+                    }
+                } else if $verdict == "blocked" {
+                    # D2 retry table: blocked_by present → retry up to 3; no blocked_by → immediate HALT
+                    let blocked_by = $payload | get "blocked_by"? | default ""
+                    if ($blocked_by | str length) > 0 {
+                        # unblocker named — retry if attempts < 3
+                        if $attempt_n < 3 {
+                            $new_seen = $new_seen | append $id
+                            $dispatch_state = ($current_state
+                                | update seen_ids           $new_seen
+                                | update pending_request_id $id
+                                | update pending_task_id    $task_id
+                                | update pending_to_addr    $from_addr
+                                | update fsm_state          "dispatching")
+                            $has_dispatch = true
+                            log-event "harvest_reply_retry" {message_id: $id, task_id: $task_id, verdict: $verdict, attempt: $attempt_n}
+                        } else {
+                            let _ = write-halt-marker $root $task_id "retry-exhausted" $verdict $id $attempt_n
+                            append-halt-message $spool $task_id "retry-exhausted" $verdict $attempt_n ["retry", "abort"]
+                            try-irc-dm $task_id "retry-exhausted" $root
+                            $current_state = ($current_state | update halted_tasks ($current_state.halted_tasks | append $task_id))
+                            log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "retry-exhausted"}
+                            $new_seen = $new_seen | append $id
+                            return ($current_state | update seen_ids $new_seen | update fsm_state "idle")
+                        }
+                    } else {
+                        # no blocked_by — immediate HALT, no retry
+                        let _ = write-halt-marker $root $task_id "no-unblocker" $verdict $id $attempt_n
+                        append-halt-message $spool $task_id "no-unblocker" $verdict $attempt_n ["abort", "edit"]
+                        try-irc-dm $task_id "no-unblocker" $root
+                        $current_state = ($current_state | update halted_tasks ($current_state.halted_tasks | append $task_id))
+                        log-event "harvest_reply_halt" {message_id: $id, task_id: $task_id, verdict: $verdict, reason: "no-unblocker"}
+                        $new_seen = $new_seen | append $id
+                        return ($current_state | update seen_ids $new_seen | update fsm_state "idle")
+                    }
+                }
+            }
+
+            # If this is an unmatched outbound request, dispatch it (first one wins).
             if $direction == "request" {
+                # Skip tasks that are already halted.
+                if $task_id in $current_state.halted_tasks {
+                    log-event "dispatch_skipped_halted" {task_id: $task_id, message_id: $id}
+                    $new_seen = $new_seen | append $id
+                    continue
+                }
+
+                # §17: check tools_required against known agent capabilities
+                let tools_required = $payload | get "tools_required"? | default []
+                let agent_type     = $payload | get "agent_type"?     | default "general-purpose"
+                let capabilities   = $AGENT_CAPABILITIES | get -o $agent_type | default ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+                let missing_tools  = $tools_required | where {|t| not ($t in $capabilities)}
+
+                if ($missing_tools | length) > 0 {
+                    log-event "dispatch_capability_mismatch" {
+                        task_id:       $task_id
+                        agent_type:    $agent_type
+                        tools_required: ($tools_required | str join ", ")
+                        missing_tools:  ($missing_tools | str join ", ")
+                        message_id:    $id
+                    }
+                    $new_seen = $new_seen | append $id
+                    # Skip dispatch — mark seen so we don't retry this message
+                    continue
+                }
+
                 let in_reply_to = $msg.headers | get "In-Reply-To"? | default ""
                 if $in_reply_to == "" {
-                    log-event "queue_dispatch" {
+                    log-event "would_dispatch" {
                         task_id:    $task_id
                         to_role:    $to_addr
                         message_id: $id
                     }
-                    # Record this id as seen before we break out, so it is not
-                    # re-queued on the next tick while we are still in dispatching.
                     $new_seen = $new_seen | append $id
-                    # Persist seen_ids and queue the pending_dispatch, then hand off.
-                    let dispatch_state = $state
-                        | update seen_ids $new_seen
-                        | update fsm_state "dispatching"
-                        | update pending_dispatch {
-                            task_id:    $task_id
-                            to_addr:    $to_addr
-                            message_id: $id
-                            body:       $msg.body
-                        }
-                    return (tick $dispatch_state $spool $root ($remaining - 1))
+                    $dispatch_state = ($current_state
+                        | update seen_ids           $new_seen
+                        | update pending_request_id $id
+                        | update pending_task_id    $task_id
+                        | update pending_to_addr    $to_addr
+                        | update fsm_state          "dispatching")
+                    $has_dispatch = true
+                    # break is implicit: has_dispatch will stop outer loop
                 }
             }
         }
 
-        $new_seen = $new_seen | append $id
+        if not $has_dispatch {
+            $new_seen = $new_seen | append $id
+        }
     }
 
-    $state
-    | update seen_ids $new_seen
-    | update fsm_state "idle"
+    if $has_dispatch {
+        tick $dispatch_state $spool $root ($remaining - 1)
+    } else {
+        $current_state
+        | update seen_ids $new_seen
+        | update fsm_state "idle"
+    }
 }
 
-# waiting: a request has been dispatched; poll the spool for a reply.
-# Checks state.pending for a msg_id to wait on.
-# If a reply is found, logs reply_received, clears pending, and transitions to harvesting.
-# If no reply yet, logs waiting_no_reply with elapsed time and stays in waiting.
-# If state.pending is absent/empty, logs waiting_no_pending and returns to idle.
+# waiting: a request has been dispatched; poll the spool for a matching reply.
+# Transitions to harvesting if a reply is found; stays in waiting otherwise.
 def state-waiting [state: record, spool: string, root: string, remaining: int] {
-    # Read the pending field safely — may be absent in older state files.
-    let pending = $state | get pending? | default {}
-
-    let pending_msg_id = $pending | get msg_id? | default ""
-
-    if $pending_msg_id == "" {
-        log-event "waiting_no_pending" {note: "state.pending missing or has no msg_id; returning to idle"}
-        return ($state | update fsm_state "idle")
-    }
-
     if not ($spool | path exists) {
-        log-event "waiting_no_reply" {
-            pending_msg_id: $pending_msg_id
-            reason:         "spool absent"
-        }
+        log-event "waiting_no_reply" {pending_request_id: $state.pending_request_id, reason: "spool absent"}
         return $state
     }
 
     let content  = open --raw $spool
     let messages = parse-mbox $content
 
-    # Look for a message whose In-Reply-To matches our dispatched msg_id
-    # and whose own Message-ID has not yet been seen.
-    let replies = (
+    let reply = (
         $messages
         | where {|m|
             let in_reply_to = $m.headers | get "In-Reply-To"? | default ""
-            let id          = msg-id $m
-            $in_reply_to == $pending_msg_id and $id != "" and not ($id in $state.seen_ids)
+            $in_reply_to == $state.pending_request_id
         }
         | first 1
     )
 
-    if ($replies | length) == 0 {
-        # No reply yet — compute elapsed time and stay in waiting.
-        let dispatched_at = $pending | get dispatched_at? | default ""
-        let elapsed_note = if $dispatched_at != "" {
-            try {
-                let dispatched_dt = $dispatched_at | into datetime
-                let now_dt        = date now
-                let elapsed_secs  = ($now_dt - $dispatched_dt) / 1sec
-                $"($elapsed_secs | into int)s"
-            } catch {
-                "unknown"
+    if ($reply | length) > 0 {
+        log-event "waiting_reply_received" {
+            pending_request_id: $state.pending_request_id
+            pending_task_id:    $state.pending_task_id
+        }
+        let next_state = $state
+            | update pending_request_id ""
+            | update pending_task_id    ""
+            | update pending_to_addr    ""
+            | update dispatched_at      ""
+            | update fsm_state          "harvesting"
+        tick $next_state $spool $root ($remaining - 1)
+    } else {
+        log-event "waiting_no_reply" {pending_request_id: $state.pending_request_id}
+
+        # Timeout: treat no-reply > 300s as a fail (triggers D2 retry table on next harvest)
+        if $state.dispatched_at != "" {
+            let elapsed = (date now) - ($state.dispatched_at | into datetime)
+            if ($elapsed | into int) > 300_000_000_000 {   # 300s in nanoseconds
+                log-event "waiting_timeout" {
+                    pending_request_id: $state.pending_request_id
+                    pending_task_id:    $state.pending_task_id
+                    dispatched_at:      $state.dispatched_at
+                }
+                # Inject a synthetic fail reply into the spool so the next harvest triggers retry
+                let ts = date now | format date "%Y%m%d%H%M%S"
+                let synth_id = $"<timeout.($state.pending_task_id).($ts)@smolbsd.local>"
+                let synth_msg = $"From coordinator@smolbsd.local ($ts)
+From: coordinator@smolbsd.local
+To: coordinator@smolbsd.local
+Message-ID: ($synth_id)
+In-Reply-To: ($state.pending_request_id)
+Content-Type: text/toml; charset=utf-8
+
+task_id = \"($state.pending_task_id)\"
+verdict = \"fail\"
+failure_reason = \"timeout: no reply within 300s\"
+"
+                $synth_msg | save --append $spool
+                return ($state | update fsm_state "idle" | update dispatched_at "")
             }
-        } else {
-            "unknown"
         }
 
-        log-event "waiting_no_reply" {
-            pending_msg_id: $pending_msg_id
-            elapsed:        $elapsed_note
-        }
-        return $state
+        $state
     }
-
-    # Reply found — extract details and transition to harvesting.
-    let reply_msg = $replies | first
-    let reply_id  = msg-id $reply_msg
-    let payload   = extract-toml $reply_msg
-    let verdict   = $payload | get "verdict"? | default "none"
-    let task_id   = $pending | get task_id? | default "unknown"
-
-    log-event "reply_received" {
-        task_id:        $task_id
-        pending_msg_id: $pending_msg_id
-        reply_id:       $reply_id
-        verdict:        $verdict
-    }
-
-    # Clear pending and mark the reply as seen; hand off to harvesting.
-    $state
-    | update seen_ids ($state.seen_ids | append $reply_id)
-    | upsert pending  {}
-    | update fsm_state "harvesting"
 }
 
-# dispatching: detect the most recent coordinator dispatch with no matching reply,
-# record it in state.pending, and transition to waiting.
-# For now (no real subagent launch infrastructure) this means: scan the spool,
-# find the first coordinator→agent message that has no In-Reply-To pointing at it,
-# and write that as a pending record in state.
+# dispatching: compose and append an outbound mbox message to the spool,
+# then transition to waiting. Tracks attempt counts with retry-aware headers.
 def state-dispatching [state: record, spool: string, root: string, remaining: int] {
-    let pd = $state | get pending_dispatch? | default null
+    let task_id      = $state | get pending_task_id? | default "unknown"
+    let attempt_n    = $state.attempt_counts | get -o $task_id | default 0
+    let next_attempt = $attempt_n + 1
+    let ts           = date now | format date "%Y%m%d%H%M%S"
+    let msg_id       = $"<coord.($state.tick_count).r($next_attempt).($ts)@smolbsd.local>"
+    let to_addr      = if $state.pending_to_addr != "" { $state.pending_to_addr } else { $"($task_id)@smolbsd.local" }
+    let from_addr    = "coordinator@smolbsd.local"
 
-    if $pd == null {
-        log-event "dispatching_no_pending" {note: "pending_dispatch absent; returning to idle"}
-        return ($state | update fsm_state "idle")
-    }
+    let mbox_msg = $"From ($from_addr) ($ts)
+From: ($from_addr)
+To: ($to_addr)
+Message-ID: ($msg_id)
+X-Attempt: ($next_attempt)
+Content-Type: text/toml; charset=utf-8
+In-Reply-To: ($state.pending_request_id)
 
-    if not ($spool | path exists) {
-        log-event "dispatching_spool_absent" {note: "spool absent; cannot scan for unmatched dispatch"}
-        return ($state | update fsm_state "idle")
-    }
+task_id = \"($task_id)\"
+action = \"dispatch\"
+"
 
-    let content  = open --raw $spool
-    let messages = parse-mbox $content
+    # Append the message to the spool file.
+    $mbox_msg | save --append $spool
 
-    # Build a set of all In-Reply-To values across the entire spool,
-    # so we can check which coordinator messages have no reply yet.
-    let all_in_reply_to = (
-        $messages
-        | each {|m| $m.headers | get "In-Reply-To"? | default ""}
-        | where {|s| $s != ""}
-    )
-
-    # Find the first coordinator message (From: coordinator@) that has no
-    # matching reply (no other message has In-Reply-To == its Message-ID).
-    let unmatched = (
-        $messages
-        | where {|m|
-            let from_addr = $m.headers | get "From"? | default ""
-            let id        = msg-id $m
-            ($from_addr | str contains "coordinator@") and $id != "" and not ($id in $all_in_reply_to)
-        }
-        | first 1
-    )
-
-    # Use the pending_dispatch queued by harvesting, or the first unmatched spool message.
-    let task_id    = $pd.task_id
-    let message_id = $pd.message_id
-
-    let now_ts = date now | format date "%Y-%m-%dT%H:%M:%SZ"
-
-    let pending_record = {
-        task_id:       $task_id
-        msg_id:        $message_id
-        dispatched_at: $now_ts
-    }
-
-    log-event "dispatch_registered" {
+    log-event "dispatch_sent" {
+        message_id: $msg_id
         task_id:    $task_id
-        msg_id:     $message_id
-        dispatched_at: $now_ts
+        to:         $to_addr
+        attempt:    $next_attempt
     }
 
-    # Also log whether we found an unmatched spool entry (informational).
-    if ($unmatched | length) > 0 {
-        let u = $unmatched | first
-        let u_id = msg-id $u
-        if $u_id != $message_id {
-            log-event "dispatching_unmatched_found" {
-                unmatched_msg_id: $u_id
-                note: "spool has additional unmatched coordinator dispatch"
-            }
-        }
-    }
+    # Auto-spawn a subagent to execute the dispatched task (Phase II).
+    # agent_type is derived from the local-part of the recipient address.
+    let agent_type = ($to_addr | split row "@" | first | default "general-purpose")
+    spawn-subagent $agent_type $task_id $spool $root
 
-    let next_state = $state
-        | update pending_dispatch null
-        | upsert pending          $pending_record
-        | update fsm_state        "waiting"
-
-    tick $next_state $spool $root ($remaining - 1)
+    let updated_counts = $state.attempt_counts | insert $task_id $next_attempt
+    tick ($state
+        | update fsm_state          "waiting"
+        | update attempt_counts     $updated_counts
+        | update pending_request_id $msg_id
+        | update dispatched_at      (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+    ) $spool $root ($remaining - 1)
 }
 
-# halted: HALT marker is present.  Log and stop — do not recurse further.
+# halted: global HALT marker is present or all tasks failed.
 # Per spec §13: wait for user to rm var/mail/HALT and post a resume message.
 # We return here; the next cron/manual invocation will re-check.
-def state-halted [state: record, root: string] {
+def state-halted [state: record, root: string, spool: string] {
     let halt_path = [$root, "var", "mail", "HALT"] | path join
     let halt_info = try { open --raw $halt_path | from toml } catch { {} }
     log-event "halted" {
-        halt_file: $halt_path
-        info:      ($halt_info | to nuon)
-        note:      "coordinator paused; rm var/mail/HALT + append resume message to unblock"
+        halt_file:    $halt_path
+        info:         ($halt_info | to nuon)
+        halted_tasks: ($state.halted_tasks | str join ", ")
+        note:         "coordinator paused; rm var/mail/HALT + append resume message to unblock"
     }
+
+    let resumed_state = process-resume-actions $state $root $spool "halted"
+    if $resumed_state != $state {
+        return $resumed_state
+    }
+
     $state | update fsm_state "halted"
-}
-
-# ── Phase-II batch dispatch ───────────────────────────────────────────────────
-
-# Parse the §8 files-to-create markdown table from PHASE-2-PHYSICAL-BOOT.md.
-# Returns a list of records: {path: string, purpose: string, status: string}.
-# Rows with a backtick-quoted path cell are handled; leading/trailing spaces trimmed.
-def parse-phase-ii-table [doc_path: string] {
-    if not ($doc_path | path exists) {
-        error make {msg: $"Phase-II plan not found: ($doc_path)"}
-    }
-
-    let raw = open --raw $doc_path
-
-    # Isolate the §8 block: everything from "## 8." up to the next "---" separator.
-    let after_s8 = $raw | split row "## 8." | last
-    let section  = $after_s8 | split row "\n---" | first
-
-    # Extract pipe-delimited data rows (skip the header and separator rows).
-    # A data row: starts with '|', has at least 3 cells, does NOT consist solely
-    # of pipes and dashes (separator row).
-    let rows = (
-        $section
-        | lines
-        | where {|ln|
-            let t        = $ln | str trim
-            # Keep rows that start with "|" and are not pure separator lines
-            # (separator rows contain only |, -, and spaces after stripping).
-            let stripped = $t | str replace --all "|" "" | str replace --all "-" "" | str replace --all " " ""
-            ($t | str starts-with "|") and (not ($stripped | is-empty))
-        }
-        | skip 1   # skip the header row (| Path | Purpose | Status |)
-        | each {|ln|
-            # Split on "|", drop first and last empty segments from leading/trailing "|".
-            let cells = $ln | split row "|" | skip 1 | drop 1 | each {|c| $c | str trim}
-            if ($cells | length) < 3 {
-                null
-            } else {
-                # Strip surrounding backticks from path cell.
-                let raw_path = $cells | get 0
-                let path     = $raw_path | str replace --all "`" ""
-                let purpose  = $cells | get 1
-                let status   = $cells | get 2 | str downcase | str trim
-                {path: $path, purpose: $purpose, status: $status}
-            }
-        }
-        | where {|r| $r != null}
-    )
-
-    $rows
-}
-
-# Build a slug suitable for use in a Message-ID / task_id from a file path.
-# e.g. "release/tools/smolbsd-pi5.conf" -> "release-tools-smolbsd-pi5-conf"
-def path-to-slug [p: string] {
-    $p
-    | str replace --all "/" "-"
-    | str replace --all "." "-"
-    | str replace --all "_" "-"
-}
-
-# Emit one coordinator dispatch mbox message to the spool for a Phase-II file task.
-# Returns the Message-ID string emitted.
-def emit-dispatch [spool: string, task_id: string, path: string, purpose: string] {
-    let env_ts  = date now | format date "%a %b %d %H:%M:%S %Y"
-    let hdr_ts  = date now | format date "%a, %d %b %Y %H:%M:%S -0000"
-    let msg_id  = $"<($task_id).coord@smolbsd.local>"
-    let to_addr = "builder@smolbsd.local"
-    let from_addr = "coordinator@smolbsd.local"
-    let subject = $"[($task_id)] Phase-II create ($path)"
-
-    # Build TOML body line-by-line to avoid Nushell string-interpolation
-    # conflicts with bracket characters and filenames containing dots.
-    let lines = [
-        $"task_id   = \"($task_id)\""
-        $"title     = \"Create ($path)\""
-        "phase     = \"tinyos/physical-boot\""
-        "deadline  = \"2026-05-31\""
-        ""
-        "[brief]"
-        "summary = \"\"\""
-        "Phase-II file creation task (see PHASE-2-PHYSICAL-BOOT plan, section 8)."
-        $"Purpose: ($purpose)"
-        $"Path: ($path)"
-        "\"\"\""
-        ""
-        "[context_pointers]"
-        "read = ["
-        "  \"plans/tinyos/PHASE-2-PHYSICAL-BOOT.md\","
-        "]"
-        ""
-        "[acceptance]"
-        "must_pass = ["
-        $"  \"File ($path) exists and is non-empty\","
-        $"  \"Content matches purpose: ($purpose)\","
-        "]"
-        ""
-        "[reply_contract]"
-        "output_to            = \"coordinator@smolbsd.local\""
-        "output_format        = \"mbox+toml-v1\""
-        "attestation_required = true"
-        "tools_required       = [\"Read\", \"Write\"]"
-        "tools_allowed        = [\"Read\", \"Write\", \"Edit\", \"Bash\", \"Grep\", \"Glob\"]"
-        "budget_tokens        = 40000"
-    ]
-    let body = $lines | str join "\n"
-
-    let envelope = $"From smolbsd-coord ($env_ts)
-From: ($from_addr)
-To: ($to_addr)
-Subject: ($subject)
-Date: ($hdr_ts)
-Message-ID: ($msg_id)
-X-Project: smolbsd
-X-Phase: tinyos/physical-boot
-Content-Type: text/toml; charset=utf-8
-
-($body)
-"
-    # Ensure spool directory exists.
-    let spool_dir = $spool | path dirname
-    if not ($spool_dir | path exists) {
-        mkdir $spool_dir
-    }
-
-    $envelope | save --append $spool
-
-    $msg_id
-}
-
-# Read PHASE-2-PHYSICAL-BOOT.md §8, emit a coordinator dispatch mbox message
-# to the spool for each row whose status is "pending".
-# Returns {dispatched: int, skipped: int}.
-export def dispatch-phase-ii [
-    --spool: string = "var/mail/spool"   # path to mbox spool
-    --root:  string = "."                # project root
-] {
-    let abs_root  = $root | path expand
-    let abs_spool = [$abs_root, $spool] | path join
-    let doc_path  = [$abs_root, "plans", "tinyos", "PHASE-2-PHYSICAL-BOOT.md"] | path join
-
-    log-event "phase_ii_dispatch_start" {doc: $doc_path, spool: $abs_spool}
-
-    let rows = parse-phase-ii-table $doc_path
-
-    mut dispatched = 0
-    mut skipped    = 0
-
-    for row in $rows {
-        if ($row.status != "pending") {
-            log-event "phase_ii_dispatch" {
-                action:  "skipped"
-                path:    $row.path
-                status:  $row.status
-                reason:  "not pending"
-            }
-            $skipped = $skipped + 1
-            continue
-        }
-
-        let slug    = path-to-slug $row.path
-        let task_id = $"phase-ii-($slug)"
-        let msg_id  = emit-dispatch $abs_spool $task_id $row.path $row.purpose
-
-        log-event "phase_ii_dispatch" {
-            action:    "dispatched"
-            task_id:   $task_id
-            path:      $row.path
-            purpose:   $row.purpose
-            message_id: $msg_id
-            spool:     $abs_spool
-        }
-
-        $dispatched = $dispatched + 1
-    }
-
-    let summary = {dispatched: $dispatched, skipped: $skipped}
-
-    log-event "phase_ii_dispatch_done" $summary
-
-    $summary
 }
 
 # ── Tail-recursive dispatch core ──────────────────────────────────────────────
@@ -548,13 +649,17 @@ def tick [state: record, spool: string, root: string, remaining: int] {
         return $state
     }
 
+    # Process per-task resumes on every tick so HALT.<task_id> can be cleared
+    # without requiring a global HALT marker.
+    let resumed_state = process-resume-actions $state $root $spool "tick"
+
     # O(1) HALT check before every state dispatch — spec §13.
     if (halt-present $root) {
-        return (state-halted $state $root)
+        return (state-halted $resumed_state $root $spool)
     }
 
-    let next_count = $state.tick_count + 1
-    let stamped = $state
+    let next_count = $resumed_state.tick_count + 1
+    let stamped = $resumed_state
         | update tick_count $next_count
         | update last_tick_at (date now | format date "%Y-%m-%dT%H:%M:%SZ")
 
@@ -565,7 +670,7 @@ def tick [state: record, spool: string, root: string, remaining: int] {
         "dispatching" => { state-dispatching $stamped $spool $root $remaining }
         "waiting"     => { state-waiting     $stamped $spool $root $remaining }
         "harvesting"  => { state-harvesting  $stamped $spool $root $remaining }
-        "halted"      => { state-halted      $stamped $root }
+        "halted"      => { state-halted      $stamped $root $spool }
         _             => {
             log-event "unknown_state" {fsm_state: $stamped.fsm_state}
             $stamped | update fsm_state "idle"
@@ -577,29 +682,20 @@ def tick [state: record, spool: string, root: string, remaining: int] {
 
 # Run one coordinator tick.
 #
-# --state-file       path to the persistent TOML state file (created if absent)
-# --spool            path to the mbox spool file
-# --max-ticks        maximum FSM transitions in this invocation (budget guard)
-# --root             project root directory (default: current working directory)
-# --dispatch-phase-ii  emit Phase-II §8 pending tasks to spool then exit (no FSM tick)
+# --state-file  path to the persistent TOML state file (created if absent)
+# --spool       path to the mbox spool file
+# --max-ticks   maximum FSM transitions in this invocation (budget guard)
+# --root        project root directory (default: current working directory)
 export def main [
-    --state-file:       string = "var/run/coord-state.toml"
-    --spool:            string = "var/mail/spool"
-    --max-ticks:        int    = 100
-    --root:             string = "."
-    --dispatch-phase-ii              # emit Phase-II §8 pending-file tasks to spool
+    --state-file: string = "var/run/coord-state.toml"
+    --spool:      string = "var/mail/spool"
+    --max-ticks:  int    = 100
+    --root:       string = "."
 ] {
     # Resolve all paths relative to --root so the binary works from any cwd.
     let abs_root       = $root | path expand
     let abs_state_file = [$abs_root, $state_file] | path join
     let abs_spool      = [$abs_root, $spool]      | path join
-
-    # --dispatch-phase-ii: batch-emit Phase-II tasks then return; skip FSM tick.
-    if $dispatch_phase_ii {
-        let summary = dispatch-phase-ii --spool $spool --root $root
-        print ($summary | to toml)
-        return
-    }
 
     log-event "coord_tick_start" {
         state_file: $abs_state_file
