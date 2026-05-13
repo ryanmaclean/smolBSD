@@ -36,7 +36,7 @@ def default-state [] {
         tick_count:         0
         fsm_state:          "idle"
         seen_ids:           []
-        last_tick_at:       (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        last_tick_at:       (date now | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%SZ")
         pending_request_id: ""
         pending_task_id:    ""
         pending_to_addr:    ""
@@ -74,7 +74,7 @@ def save-state [state: record, path: string] {
 # Emit a structured TOML log line to stdout.
 # Every coordinator action is observable via stdout — pipe to `tee` if needed.
 def log-event [event: string, payload: record] {
-    let ts  = date now | format date "%Y-%m-%dT%H:%M:%SZ"
+    let ts  = date now | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%SZ"
     let row = {ts: $ts, event: $event} | merge $payload
     $row | to toml | print
     print "---"
@@ -96,7 +96,7 @@ def write-halt-marker [root: string, task_id: string, reason: string, verdict: s
         task_id:    $task_id
         verdict:    $verdict
         message_id: $message_id
-        halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        halted_at:  (date now | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%SZ")
         reason:     $reason
         attempts:   $attempts
         halt_msgid: $"<halt-($task_id).coord@smolbsd.local>"
@@ -643,7 +643,7 @@ action = \"dispatch\"
         | update fsm_state          "waiting"
         | update attempt_counts     $updated_counts
         | update pending_request_id $msg_id
-        | update dispatched_at      (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        | update dispatched_at      (date now | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%SZ")
     ) $spool $root ($remaining - 1)
 }
 
@@ -693,7 +693,7 @@ def tick [state: record, spool: string, root: string, remaining: int] {
     let next_count = $resumed_state.tick_count + 1
     let stamped = $resumed_state
         | update tick_count $next_count
-        | update last_tick_at (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        | update last_tick_at (date now | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%SZ")
 
     log-event "tick_enter" {tick: $next_count, fsm_state: $stamped.fsm_state, remaining: $remaining}
 

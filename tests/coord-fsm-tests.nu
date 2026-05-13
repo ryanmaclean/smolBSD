@@ -144,20 +144,21 @@ def test-dispatching-to-waiting-to-idle [] {
     let task_id   = "task-0002"
     let spool_path = $root | path join "var" "mail" "spool"
 
-    # Seed state: FSM in "dispatching" with a pending_dispatch record.
+    # Seed state: FSM in "dispatching" with pending request fields populated
+    # to match the current state-dispatching contract in coord-tick.nu.
+    let initial_req_id = $"<task-0002.initial@smolbsd.local>"
     let seed_state = {
-        version:          "1"
-        tick_count:       0
-        fsm_state:        "dispatching"
-        seen_ids:         []
-        last_tick_at:     "2026-05-04T10:00:00Z"
-        pending_dispatch: {
-            task_id:   $task_id
-            to_role:   "builder@smolbsd.local"
-            subject:   "Test dispatch"
-            toml_body: "task_id = \"task-0002\"\naction = \"build\"\n"
-        }
-        dispatch_pid:     0
+        version:            "1"
+        tick_count:         0
+        fsm_state:          "dispatching"
+        seen_ids:           [$initial_req_id]
+        last_tick_at:       "2026-05-04T10:00:00Z"
+        pending_request_id: $initial_req_id
+        pending_task_id:    $task_id
+        pending_to_addr:    "builder@smolbsd.local"
+        dispatched_at:      ""
+        attempt_counts:     {}
+        halted_tasks:       []
     }
 
     let state_path = $root | path join "var" "run" "coord-state.toml"
@@ -177,7 +178,7 @@ def test-dispatching-to-waiting-to-idle [] {
         $r1.exit_code == 0
         and ($state1 | get fsm_state? | default "") == "waiting"
         and ($spool_msgs | length) > 0
-        and ($r1.stdout | str contains "dispatched")
+        and ($r1.stdout | str contains "dispatch_sent")
     )
 
     if not $dispatched_ok {
@@ -189,10 +190,11 @@ def test-dispatching-to-waiting-to-idle [] {
         }
     }
 
-    # Now add a reply to the spool that references the dispatched task's Message-ID.
-    let reply_irt = $"<($task_id).coord@smolbsd.local>"
+    # Extract the actual dispatched Message-ID from the spool (state-dispatching
+    # generates IDs like <coord.N.rN.TS@smolbsd.local>) and reference it.
+    let dispatched_id = $spool_msgs | last | get headers | get "Message-ID"
     let reply_id  = "<task-0002.reply@smolbsd.local>"
-    let reply_env = make-reply-msg $reply_id $reply_irt
+    let reply_env = make-reply-msg $reply_id $dispatched_id
     $reply_env | save --append $spool_path
 
     # Second tick: waiting → reply found → harvesting → idle.
