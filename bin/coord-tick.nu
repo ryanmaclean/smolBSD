@@ -36,7 +36,7 @@ def default-state [] {
         tick_count:         0
         fsm_state:          "idle"
         seen_ids:           []
-        last_tick_at:       (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        last_tick_at:       (date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ")
         pending_request_id: ""
         pending_task_id:    ""
         pending_to_addr:    ""
@@ -74,7 +74,7 @@ def save-state [state: record, path: string] {
 # Emit a structured TOML log line to stdout.
 # Every coordinator action is observable via stdout — pipe to `tee` if needed.
 def log-event [event: string, payload: record] {
-    let ts  = date now | format date "%Y-%m-%dT%H:%M:%SZ"
+    let ts  = date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ"
     let row = {ts: $ts, event: $event} | merge $payload
     $row | to toml | print
     print "---"
@@ -96,7 +96,7 @@ def write-halt-marker [root: string, task_id: string, reason: string, verdict: s
         task_id:    $task_id
         verdict:    $verdict
         message_id: $message_id
-        halted_at:  (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        halted_at:  (date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ")
         reason:     $reason
         attempts:   $attempts
         halt_msgid: $"<halt-($task_id).coord@smolbsd.local>"
@@ -136,6 +136,27 @@ proposed_actions  = [($proposed_actions | each {|a| ('"' + $a + '"')} | str join
 }
 
 # Best-effort IRC DM to operator per spec §13.
+# Walk the In-Reply-To chain from in_reply_to_id upward (up to 8 hops) and
+# return true if ANY message in the thread declared attestation_required = true.
+# This handles chains where a coordinator dispatch wraps an original user request
+# that carried the attestation requirement.
+def request-thread-attestation-required [messages: list, in_reply_to_id: string] {
+    mut current_id = $in_reply_to_id
+    mut hops = 0
+    loop {
+        if $current_id == "" or $hops >= 8 { break }
+        let found = $messages | where {|m| (msg-id $m) == $current_id} | first 1
+        if ($found | length) == 0 { break }
+        let msg = $found | first
+        let payload = extract-toml $msg
+        if ($payload | get "attestation_required"? | default false) { return true }
+        # Follow the chain one more hop
+        $current_id = $msg.headers | get "In-Reply-To"? | default ""
+        $hops = $hops + 1
+    }
+    false
+}
+
 # One TLS attempt on 6697, one plain fallback on 6667, then give up.
 # Result is logged but never fatal — HALT proceeds regardless.
 def try-irc-dm [task_id: string, reason: string, root: string] {
@@ -219,6 +240,8 @@ Do not modify any other messages in the spool. Append only.
         prompt_file:  $prompt_file
         log_file:     $log_file
     }
+}
+
 # Process X-Resume-* messages and clear matching per-task HALTs.
 # Returns updated state; retry/edit resumes remove the task from halted_tasks.
 def process-resume-actions [state: record, root: string, spool: string, event_prefix: string] {
@@ -606,12 +629,12 @@ action = \"dispatch\"
     let agent_type = ($to_addr | split row "@" | first | default "general-purpose")
     spawn-subagent $agent_type $task_id $spool $root
 
-    let updated_counts = $state.attempt_counts | insert $task_id $next_attempt
+    let updated_counts = $state.attempt_counts | upsert $task_id $next_attempt
     tick ($state
         | update fsm_state          "waiting"
         | update attempt_counts     $updated_counts
         | update pending_request_id $msg_id
-        | update dispatched_at      (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        | update dispatched_at      (date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ")
     ) $spool $root ($remaining - 1)
 }
 
@@ -661,7 +684,7 @@ def tick [state: record, spool: string, root: string, remaining: int] {
     let next_count = $resumed_state.tick_count + 1
     let stamped = $resumed_state
         | update tick_count $next_count
-        | update last_tick_at (date now | format date "%Y-%m-%dT%H:%M:%SZ")
+        | update last_tick_at (date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ")
 
     log-event "tick_enter" {tick: $next_count, fsm_state: $stamped.fsm_state, remaining: $remaining}
 
