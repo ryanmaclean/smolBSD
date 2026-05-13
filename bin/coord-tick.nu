@@ -179,6 +179,9 @@ def process-resume-actions [state: record, root: string, spool: string, event_pr
     mut next_state = $state
 
     for msg in $messages {
+        let id = msg-id $msg
+        if $id != "" and ($id in $next_state.seen_ids) { continue }
+
         let resume_tag = $msg.headers | get "X-Resume-Tag"? | default ""
         if $resume_tag == "" { continue }
 
@@ -186,10 +189,11 @@ def process-resume-actions [state: record, root: string, spool: string, event_pr
         if (($matched | length) == 0) { continue }
 
         let task = $matched | first
-        let action_hdr = $msg.headers | get "X-Resume-Action"? | default "retry"
+        let action_hdr = (($msg.headers | get "X-Resume-Action"? | default "retry") | str downcase)
+        let is_retry_as = ($action_hdr | str starts-with "retry-as-")
         log-event $"($event_prefix)_resume_action" {task_id: $task, resume_tag: $resume_tag, action: $action_hdr}
 
-        if $action_hdr == "retry" or $action_hdr == "edit" {
+        if $action_hdr == "retry" or $action_hdr == "edit" or $is_retry_as {
             let per_halt = [$root, "var", "mail", $"HALT.($task)"] | path join
             if ($per_halt | path exists) { rm $per_halt }
             $next_state = ($next_state
@@ -197,6 +201,10 @@ def process-resume-actions [state: record, root: string, spool: string, event_pr
                 | update fsm_state "idle")
         } else {
             log-event $"($event_prefix)_abort" {task_id: $task}
+        }
+
+        if $id != "" {
+            $next_state = ($next_state | update seen_ids ($next_state.seen_ids | append $id))
         }
     }
 
