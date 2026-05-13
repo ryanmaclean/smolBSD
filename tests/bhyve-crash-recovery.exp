@@ -147,8 +147,6 @@ if {$relaunch_cmd ne ""} {
     puts "RELAUNCH_CMD=$relaunch_cmd"
     # exec in background — we do not wait for it; we attach to the console
     # immediately and wait for the boot output to arrive.
-    set relaunch_pid [exec /bin/sh -c "$relaunch_cmd &"; subst {[exec /bin/sh -c "echo \$!"]}]
-    # Simpler: just background it without capturing PID
     catch {exec /bin/sh -c "$relaunch_cmd &"}
     # Brief pause to let bhyve open the nmdm device before cu tries to attach.
     after 500

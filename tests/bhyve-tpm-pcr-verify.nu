@@ -4,7 +4,7 @@
 # plans/tinyos/PHASE-3-TPM.md §6 against a running bhyve+swtpm guest.
 #
 # Tests:
-#   T1  host:  swtpm socket /tmp/swtpm-sock exists (checked locally)
+#   T1  host:  swtpm socket /var/run/smolbsd-tpm/swtpm.sock exists (checked locally)
 #   T2  guest: /dev/tpm0 is a character device
 #   T3  guest: tpmctl -G output contains "2.0" or "TPM"
 #   T4  guest: tpm2_pcrread sha256:0 returns a 32-byte (64 hex char) value
@@ -23,7 +23,7 @@
 # Passwordless key auth is preferred in production; pass --password "" to skip
 # sshpass and rely on ssh-agent / authorized_keys instead.
 
-const SWTPM_SOCK    = "/tmp/swtpm-sock"
+const SWTPM_SOCK    = "/var/run/smolbsd-tpm/swtpm.sock"
 const PCR_ALL_ZEROS = "0000000000000000000000000000000000000000000000000000000000000000"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -75,8 +75,8 @@ def parse-pcr-hex [raw: string] {
 
 def test-t1 [dry_run: bool] {
     let t = "T1"
-    let sub = "swtpm socket /tmp/swtpm-sock exists on host"
-    let exp = "socket file present (test -S /tmp/swtpm-sock exits 0)"
+    let sub = "swtpm socket /var/run/smolbsd-tpm/swtpm.sock exists on host"
+    let exp = "socket file present (test -S /var/run/smolbsd-tpm/swtpm.sock exits 0)"
     let prb = $"test -S ($SWTPM_SOCK) && echo PRESENT"
 
     if $dry_run { return (make-claim $t $sub $exp $prb "dry_run — skipped" "dry_run") }

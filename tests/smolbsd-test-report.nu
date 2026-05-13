@@ -26,14 +26,18 @@ const COL_DETAIL  = 52
 
 # Load and validate a single result file. Returns a record or null on error.
 def load-result [path: string] {
-    let raw = open --raw $path
-    let parsed = $raw | from toml
-    let cols = $parsed | columns
-    # Require the fields we rely on; skip files that look like coord dispatches etc.
-    if not ("overall" in $cols) or not ("tests" in $cols) {
-        return null
+    try {
+        let raw = open --raw $path
+        let parsed = $raw | from toml
+        let cols = $parsed | columns
+        # Require the fields we rely on; skip files that look like coord dispatches etc.
+        if not ("overall" in $cols) or not ("tests" in $cols) {
+            return null
+        }
+        $parsed
+    } catch {
+        null
     }
-    $parsed
 }
 
 # Compute total wall-clock duration across all steps (sum of duration_ms).
