@@ -57,6 +57,23 @@ jobs:
         working-directory: .
         run: nu tests/spawn-subagent-test.nu
 
+      # run-tests.nu --suite unit: runs mbox-parse unit tests + all FSM integration
+      # tests (coord-fsm-tests.nu) without the VM e2e suite (no qcow2 in CI).
+      - name: run-tests unit suite (mbox-parse + FSM)
+        run: nu tests/run-tests.nu --suite unit
+
+      # tpm-seal-test.nu has a built-in skip guard: exits 0 immediately when
+      # tpm2-tools are not installed.  --dry-run also validates script syntax
+      # on any host.
+      - name: tpm-seal-test (dry-run / tpm2-tools absent skip)
+        run: nu tests/tpm-seal-test.nu --dry-run
+
+      # bhyve-tpm-pcr-verify.nu --dry-run skips all SSH + swtpm checks and
+      # verifies the claims-reporting logic exits 0.
+      - name: bhyve-tpm-pcr-verify (dry-run)
+        working-directory: .
+        run: nu tests/bhyve-tpm-pcr-verify.nu --dry-run
+
   # ── Shell script linting ─────────────────────────────────────────────────────
   shellcheck:
     name: Shellcheck
