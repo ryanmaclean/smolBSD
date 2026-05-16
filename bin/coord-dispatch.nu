@@ -164,3 +164,20 @@ export def agent-running? [pid: int] {
     let jobs = job list
     ($jobs | where id == $pid | length) > 0
 }
+
+# Read a dispatch log written by --output-format json (or raw text).
+# Extracts the `result` field, falling back to `content`, then raw text.
+# Returns an empty string if the file does not exist or is unreadable.
+export def read-dispatch-log [log_path: string] {
+    if not ($log_path | path exists) { return "" }
+    let raw = try { open --raw $log_path } catch { return "" }
+    let parsed = try { $raw | from json } catch { null }
+    # Only treat as structured if it parsed to a record (not a bare string)
+    if $parsed != null and (($parsed | describe) | str starts-with "record") {
+        let r = $parsed | get -o result
+        if $r != null { return ($r | into string) }
+        let c = $parsed | get -o content
+        if $c != null { return ($c | into string) }
+    }
+    $raw | str trim
+}

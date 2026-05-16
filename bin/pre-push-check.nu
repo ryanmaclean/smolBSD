@@ -22,15 +22,15 @@ def main [] {
         let line = $entry.item
         let lineno = $entry.index + 1
         # Simple public IP heuristic: x.x.x.x where first octet not 10/172/192
-        if ($line | find --regex '\b(?!10\.|172\.1[6-9]\.|172\.2\d\.|172\.3[01]\.|192\.168\.)(\d{1,3}\.){3}\d{1,3}\b' | length) > 0 {
+        if ([$line] | find --regex '\b(?!10\.|172\.1[6-9]\.|172\.2\d\.|172\.3[01]\.|192\.168\.)(\d{1,3}\.){3}\d{1,3}\b' | length) > 0 {
             $hits = $hits | append $"line ($lineno): possible public IP: ($line | str trim | str substring ..80)"
         }
         # Instance UUIDs (Vultr-style)
-        if ($line | find --regex '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | length) > 0 {
+        if ([$line] | find --regex '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | length) > 0 {
             $hits = $hits | append $"line ($lineno): possible UUID/instance-id: ($line | str trim | str substring ..80)"
         }
         # API keys (long alphanum strings)
-        if ($line | find --regex 'api.key\s*[:=]\s*\S{20,}' | length) > 0 {
+        if ([$line] | find --regex 'api.key\s*[:=]\s*\S{20,}' | length) > 0 {
             $hits = $hits | append $"line ($lineno): possible API key"
         }
     }

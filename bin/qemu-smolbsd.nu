@@ -401,7 +401,7 @@ def main [
         error make {msg: "--image is required (path to smolBSD qcow2 or raw image)"}
     }
 
-    if not ($image | path exists) {
+    if not $dry_run and not ($image | path exists) {
         error make {msg: $"image not found: ($image)"}
     }
 

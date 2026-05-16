@@ -66,6 +66,15 @@ jobs:
       - name: spool-compact tests
         run: nu tests/spool-compact-test.nu
 
+      - name: coord-escalate tests
+        run: nu tests/coord-escalate-test.nu
+
+      - name: spool-emit-control tests
+        run: nu tests/spool-emit-control-test.nu
+
+      - name: pre-push-check tests
+        run: nu tests/pre-push-check-test.nu
+
       # run-tests.nu --suite unit: runs mbox-parse unit tests + all FSM integration
       # tests (coord-fsm-tests.nu) without the VM e2e suite (no qcow2 in CI).
       - name: run-tests unit suite (mbox-parse + FSM)

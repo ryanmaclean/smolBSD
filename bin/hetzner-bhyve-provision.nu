@@ -451,7 +451,7 @@ def provision-robot [
 
     if $dry_run {
         log-step "dry-run" "would POST to /order/server/transaction" {
-            product_id:   $"(example — query /order/server/product to find ($server_type) in ($location))"
+            product_id:   $"<query /order/server/product to find ($server_type) in ($location)>"
             authorized:   "yes"
             comment:      "smolbsd-bhyve Phase-III test host"
             dist:         "FreeBSD-15.0"
