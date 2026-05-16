@@ -106,7 +106,11 @@ jobs:
       # ── 7. Boot QEMU in background ────────────────────────────────────────────
       - name: Boot QEMU (background)
         run: |
-          rm -f "$CONSOLE_SOCK"
+          # The socket may be root-owned from a previous sudo run — use sudo rm
+          sudo rm -f "$CONSOLE_SOCK"
+          # Also kill any stale QEMU from previous runs before starting a new one
+          sudo pkill -f qemu-system-x86_64 2>/dev/null || true
+          sleep 1
           sudo qemu-system-x86_64 \
             -M q35 \
             -accel kvm \
@@ -167,7 +171,8 @@ jobs:
             sudo kill -9 "$QPID" 2>/dev/null || true
             rm -f /tmp/qemu.pid
           fi
+          sudo pkill -f qemu-system-x86_64 2>/dev/null || true
           sudo pkill -f "swtpm.*smolbsd-tpm" 2>/dev/null || true
-          rm -f "/tmp/$IMAGE_Q" "$CONSOLE_SOCK"
-          rm -rf "$TPM_DIR"
+          sudo rm -f "/tmp/$IMAGE_Q" "$CONSOLE_SOCK"
+          sudo rm -rf "$TPM_DIR"
           echo "Cleanup done."
