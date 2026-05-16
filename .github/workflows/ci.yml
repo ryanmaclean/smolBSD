@@ -75,6 +75,15 @@ jobs:
       - name: pre-push-check tests
         run: nu tests/pre-push-check-test.nu
 
+      - name: secret-materialize tests
+        run: nu tests/secret-materialize-test.nu
+
+      - name: secret-wipe tests
+        run: nu tests/secret-wipe-test.nu
+
+      - name: ci-gate tests
+        run: nu tests/ci-gate-test.nu
+
       # run-tests.nu --suite unit: runs mbox-parse unit tests + all FSM integration
       # tests (coord-fsm-tests.nu) without the VM e2e suite (no qcow2 in CI).
       - name: run-tests unit suite (mbox-parse + FSM)
