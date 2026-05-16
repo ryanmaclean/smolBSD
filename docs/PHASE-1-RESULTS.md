@@ -104,3 +104,25 @@ qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M -smp 2 \
   -nic user,model=virtio-net-pci -nographic
 ```
 Expected: login: in <=30s (KVM). fbryz3070 is FreeBSD — needs Linux host for `/dev/kvm`.
+
+## Size Reduction — Phase I Gap
+
+Current: 1.41 GiB qcow2 (target: ≤512 MiB)
+
+### Trims already applied (next build)
+- clang/llvm/libcompiler_rt excluded from pkgbase
+- `/usr/lib/debug`, `/usr/share/doc`, `/usr/share/locale`, `/usr/share/man` stripped
+- `/usr/share/examples`, `/usr/tests`, `/var/cache/pkg`, `/usr/include`, `/usr/lib/*.a` stripped
+- Additional pkg exclusions: vi, games, rescue, sendmail, bsdinstall, caroot, inetd
+- Kernel module trim: bluetooth, sound, netgraph, geom_raid/mirror/stripe, bridge, pf
+
+### Projected savings
+- clang/llvm: ~300-400 MiB
+- debug/doc/locale/man: ~80-100 MiB
+- headers/static libs: ~50-80 MiB
+- Additional pkg + kmod trim: ~20-40 MiB
+- Total projected: ~450-620 MiB savings → expected qcow2 ~790 MiB–960 MiB
+
+### To validate
+Run `bin/analyze-image.sh` on the next build output to confirm budget.
+If still over 512 MiB, next cuts: `/usr/share/zoneinfo` (keep only UTC), swap reduction (256m), VMSIZE=2g.

@@ -55,6 +55,18 @@ tail -f /var/tmp/smolbsd-build.log
 
 The script prints the exact path, size, sha256, and elapsed time on completion.
 
+## Size tuning
+
+The release configs in `release/tools/` filter packages and strip non-essential
+rootfs content in `vm_extra_pre_umount()`. To diagnose size after a build:
+
+```sh
+bin/analyze-image.sh path/to/FreeBSD-15-aarch64-smolbsd.qcow2
+```
+
+This mounts the image read-only and reports top directories, top files, and
+installed packages, then exits non-zero if total exceeds 512 MiB.
+
 ## Partial runs
 
 If buildworld already completed and the obj tree is intact:
