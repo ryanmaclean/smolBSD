@@ -1,0 +1,171 @@
+# SPDX-License-Identifier: Apache-2.0
+# tpm-vm-test.yml — FreeBSD 15.1-STABLE TPM smoke test on pop4090 self-hosted runner.
+#
+# Boots a FreeBSD qcow2 image under QEMU with a software TPM (swtpm), reads PCR0,
+# and verifies it matches the known-good value from manual validation.
+#
+# Runner requirements (pop4090):
+#   /dev/kvm, qemu-system-x86_64, swtpm, sshpass, python3
+#   /usr/share/qemu/OVMF.fd
+
+name: TPM VM Smoke Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'bin/swtpm-setup.nu'
+      - 'bin/qemu-smolbsd.nu'
+      - 'tests/tpm-*.nu'
+      - 'tests/tpm-*.exp'
+      - '.github/workflows/tpm-vm-test.yml'
+
+jobs:
+  tpm-smoke:
+    name: FreeBSD TPM smoke test
+    runs-on: [self-hosted, linux, amd64, kvm]
+    timeout-minutes: 10
+
+    env:
+      IMAGE_URL: "https://download.freebsd.org/snapshots/VM-IMAGES/15.1-STABLE/amd64/Latest/FreeBSD-15.1-STABLE-amd64-ufs.qcow2.xz"
+      IMAGE_XZ:  "FreeBSD-15.1-STABLE-amd64-ufs.qcow2.xz"
+      IMAGE_Q:   "FreeBSD-15.1-STABLE-amd64-ufs.qcow2"
+      IMGDIR:    "/tmp/smolbsd-ci"
+      TPM_DIR:   "/tmp/smolbsd-tpm"
+      TPM_SOCK:  "/tmp/smolbsd-tpm/swtpm.sock"
+      CONSOLE_SOCK: "/tmp/smolbsd-console.sock"
+      SSH_PORT:  "2241"
+      # Known-good PCR0 from manual validation 2026-05-16
+      EXPECTED_PCR0: "B6A903D197F7F1DFDAD0C3D74244009C9AA407F55AE5F753D7F8B3F0C10F5727"
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Compute cache key ───────────────────────────────────────────────────
+      - name: Compute image cache key
+        id: cache-key
+        run: |
+          KEY=$(printf '%s' "$IMAGE_URL" | sha256sum | cut -d' ' -f1)
+          echo "key=freebsd-image-${KEY}" >> "$GITHUB_OUTPUT"
+
+      # ── 3. Restore cached image ────────────────────────────────────────────────
+      - name: Restore FreeBSD image cache
+        id: cache-image
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.IMGDIR }}/${{ env.IMAGE_Q }}
+          key: ${{ steps.cache-key.outputs.key }}
+
+      # ── 4. Download + decompress (cache miss only) ─────────────────────────────
+      - name: Download FreeBSD image
+        if: steps.cache-image.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$IMGDIR"
+          echo "Downloading $IMAGE_URL ..."
+          curl -fsSL --retry 3 --retry-delay 5 \
+            -o "$IMGDIR/$IMAGE_XZ" \
+            "$IMAGE_URL"
+
+      - name: Decompress image
+        if: steps.cache-image.outputs.cache-hit != 'true'
+        run: |
+          xz --decompress --keep "$IMGDIR/$IMAGE_XZ"
+          echo "Image ready: $IMGDIR/$IMAGE_Q ($(du -sh "$IMGDIR/$IMAGE_Q" | cut -f1))"
+
+      - name: Verify image present
+        run: |
+          test -f "$IMGDIR/$IMAGE_Q" || { echo "ERROR: image missing" >&2; exit 1; }
+          echo "Image OK: $(ls -lh "$IMGDIR/$IMAGE_Q")"
+
+      # ── 5. Create throwaway working copy ──────────────────────────────────────
+      - name: Create working copy of image
+        run: cp "$IMGDIR/$IMAGE_Q" "/tmp/$IMAGE_Q"
+
+      # ── 6. Start swtpm daemon ──────────────────────────────────────────────────
+      - name: Start swtpm daemon
+        run: |
+          rm -rf "$TPM_DIR"
+          mkdir -p "$TPM_DIR"
+          sudo swtpm socket \
+            --tpmstate "dir=$TPM_DIR" \
+            --tpm2 \
+            --ctrl "type=unixio,path=$TPM_SOCK" \
+            --daemon
+          for i in $(seq 1 30); do
+            [ -S "$TPM_SOCK" ] && break
+            sleep 0.1
+          done
+          [ -S "$TPM_SOCK" ] || { echo "ERROR: swtpm socket did not appear" >&2; exit 1; }
+          echo "swtpm ready: $TPM_SOCK"
+
+      # ── 7. Boot QEMU in background ────────────────────────────────────────────
+      - name: Boot QEMU (background)
+        run: |
+          rm -f "$CONSOLE_SOCK"
+          sudo qemu-system-x86_64 \
+            -M q35 \
+            -accel kvm \
+            -cpu host \
+            -bios /usr/share/qemu/OVMF.fd \
+            -m 512M \
+            -smp 2 \
+            -drive "file=/tmp/$IMAGE_Q,format=qcow2,if=virtio" \
+            -nic "user,model=virtio-net-pci,hostfwd=tcp::${SSH_PORT}-:22" \
+            -chardev "socket,path=$TPM_SOCK,id=chrtpm" \
+            -tpmdev "emulator,id=tpm0,chardev=chrtpm" \
+            -device "tpm-tis,tpmdev=tpm0" \
+            -chardev "socket,path=$CONSOLE_SOCK,server=on,wait=off,id=console" \
+            -serial chardev:console \
+            -nographic \
+            -monitor none \
+            &
+          echo $! > /tmp/qemu.pid
+          echo "QEMU PID: $(cat /tmp/qemu.pid)"
+
+      # ── 8. Wait for boot, fix sshd via console, read PCR0 via SSH ─────────────
+      - name: Configure guest and read PCR0
+        id: pcr-check
+        run: |
+          python3 tests/tpm-smoke-test.py \
+            --console "$CONSOLE_SOCK" \
+            --ssh-port "$SSH_PORT" \
+            --expected-pcr0 "$EXPECTED_PCR0"
+
+      # ── 9. Job summary ────────────────────────────────────────────────────────
+      - name: Report result
+        if: always()
+        run: |
+          PCR0="${{ steps.pcr-check.outputs.pcr0 }}"
+          EXPECTED="$EXPECTED_PCR0"
+          {
+            echo "### TPM Smoke Test"
+            echo ""
+            echo "| Field    | Value |"
+            echo "|----------|-------|"
+            echo "| PCR0     | \`${PCR0:-not read}\` |"
+            echo "| Expected | \`${EXPECTED}\` |"
+            if [ "${PCR0}" = "${EXPECTED}" ]; then
+              echo "| Result   | **PASS** |"
+            else
+              echo "| Result   | **FAIL** |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 10. Cleanup (always) ──────────────────────────────────────────────────
+      - name: Cleanup QEMU and swtpm
+        if: always()
+        run: |
+          if [ -f /tmp/qemu.pid ]; then
+            QPID=$(cat /tmp/qemu.pid)
+            sudo kill "$QPID" 2>/dev/null || true
+            sleep 2
+            sudo kill -9 "$QPID" 2>/dev/null || true
+            rm -f /tmp/qemu.pid
+          fi
+          sudo pkill -f "swtpm.*smolbsd-tpm" 2>/dev/null || true
+          rm -f "/tmp/$IMAGE_Q" "$CONSOLE_SOCK"
+          rm -rf "$TPM_DIR"
+          echo "Cleanup done."
