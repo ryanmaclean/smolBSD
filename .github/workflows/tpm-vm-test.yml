@@ -128,6 +128,13 @@ jobs:
             &
           echo $! > /tmp/qemu.pid
           echo "QEMU PID: $(cat /tmp/qemu.pid)"
+          # Wait for console socket to appear then chmod so the runner user can connect
+          for i in $(seq 1 30); do
+            [ -S "$CONSOLE_SOCK" ] && break
+            sleep 0.2
+          done
+          sudo chmod 666 "$CONSOLE_SOCK" 2>/dev/null || true
+          echo "Console socket: $(ls -la "$CONSOLE_SOCK" 2>/dev/null || echo 'not yet present')"
 
       # ── 8. Fix sshd via console socket (removes XMSS keys, enables root login)
       - name: Fix guest sshd via console
