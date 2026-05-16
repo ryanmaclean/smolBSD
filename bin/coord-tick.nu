@@ -167,6 +167,7 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
     let result = try {
         # TLS attempt on 6697 — pipe IRC NICK/USER/PRIVMSG/QUIT sequence
         let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
+        # out+err> /dev/null: suppress both stdout (s_client banner) and stderr (error msgs)
         let out = $irc_cmds | ^openssl s_client -connect $"($irc_host):6697" -quiet -timeout 10 out+err> /dev/null
         "tls-ok"
     } catch {
