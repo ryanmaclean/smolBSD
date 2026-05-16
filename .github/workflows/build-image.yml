@@ -44,7 +44,7 @@ jobs:
     steps:
       # ── 1. Checkout ─────────────────────────────────────────────────────────
       - name: Checkout smolBSD
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       # ── 2. Verify base FreeBSD image is present ──────────────────────────────
       - name: Check base FreeBSD VM image
