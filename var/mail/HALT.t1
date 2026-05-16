@@ -1,0 +1,5 @@
+task_id       = "t1"
+reason        = "retry-exhausted"
+verdict       = ""
+attempts      = 0
+escalated_at  = "2026-05-16T20:09:29Z"

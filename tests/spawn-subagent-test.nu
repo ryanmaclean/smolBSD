@@ -76,11 +76,24 @@ exit 0
     # Stub must have been invoked.
     assert ($recorded | str contains "INVOKED ")
     # The model flag and `-p` flag must have been passed.
+    # Extract the default model name from coord-tick.nu rather than hard-coding it.
+    let default_model = (
+        open --raw "bin/coord-tick.nu"
+        | lines
+        | where {|l| ($l | str contains "default") and ($l | str contains "SMOLBSD_CLAUDE_MODEL")}
+        | first
+        | parse --regex '\"([^"]+)\"$'
+        | get capture0
+        | first
+    )
     assert ($recorded | str contains "--model")
-    assert ($recorded | str contains "claude-sonnet-4-6")
-    assert ($recorded | str contains "-p")
-    # Prompt content must reference the task_id.
-    assert ($recorded | str contains "t-spawn")
+    assert ($recorded | str contains $default_model)
+    assert ($recorded | str contains "--print")
+    assert ($recorded | str contains "--bare")
+    assert ($recorded | str contains "--allowedTools")
+    assert ($recorded | str contains "--max-budget-usd")
+    # Prompt is now passed via stdin redirect, not as a CLI arg; task_id is
+    # verified in the prompt file content checks below (lines 102-103).
 
     # Spawn artifacts must have been written.
     let prompt_file = [$tmp, "var", "run", "spawned", "t-spawn.prompt.txt"] | path join

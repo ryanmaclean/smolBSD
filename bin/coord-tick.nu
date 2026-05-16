@@ -167,7 +167,7 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
     let result = try {
         # TLS attempt on 6697 — pipe IRC NICK/USER/PRIVMSG/QUIT sequence
         let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
-        let out = $irc_cmds | ^openssl s_client -connect $"($irc_host):6697" -quiet -timeout 10 2>/dev/null
+        let out = $irc_cmds | ^openssl s_client -connect $"($irc_host):6697" -quiet -timeout 10 out+err> /dev/null
         "tls-ok"
     } catch {
         # Plain fallback on 6667
@@ -234,7 +234,9 @@ Do not modify any other messages in the spool. Append only.
 
     # override with SMOLBSD_CLAUDE_MODEL env var
     let model = $env | get SMOLBSD_CLAUDE_MODEL? | default "claude-sonnet-4-6"
-    let sh_cmd = $"claude --model ($model) -p \"$\(cat '($prompt_file)'\)\" >'($log_file)' 2>&1 &"
+    # Launch claude as a truly-detached process (survives coord-tick.nu exit).
+    # Prompt is passed via stdin redirect to avoid shell quoting fragility.
+    let sh_cmd = $"claude --print --bare --allowedTools 'Write,Bash,Read,Glob,Grep' --max-budget-usd 1.0 --model ($model) < '($prompt_file)' >'($log_file)' 2>&1 &"
     ^sh -c $sh_cmd
 
     log-event "subagent_spawned" {
