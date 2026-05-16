@@ -98,20 +98,10 @@ def run-archive [
     --state:   string = "var/run/coord-state.toml"
 ] {
     let dry_flag = if $dry_run { ["--dry-run"] } else { [] }
-    # Run archive; capture stdout only (stderr log lines go to /dev/null).
-    # We use a shell wrapper so we can redirect stderr cleanly.
-    let cmd_args = (
-        [
-            "bin/spool-archive.nu"
-            "--root" $root
-            "--threshold" ($threshold | into string)
-            "--spool" $spool
-            "--state" $state
-        ] | append $dry_flag | str join " "
-    )
-    let raw = ^sh -c $"nu ($cmd_args) 2>/dev/null"
-    # Output is a compact JSON line emitted by the archive script.
-    $raw | str trim | from json
+    let args = (["--root" $root "--threshold" ($threshold | into string) "--spool" $spool "--state" $state] | append $dry_flag)
+    # capture stdout only; stderr (log lines) discarded via complete
+    let r = ^nu --no-config-file bin/spool-archive.nu ...$args | complete
+    $r.stdout | str trim | from json
 }
 
 # ── Test 1: basic rotation — 150 msgs, threshold 50 ─────────────────────────

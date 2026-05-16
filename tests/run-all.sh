@@ -5,10 +5,13 @@ FAIL=0
 SKIP=0
 for f in tests/*-test.nu; do
     printf "running %s ... " "$f"
-    output=$(nu "$f" 2>&1) || { echo "FAILED"; FAIL=$((FAIL + 1)); continue; }
-    if printf '%s\n' "$output" | grep -q ': SKIP —'; then
+    nu "$f" 2>&1; _exit=$?
+    if [ $_exit -eq 77 ]; then
         echo "skip"
         SKIP=$((SKIP + 1))
+    elif [ $_exit -ne 0 ]; then
+        echo "FAILED"
+        FAIL=$((FAIL + 1))
     else
         echo "ok"
         PASS=$((PASS + 1))

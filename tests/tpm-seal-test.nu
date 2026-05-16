@@ -76,8 +76,8 @@ export def main [
 ] {
     # Preflight: skip gracefully when tpm2-tools is not installed.
     if (which tpm2_createprimary | length) == 0 {
-        print "tpm-seal-test: SKIP — tpm2-tools not installed"
-        exit 0
+        print "tpm-seal-test: skipping — tpm2-tools not installed"
+        exit 77  # standard skip exit code (GNU autotest convention)
     }
 
     let secret_text = "smolbsd-seal-test"

@@ -70,9 +70,9 @@ do {
     # Summary output must mention addresses from both messages
     assert ($out.stdout | str contains "coordinator@smolbsd.local")
     assert ($out.stdout | str contains "architect@smolbsd.local")
-    # Summary must include both row indices (0 and 1)
-    assert ($out.stdout | str contains "0")
-    assert ($out.stdout | str contains "1")
+    # Summary must include both Message-IDs from the fixture
+    assert ($out.stdout | str contains "task-st-1.coord@smolbsd.local")
+    assert ($out.stdout | str contains "task-st-1.architect@smolbsd.local")
 
     rm $spool
 }

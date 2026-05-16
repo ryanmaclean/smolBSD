@@ -99,15 +99,9 @@ def run-compact [
     --dry-run
 ] {
     let dry_flag = if $dry_run { ["--dry-run"] } else { [] }
-    let cmd_args = (
-        [
-            "bin/spool-compact.nu"
-            "--spool" $spool
-            "--keep-last" ($keep_last | into string)
-        ] | append $dry_flag | str join " "
-    )
-    let raw = ^sh -c $"nu ($cmd_args) 2>/dev/null"
-    $raw | str trim | from json
+    let args = (["--spool" $spool "--keep-last" ($keep_last | into string)] | append $dry_flag)
+    let r = ^nu --no-config-file bin/spool-compact.nu ...$args | complete
+    $r.stdout | str trim | from json
 }
 
 # ── Test 1: dedup removes duplicate Message-IDs ───────────────────────────────
