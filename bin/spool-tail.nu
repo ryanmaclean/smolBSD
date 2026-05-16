@@ -70,7 +70,7 @@ def print-message [msg: record, idx: int] {
     } else {
         let toml = extract-toml $msg
         if ($toml | get -o "_parse_error" | is-not-empty) {
-            print $"(! TOML parse error: ($toml._parse_error))"
+            print $"[TOML parse error: ($toml._parse_error)]"
             print "--- raw body ---"
             print $body
         } else {
@@ -157,5 +157,6 @@ def main [
     let rows = $messages | enumerate | each {|e|
         build-summary-row $e.item $e.index
     }
-    print $rows
+    # Use a wide rendering so verdict column is not elided in narrow terminals
+    print ($rows | table --width 300)
 }

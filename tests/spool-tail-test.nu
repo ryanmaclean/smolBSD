@@ -198,7 +198,7 @@ NOT VALID TOML @@@@ ===
     # --last 1 should show raw body + parse error annotation
     let out_full = ^nu bin/spool-tail.nu --spool $tmp --last 1 | complete
     assert equal $out_full.exit_code 0
-    assert ($out_full.stdout | str contains "TOML parse error")
+    assert ($out_full.stdout | str contains "[TOML parse error:")
 
     rm $tmp
 }
