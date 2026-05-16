@@ -246,3 +246,30 @@ jobs:
             echo "PASS: empty DESTDIR guard fired correctly"
           fi
           exit "$fail"
+
+  # ── Dry-run / preflight tests for hardware scripts ────────────────────────────
+  dry-run-tests:
+    name: Dry-run preflight tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nushell
+        run: |
+          NU_VERSION="0.112.2"
+          ARCH=$(uname -m | sed 's/arm64/aarch64/')
+          TRIPLE="${ARCH}-unknown-linux-musl"
+          ARCHIVE="nu-${NU_VERSION}-${TRIPLE}.tar.gz"
+          mkdir -p "$HOME/.local/bin"
+          curl -sSL "https://github.com/nushell/nushell/releases/download/${NU_VERSION}/${ARCHIVE}" \
+            | tar -xz -C "$HOME/.local/bin" --strip-components=1 "nu-${NU_VERSION}-${TRIPLE}/nu"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: build-smolbsd preflight test
+        run: nu tests/build-smolbsd-test.nu
+      - name: harvest-build dry-run test
+        run: nu tests/harvest-build-test.nu
+      - name: qemu-smolbsd dry-run test
+        run: nu tests/qemu-smolbsd-test.nu
+      - name: hetzner-bhyve-provision dry-run test
+        run: nu tests/hetzner-provision-test.nu
+      - name: vultr-bhyve-provision dry-run test
+        run: nu tests/vultr-provision-test.nu
