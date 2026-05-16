@@ -56,8 +56,10 @@ Reply format: standard smolBSD mbox+TOML envelope with X-Verdict: pass|fail and 
 
     let result = try {
         let claude_bin = $claude
+        # override with SMOLBSD_CLAUDE_MODEL env var
+        let model = $env | get SMOLBSD_CLAUDE_MODEL? | default "claude-sonnet-4-6"
         let job_id = job spawn {
-            ^$claude_bin --print --model claude-sonnet-4-6 $prompt o> $log_path e>> $log_path
+            ^$claude_bin --print --model $model $prompt o> $log_path e>> $log_path
         }
         {launched: true, pid: $job_id, log_path: $log_path, started_at: $ts}
     } catch {|err|

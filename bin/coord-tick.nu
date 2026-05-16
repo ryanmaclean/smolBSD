@@ -232,7 +232,9 @@ Do not modify any other messages in the spool. Append only.
 "
     $prompt | save --force $prompt_file
 
-    let sh_cmd = $"claude --model claude-sonnet-4-6 -p \"$\(cat '($prompt_file)'\)\" >'($log_file)' 2>&1 &"
+    # override with SMOLBSD_CLAUDE_MODEL env var
+    let model = $env | get SMOLBSD_CLAUDE_MODEL? | default "claude-sonnet-4-6"
+    let sh_cmd = $"claude --model ($model) -p \"$\(cat '($prompt_file)'\)\" >'($log_file)' 2>&1 &"
     ^sh -c $sh_cmd
 
     log-event "subagent_spawned" {

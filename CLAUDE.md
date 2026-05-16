@@ -32,6 +32,7 @@ Optional environment variables:
 | `HALT_INTERVAL` | `10` | Seconds to sleep while halted |
 | `STATE_FILE` | `var/run/coord-state.toml` | FSM state file |
 | `SPOOL` | `var/mail/spool` | mbox spool path |
+| `SMOLBSD_CLAUDE_MODEL` | `claude-sonnet-4-6` | Claude model for subagent dispatch |
 
 Run a single tick manually:
 
