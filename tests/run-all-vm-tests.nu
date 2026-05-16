@@ -177,6 +177,7 @@ def main [
             exit 0
         }
 
+        # Build status string separately: Nu 0.111 can't nest (($a)/($b)) in $"..."
         let gate_status = $"($consec)/($required_passes) consecutive passes"
         print $"  gate: closed (($gate_status))"
 
