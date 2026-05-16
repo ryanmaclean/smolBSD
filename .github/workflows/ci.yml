@@ -90,4 +90,101 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Lint shell scripts
-        run: shellcheck bin/coord-run.sh tests/run-all.sh
+        run: |
+          shellcheck bin/coord-run.sh tests/run-all.sh \
+                     bin/analyze-image.sh bin/harvest.sh
+          shellcheck --shell=sh \
+                     release/tools/smolbsd-qemu.conf \
+                     release/tools/smolbsd-qemu-aarch64.conf
+
+  # ── Release config hook smoke-test ───────────────────────────────────────────
+  conf-hook-test:
+    name: Release conf hook test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke-test vm_extra_pre_umount trim logic
+        shell: bash
+        run: |
+          set -eu
+          DESTDIR=$(mktemp -d)
+          # Create the directory tree that vm_extra_pre_umount strips
+          mkdir -p \
+            "$DESTDIR/usr/share/doc" \
+            "$DESTDIR/usr/share/locale" \
+            "$DESTDIR/usr/share/man" \
+            "$DESTDIR/usr/share/examples" \
+            "$DESTDIR/usr/share/nls" \
+            "$DESTDIR/usr/share/openssl" \
+            "$DESTDIR/usr/share/zoneinfo/America" \
+            "$DESTDIR/usr/share/zoneinfo/Europe" \
+            "$DESTDIR/usr/lib/debug" \
+            "$DESTDIR/usr/tests" \
+            "$DESTDIR/var/cache/pkg" \
+            "$DESTDIR/usr/include" \
+            "$DESTDIR/usr/lib" \
+            "$DESTDIR/usr/bin" \
+            "$DESTDIR/boot/kernel" \
+            "$DESTDIR/etc/ssh" \
+            "$DESTDIR/etc/pam.d" \
+            "$DESTDIR/lib" \
+            "$DESTDIR/usr/lib/compat" \
+            "$DESTDIR/var/empty"
+          touch "$DESTDIR/usr/lib/libfoo.a"
+          touch "$DESTDIR/usr/share/zoneinfo/UTC"
+          touch "$DESTDIR/usr/share/zoneinfo/America/New_York"
+          # Stub out commands that require real system tools
+          pw()        { :; }
+          ssh-keygen(){ touch "${2}" "${2}.pub"; }
+          # shellcheck disable=SC2317
+          chown()     { :; }
+          # shellcheck disable=SC2317
+          chmod()     { :; }
+          export -f pw ssh-keygen chown chmod
+          # Source and exercise the amd64 config
+          # shellcheck source=release/tools/smolbsd-qemu.conf
+          . release/tools/smolbsd-qemu.conf
+          vm_extra_pre_umount
+          # Assert expected dirs are gone
+          fail=0
+          for d in \
+            "$DESTDIR/usr/share/doc" \
+            "$DESTDIR/usr/share/locale" \
+            "$DESTDIR/usr/share/man" \
+            "$DESTDIR/usr/share/examples" \
+            "$DESTDIR/usr/lib/debug" \
+            "$DESTDIR/usr/tests" \
+            "$DESTDIR/var/cache/pkg" \
+            "$DESTDIR/usr/include"; do
+            if [ -e "$d" ]; then
+              echo "FAIL: expected $d to be removed" >&2; fail=1
+            else
+              echo "PASS: $d removed"
+            fi
+          done
+          if [ -f "$DESTDIR/usr/lib/libfoo.a" ]; then
+            echo "FAIL: static lib not removed" >&2; fail=1
+          else
+            echo "PASS: static lib removed"
+          fi
+          # UTC zoneinfo retained; America/ stripped
+          if [ ! -f "$DESTDIR/usr/share/zoneinfo/UTC" ]; then
+            echo "FAIL: UTC zoneinfo removed (should be kept)" >&2; fail=1
+          else
+            echo "PASS: UTC zoneinfo retained"
+          fi
+          if [ -d "$DESTDIR/usr/share/zoneinfo/America" ]; then
+            echo "FAIL: America/ zoneinfo not removed" >&2; fail=1
+          else
+            echo "PASS: America/ zoneinfo removed"
+          fi
+          # Safety guard: empty DESTDIR must abort
+          export DESTDIR=""
+          # shellcheck source=release/tools/smolbsd-qemu.conf
+          . release/tools/smolbsd-qemu.conf
+          if vm_extra_pre_umount 2>/dev/null; then
+            echo "FAIL: empty DESTDIR guard did not fire" >&2; fail=1
+          else
+            echo "PASS: empty DESTDIR guard fired correctly"
+          fi
+          exit "$fail"

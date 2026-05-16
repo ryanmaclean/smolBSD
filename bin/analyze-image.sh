@@ -63,6 +63,7 @@ fi
 
 # ---- mount the rootfs in a portable way -----------------------------------
 MOUNT=$(mktemp -d -t smolbsd-analyze.XXXXXX)
+# shellcheck disable=SC2317  # called via trap EXIT INT TERM
 cleanup() {
     case "$uname_s" in
         Linux)
@@ -71,7 +72,7 @@ cleanup() {
             ;;
         FreeBSD)
             sudo umount "$MOUNT" 2>/dev/null || true
-            [ -n "${MD:-}" ] && sudo mdconfig -d -u "$MD" 2>/dev/null || true
+            if [ -n "${MD:-}" ]; then sudo mdconfig -d -u "$MD" 2>/dev/null || true; fi
             ;;
     esac
     rmdir "$MOUNT" 2>/dev/null || true
