@@ -1,0 +1,125 @@
+# SPDX-License-Identifier: Apache-2.0
+# build-image.yml — build smolBSD amd64 qcow2 on pop4090 via a FreeBSD QEMU build VM.
+#
+# Why self-hosted?  make release / make vm-image requires FreeBSD-native tools
+# (newfs, mdconfig).  We boot a FreeBSD VM under KVM on pop4090 (Linux AMD Ryzen),
+# run the full build inside it, then SCP the artifact back to the runner.
+#
+# Runner requirements (pop4090, 10.0.2.42):
+#   - /dev/kvm
+#   - qemu-system-x86_64 (QEMU 8.2+)
+#   - sshpass
+#   - nushell (nu) in PATH
+#   - ~/smolbsd-tpm-test/FreeBSD-15.1-STABLE-amd64-ufs.qcow2  (base build VM)
+#   - /usr/share/qemu/OVMF.fd
+#
+# On success, the workflow triggers tpm-vm-test.yml with the new artifact.
+
+name: Build smolBSD Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_kernel:
+        description: "Build kernel inside the FreeBSD VM (true/false)"
+        required: false
+        default: "true"
+        type: boolean
+
+# Cancel any in-progress run for the same ref so push-and-rebuild is safe.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-smolbsd:
+    name: Build smolBSD amd64 qcow2
+    runs-on: [self-hosted, linux, amd64]
+    timeout-minutes: 120   # kernel build is ~20 min + vm-image ~30 min under KVM
+
+    env:
+      OUTPUT_DIR: ${{ github.workspace }}/artifacts
+      SSH_PORT:   "2242"
+
+    steps:
+      # ── 1. Checkout ─────────────────────────────────────────────────────────
+      - name: Checkout smolBSD
+        uses: actions/checkout@v4.2.2
+
+      # ── 2. Verify base FreeBSD image is present ──────────────────────────────
+      - name: Check base FreeBSD VM image
+        shell: bash
+        run: |
+          BASE_PATH="${HOME}/smolbsd-tpm-test/FreeBSD-15.1-STABLE-amd64-ufs.qcow2"
+          if [ ! -f "${BASE_PATH}" ]; then
+            echo "ERROR: base image not found at ${BASE_PATH}"
+            echo "Download from https://download.freebsd.org/releases/VM-IMAGES/15.1-STABLE/amd64/Latest/"
+            echo "and place it at ${BASE_PATH}"
+            exit 1
+          fi
+          echo "BASE_IMAGE=${BASE_PATH}" >> "$GITHUB_ENV"
+          echo "Base image found: $(du -sh "${BASE_PATH}" | cut -f1)"
+
+      # ── 3. Create artifacts directory ────────────────────────────────────────
+      - name: Prepare output directory
+        shell: bash
+        run: mkdir -p "${OUTPUT_DIR}"
+
+      # ── 4. Run the Nushell build script ──────────────────────────────────────
+      - name: Build smolBSD qcow2
+        shell: bash
+        run: |
+          nu bin/build-smolbsd-image.nu \
+            --vm-image "${BASE_IMAGE}" \
+            --ssh-port "${SSH_PORT}" \
+            --output-dir "${OUTPUT_DIR}"
+
+      # ── 5. Sanity-check the artifact ─────────────────────────────────────────
+      - name: Verify artifact exists
+        shell: bash
+        run: |
+          ARTIFACT=$(find "${OUTPUT_DIR}" -name "*.qcow2" -type f | head -1)
+          if [ -z "${ARTIFACT}" ]; then
+            echo "ERROR: no qcow2 found in ${OUTPUT_DIR}"
+            exit 1
+          fi
+          SIZE=$(du -sh "${ARTIFACT}" | cut -f1)
+          echo "ARTIFACT_PATH=${ARTIFACT}" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=$(basename "${ARTIFACT}")" >> "$GITHUB_ENV"
+          echo "Artifact: ${ARTIFACT} (${SIZE})"
+          # Emit a sha256 for provenance
+          sha256sum "${ARTIFACT}" | tee "${OUTPUT_DIR}/smolbsd-amd64.sha256"
+
+      # ── 6. Upload artifact ───────────────────────────────────────────────────
+      - name: Upload smolBSD qcow2 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smolbsd-amd64-qcow2
+          path: |
+            ${{ env.OUTPUT_DIR }}/*.qcow2
+            ${{ env.OUTPUT_DIR }}/*.sha256
+          retention-days: 14
+          if-no-files-found: error
+
+      # ── 7. On success: trigger TPM smoke test with new artifact ───────────────
+      - name: Trigger TPM VM smoke test
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          CURRENT_REF:    ${{ github.ref }}
+        run: |
+          gh workflow run tpm-vm-test.yml \
+            --ref "${CURRENT_REF}" \
+            -f artifact_name="smolbsd-amd64-qcow2" \
+            -f run_id="${CURRENT_RUN_ID}" \
+            || echo "WARNING: could not trigger tpm-vm-test.yml — continuing"
+
+      # ── Cleanup: always stop stray QEMU processes ────────────────────────────
+      - name: Cleanup stray QEMU processes
+        if: always()
+        shell: bash
+        run: |
+          pkill -f "qemu-system-x86_64.*smolbsd-build-vm" || true
+          rm -f /tmp/smolbsd-build-vm.qcow2 || true
