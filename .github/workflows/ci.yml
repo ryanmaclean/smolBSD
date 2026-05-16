@@ -118,6 +118,37 @@ jobs:
                      release/tools/smolbsd-qemu.conf \
                      release/tools/smolbsd-qemu-aarch64.conf
 
+  # ── Nu script syntax check ────────────────────────────────────────────────────
+  nu-syntax:
+    name: Nu syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nushell
+        run: |
+          NU_VERSION="0.112.2"
+          ARCH=$(uname -m | sed 's/arm64/aarch64/')
+          TRIPLE="${ARCH}-unknown-linux-musl"
+          ARCHIVE="nu-${NU_VERSION}-${TRIPLE}.tar.gz"
+          mkdir -p "$HOME/.local/bin"
+          curl -sSL "https://github.com/nushell/nushell/releases/download/${NU_VERSION}/${ARCHIVE}" \
+            | tar -xz -C "$HOME/.local/bin" --strip-components=1 "nu-${NU_VERSION}-${TRIPLE}/nu"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Syntax-check all bin/*.nu scripts
+        run: |
+          fail=0
+          for f in bin/*.nu; do
+            result=$(nu --no-config-file -c "use $f" 2>&1)
+            if [ -n "$result" ]; then
+              echo "SYNTAX ERROR: $f"
+              echo "$result"
+              fail=1
+            else
+              echo "OK: $f"
+            fi
+          done
+          exit $fail
+
   # ── Release config hook smoke-test ───────────────────────────────────────────
   conf-hook-test:
     name: Release conf hook test

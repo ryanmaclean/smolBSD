@@ -222,7 +222,7 @@ def step-launch [
 
     let script = if $backend == "qemu" { "bin/qemu-smolbsd.nu" } else { "bin/bhyve-smolbsd.nu" }
 
-    let job_id = job spawn --tag $"vm-($vm_name)" {
+    let job_id = job spawn {
         ^nu $script ...$args
     }
 
