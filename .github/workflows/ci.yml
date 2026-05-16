@@ -135,7 +135,13 @@ jobs:
           touch "$DESTDIR/usr/share/zoneinfo/America/New_York"
           # Stub out commands that require real system tools
           pw()        { :; }
-          ssh-keygen(){ touch "${2}" "${2}.pub"; }
+          ssh-keygen(){
+            local f=""
+            while [ $# -gt 0 ]; do
+              [ "$1" = "-f" ] && { f="$2"; shift 2; } || shift
+            done
+            [ -n "$f" ] && mkdir -p "$(dirname "$f")" && touch "$f" "$f.pub"
+          }
           # shellcheck disable=SC2317
           chown()     { :; }
           # shellcheck disable=SC2317
