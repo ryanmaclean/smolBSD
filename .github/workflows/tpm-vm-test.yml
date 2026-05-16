@@ -72,6 +72,8 @@ jobs:
       - name: Decompress image
         if: steps.cache-image.outputs.cache-hit != 'true'
         run: |
+          # Remove stale decompressed copy if present (xz --keep won't overwrite)
+          rm -f "$IMGDIR/$IMAGE_Q"
           xz --decompress --keep "$IMGDIR/$IMAGE_XZ"
           echo "Image ready: $IMGDIR/$IMAGE_Q ($(du -sh "$IMGDIR/$IMAGE_Q" | cut -f1))"
 
