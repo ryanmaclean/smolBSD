@@ -75,7 +75,8 @@ export def main [
     --work-dir: string = "/tmp/smolbsd-tpm-seal-test" # scratch dir for keys and blobs
 ] {
     # Preflight: skip gracefully when tpm2-tools is not installed.
-    if (which tpm2_createprimary | length) == 0 {
+    # --dry-run validates script logic without real tools, so only skip when not in dry-run.
+    if not $dry_run and (which tpm2_createprimary | length) == 0 {
         print "tpm-seal-test: skipping — tpm2-tools not installed"
         exit 77  # standard skip exit code (GNU autotest convention)
     }

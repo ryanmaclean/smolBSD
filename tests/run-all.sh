@@ -5,7 +5,7 @@ FAIL=0
 SKIP=0
 for f in tests/*-test.nu; do
     printf "running %s ... " "$f"
-    nu "$f" 2>&1; _exit=$?
+    _exit=0; nu "$f" 2>&1 || _exit=$?
     if [ $_exit -eq 77 ]; then
         echo "skip"
         SKIP=$((SKIP + 1))
