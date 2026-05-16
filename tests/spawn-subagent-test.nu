@@ -75,8 +75,8 @@ exit 0
     let recorded = open --raw $marker
     # Stub must have been invoked.
     assert ($recorded | str contains "INVOKED ")
-    # The model flag and `-p` flag must have been passed.
-    # Extract the default model name from coord-tick.nu rather than hard-coding it.
+    # Assert model flag behavior: extract default from coord-tick.nu at runtime
+    # rather than hard-coding "claude-sonnet-4-6" (breaks when default model bumps).
     let default_model = (
         open --raw "bin/coord-tick.nu"
         | lines
