@@ -177,7 +177,8 @@ def main [
             exit 0
         }
 
-        print $"  gate: closed (($consec)/($required_passes) consecutive passes)"
+        let gate_status = $"($consec)/($required_passes) consecutive passes"
+        print $"  gate: closed (($gate_status))"
 
         # ── 3b. gap between runs (skip after final iteration) ─────────────────
         if $run_n < $max_runs {

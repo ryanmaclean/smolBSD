@@ -10,6 +10,7 @@
 
 use ../bin/mbox-parse.nu [parse-mbox, extract-toml, msg-id]
 use coord-fsm-tests.nu [run-coord-fsm-tests]
+use coord-escalate-test.nu [run-coord-escalate-tests]
 use coord-vm-e2e-tests.nu [run-coord-vm-e2e-tests]
 
 # Minimal two-message mbox fixture used by unit tests.
@@ -200,6 +201,7 @@ def main [
     if $suite == "all" or $suite == "unit" {
         $results = $results | append (run-unit-tests)
         $results = $results | append (run-coord-fsm-tests)
+        $results = $results | append (run-coord-escalate-tests)
     }
 
     # Coordinator → VM end-to-end suite (slow; ~30–60 s; excluded from default "all")

@@ -158,14 +158,32 @@ def test-tick1-dispatches [root: string, spool_abs: string, state_abs: string] {
 
     let task_body = $"task_id = \"($task_id)\"\nrole    = \"vm-builder\"\n\n[brief]\nobjective = \"Boot smolBSD and capture identity\"\n\n[commands]\nrun = [\"uname -a\", \"echo SMOLBSD_E2E_OK\"]\n\n[context_pointers]\nimage_path = \"build/FreeBSD-15-aarch64-smolbsd.qcow2\"\narch       = \"arm64\"\n"
 
+    # Seed the current state-dispatching contract: pending_task_id / pending_to_addr /
+    # pending_request_id. The original Message-ID is the request envelope coord-submit
+    # wrote to the spool in test A; we look it up by scanning the spool for an
+    # envelope whose task_id matches.
+    let initial_req_id = if ($spool_abs | path exists) {
+        let raw  = open --raw $spool_abs
+        let msgs = parse-mbox $raw
+        let match = $msgs | where {|m|
+            let mid = $m.headers | get "Message-ID"? | default ""
+            ($mid | str contains $task_id) and (($m.headers | get "In-Reply-To"? | default "") == "")
+        } | first 1
+        if ($match | length) > 0 {
+            $match | first | get headers | get "Message-ID"
+        } else {
+            $"<($task_id).initial@smolbsd.local>"
+        }
+    } else {
+        $"<($task_id).initial@smolbsd.local>"
+    }
+
     let seeded = $cur_state
-        | upsert fsm_state       "dispatching"
-        | upsert pending_dispatch {
-            task_id:   $task_id
-            to_role:   "vm-builder@smolbsd.local"
-            subject:   $"[($task_id)] E2E test boot"
-            toml_body: $task_body
-          }
+        | upsert fsm_state          "dispatching"
+        | upsert pending_task_id    $task_id
+        | upsert pending_to_addr    "vm-builder@smolbsd.local"
+        | upsert pending_request_id $initial_req_id
+        | upsert dispatched_at      ""
 
     let state_dir = $state_abs | path dirname
     if not ($state_dir | path exists) { mkdir $state_dir }
@@ -179,8 +197,9 @@ def test-tick1-dispatches [root: string, spool_abs: string, state_abs: string] {
     } else { {} }
 
     let fsm        = $state | get fsm_state? | default "?"
-    let dispatched = $result.stdout | str contains "dispatched"
-    let launched   = $result.stdout | str contains "subagent_launched"
+    # coord-tick.nu logs the actual events as 'dispatch_sent' and 'subagent_spawned'.
+    let dispatched = $result.stdout | str contains "dispatch_sent"
+    let launched   = $result.stdout | str contains "subagent_spawned"
 
     # After dispatch the FSM moves to "waiting"; if the background subagent
     # finished synchronously and the coord ran more ticks it may be "idle".
