@@ -139,20 +139,6 @@ Content-Type: text/toml; charset=utf-8
     {launched: true, mode: "vm-direct", verdict: $result.verdict, boot_sec: $result.boot_sec}
 }
 
-# Read a dispatch log written with --output-format json.
-# Returns the agent's text response, or the raw log content if not JSON.
-export def read-dispatch-log [log_path: string] {
-    if not ($log_path | path exists) { return "" }
-    let raw = open --raw $log_path | str trim
-    if ($raw | str starts-with "{") {
-        let parsed = try { $raw | from json } catch { null }
-        if $parsed != null {
-            return ($parsed | get result? | default ($parsed | get content? | default $raw))
-        }
-    }
-    $raw
-}
-
 # ── Public: unified dispatch entry point ──────────────────────────────────────
 
 # Dispatch a subagent for a task.
