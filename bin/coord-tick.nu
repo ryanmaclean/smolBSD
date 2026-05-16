@@ -574,7 +574,7 @@ def state-waiting [state: record, spool: string, root: string, remaining: int] {
 
         # Timeout: treat no-reply > 300s as a fail (triggers D2 retry table on next harvest)
         if $state.dispatched_at != "" {
-            let elapsed = (date now) - ($state.dispatched_at | into datetime)
+            let elapsed = (date now) - ($state.dispatched_at | into datetime --timezone UTC)
             if ($elapsed | into int) > 300_000_000_000 {   # 300s in nanoseconds
                 log-event "waiting_timeout" {
                     pending_request_id: $state.pending_request_id
