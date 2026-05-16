@@ -307,9 +307,9 @@ def main [
         }
 
         # Print log tail for human readers
-        let poll_label = $poll_num
+        let poll_header = $"--- log tail poll ($poll_num) ---"
         print ""
-        print $"--- log tail (poll ($poll_label)) ---"
+        print $poll_header
         print $state.log_tail
         print ""
 
