@@ -42,6 +42,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
 
+      # ── 1b. Ensure required tools present ─────────────────────────────────────
+      - name: Verify runner tools
+        run: |
+          echo "=== Tool check ==="
+          which sshpass || sudo apt-get install -y sshpass
+          which qemu-system-x86_64
+          which swtpm
+          which python3
+          ls /usr/share/qemu/OVMF.fd
+          ls /dev/kvm
+          echo "=== Tool check OK ==="
+
       # ── 2. Compute cache key ───────────────────────────────────────────────────
       - name: Compute image cache key
         id: cache-key
@@ -128,6 +140,13 @@ jobs:
             &
           echo $! > /tmp/qemu.pid
           echo "QEMU PID: $(cat /tmp/qemu.pid)"
+          # Wait for console socket to appear then chmod so the runner user can connect
+          for i in $(seq 1 30); do
+            [ -S "$CONSOLE_SOCK" ] && break
+            sleep 0.2
+          done
+          sudo chmod 666 "$CONSOLE_SOCK" 2>/dev/null || true
+          echo "Console socket: $(ls -la "$CONSOLE_SOCK" 2>/dev/null || echo 'not yet present')"
 
       # ── 8. Fix sshd via console socket (removes XMSS keys, enables root login)
       - name: Fix guest sshd via console
@@ -141,13 +160,18 @@ jobs:
       - name: Read PCR0 via SSH
         id: pcr-check
         run: |
-          # Poll until sshd accepts connections (up to 60s)
-          for i in $(seq 1 12); do
-            sshpass -p smolbsd ssh \
+          # Poll until sshd accepts connections (up to 120s)
+          for i in $(seq 1 24); do
+            if sshpass -p smolbsd ssh \
               -o StrictHostKeyChecking=no \
-              -o ConnectTimeout=5 \
-              -p "$SSH_PORT" root@127.0.0.1 echo OK 2>/dev/null && break
-            echo "SSH attempt $i/12 failed, retrying in 5s..."
+              -o ConnectTimeout=8 \
+              -o PasswordAuthentication=yes \
+              -o PubkeyAuthentication=no \
+              -p "$SSH_PORT" root@127.0.0.1 echo OK 2>&1; then
+              echo "SSH connected on attempt $i"
+              break
+            fi
+            echo "SSH attempt $i/24 failed (port check: $(nc -z 127.0.0.1 "$SSH_PORT" 2>/dev/null && echo open || echo closed))"
             sleep 5
           done
 
