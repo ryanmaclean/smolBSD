@@ -282,14 +282,21 @@ def apply_fixes(con: Console, password: str, timeout: int, dry_run: bool) -> dic
     #    run_cmd immediately after starting sshd, the Ctrl-C arrives before
     #    sshd finishes daemonizing and kills it. Embed "sleep 3" in the same
     #    shell command to keep sshd alive through the daemonization window.
-    run_cmd(con, "pkill -f '/usr/sbin/sshd' 2>/dev/null; sleep 1; true", dry_run, timeout=10)
-    run_cmd(
+    run_cmd(con, "pkill -f '/usr/sbin/sshd' 2>/dev/null; true", dry_run, timeout=5)
+    # Run sshd with visible stderr so failures are logged, then check exit code.
+    sshd_out = run_cmd(
         con,
-        "/usr/sbin/sshd 2>/dev/null || service sshd onestart 2>/dev/null; sleep 3",
+        "/usr/sbin/sshd -e 2>&1; echo SSHD_EXIT:$?",
         dry_run,
-        timeout=20,
+        timeout=15,
     )
-    log("sshd", "sshd started (3s daemonize grace embedded in command)")
+    log("sshd", "sshd start output", output=sshd_out[-300:] if sshd_out else "")
+    # Python-level sleep so sshd finishes daemonizing before we do anything else.
+    # This is outside the FreeBSD shell so Ctrl-C from the next run_cmd
+    # cannot interrupt it.
+    if not dry_run:
+        time.sleep(3)
+    log("sshd", "sshd start grace period complete")
 
     # 7. Poll for sshd to bind :22.
     log("sshd", "polling for sshd on port 22", max_polls=SSHD_MAX_POLLS)
