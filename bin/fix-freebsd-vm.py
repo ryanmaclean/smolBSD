@@ -236,14 +236,9 @@ def apply_fixes(con: Console, password: str, timeout: int, dry_run: bool) -> dic
     tpm_loaded = "tpm" in tpm_out and "no_tpm" not in tpm_out
     log("tpm", "TPM driver check", loaded=tpm_loaded)
 
-    # 2. Remove slow XMSS host keys AND create empty placeholder files.
-    #    FreeBSD's /etc/rc.d/sshd calls ssh-keygen on startup to generate any
-    #    missing host keys.  If ssh_host_xmss_key is absent, it regenerates it —
-    #    which takes hours and keeps sshd in a connection-reset loop.
-    #    Creating empty stub files makes the keygen check skip XMSS entirely.
+    # 2. Remove XMSS host keys entirely.
     run_cmd(con, "rm -f /etc/ssh/ssh_host_xmss_key*", dry_run)
-    run_cmd(con, "touch /etc/ssh/ssh_host_xmss_key /etc/ssh/ssh_host_xmss_key.pub", dry_run)
-    log("ssh-keys", "XMSS keys removed, stubs created to prevent regeneration")
+    log("ssh-keys", "XMSS keys removed")
 
     # 3. Regenerate fast host keys so sshd can start immediately.
     run_cmd(
@@ -258,14 +253,20 @@ def apply_fixes(con: Console, password: str, timeout: int, dry_run: bool) -> dic
     )
     log("ssh-keys", "ed25519 + ecdsa host keys generated")
 
-    # 4. Append sshd_config options unconditionally (FreeBSD UFS images have
-    #    all options commented out; grep+sed would miss them).
+    # 4. Configure sshd: explicit HostKey list (no xmss) + allow root+password.
+    #    FreeBSD UFS images have all options commented out; we append unconditionally.
+    #    Explicit HostKey lines mean sshd will ONLY load those files — it won't
+    #    discover and try to load the absent (or rc.d-regenerated) xmss key.
     sshd_append = (
-        r"printf '\nPermitRootLogin yes\nPasswordAuthentication yes"
+        r"printf '\nHostKey /etc/ssh/ssh_host_ed25519_key"
+        r"\nHostKey /etc/ssh/ssh_host_ecdsa_key"
+        r"\nPermitRootLogin yes\nPasswordAuthentication yes"
         r"\nPermitEmptyPasswords yes\nUsePAM no\n' >> /etc/ssh/sshd_config"
     )
     run_cmd(con, sshd_append, dry_run)
-    log("sshd-config", "sshd_config options appended")
+    # Disable automatic host key generation in rc.d/sshd so it never regenerates xmss
+    run_cmd(con, r"printf '\nsshd_keygen_enable=\"NO\"\n' >> /etc/rc.conf", dry_run)
+    log("sshd-config", "sshd_config updated: explicit HostKey, auth options; keygen disabled")
 
     # 5. Set the root password via pw (pipe through stdin).
     #    We use a printf+pipe pattern to avoid shell escaping issues.
