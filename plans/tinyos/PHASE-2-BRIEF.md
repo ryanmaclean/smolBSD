@@ -18,7 +18,7 @@
 | `buildkernel` exit 0 | aarch64 | DONE | exit=0, 224s, 13.3 MiB kernel |
 | `buildkernel` exit 0 | amd64 | DONE | exit=0, 239s, 13 MiB kernel |
 | `buildworld` + `release` qcow2 | aarch64 | IN FLIGHT | screen `smolbsd-world` on fbuild, started 2026-05-04 21:01 UTC |
-| `buildworld` qcow2 | amd64 | IN FLIGHT | screen `smolbsd-bw` on Vultr 107.191.39.47, LLVM bootstrap stage |
+| `buildworld` qcow2 | amd64 | IN FLIGHT | screen `smolbsd-bw` on Vultr REDACTED-VULTR-IP, LLVM bootstrap stage |
 | Build success rate (qemu-img info) | aarch64 | BLOCKED on qcow2 | will self-unblock when buildworld finishes |
 | Build success rate (qemu-img info) | amd64 | BLOCKED on qcow2 | will self-unblock when buildworld finishes |
 | Time-to-ready (`time-to-ready-arm64.exp`) | aarch64 | BLOCKED on qcow2 | script at `tests/time-to-ready-arm64.exp`; expect <=30s via HVF on minim4-24 |

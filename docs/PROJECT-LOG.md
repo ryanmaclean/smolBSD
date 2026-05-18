@@ -93,7 +93,7 @@ Two `buildworld` + `buildkernel` + `make release` pipelines are in flight:
 - Native arm64 build; no cross-compile flags needed
 - Monitor: `screen -r smolbsd-world` or `tail -f /var/tmp/smolbsd-world.log`
 
-**amd64 on Vultr** (`107.191.39.47`, instance `171abe56-fd68-4041-9376-9f235d9b9775`):
+**amd64 on Vultr** (`REDACTED-VULTR-IP`, instance `REDACTED-VULTR-UUID-2`):
 - Cross-compiled from fbuild arm64 host with `TARGET=amd64 TARGET_ARCH=amd64`
 - Status: provisioned (attempt 3); buildworld running
 

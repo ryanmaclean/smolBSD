@@ -173,7 +173,7 @@ def main [
     let ssh_keys = [
         "bc0728b4-a0aa-4c16-93a0-3667465e5cbd"   # MBP
         "50b6a6f8-c693-4633-b86f-e259265dd162"   # Studio
-        "5518413b-0d1c-4d16-a858-40e172586380"   # mbp-m1-ed25519
+        "REDACTED-VULTR-SSH-KEY-UUID"   # mbp-m1-ed25519
     ]
 
     # Determine whether this is a bare-metal or cloud instance request.

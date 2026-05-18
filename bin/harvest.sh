@@ -5,7 +5,7 @@
 #
 # Build hosts:
 #   aarch64: fbuild  — scp -J 100.91.236.29 -P 2222 builder@localhost
-#   amd64:   Vultr   — root@107.191.39.47
+#   amd64:   Vultr   — root@REDACTED-VULTR-IP
 #
 # Acceptance gates:
 #   Artifact size: <= 512 MiB
@@ -23,7 +23,7 @@ ROOT="${ROOT:-$(dirname "$SCRIPT_DIR")}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/var/artifacts}"
 REPORT="$ARTIFACTS_DIR/harvest-report.txt"
 
-AMD64_REMOTE="root@107.191.39.47:/usr/obj/amd64.amd64/usr/src/release/vm/FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2"
+AMD64_REMOTE="root@REDACTED-VULTR-IP:/usr/obj/amd64.amd64/usr/src/release/vm/FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2"
 AARCH64_REMOTE="builder@localhost:/usr/obj/arm64.aarch64/usr/src/release/vm/FreeBSD-15.0-RELEASE-arm64-SMOLBSD.qcow2"
 
 AMD64_IMAGE="$ARTIFACTS_DIR/FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2"
