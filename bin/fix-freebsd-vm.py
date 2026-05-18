@@ -236,17 +236,27 @@ def apply_fixes(con: Console, password: str, timeout: int, dry_run: bool) -> dic
     tpm_loaded = "tpm" in tpm_out and "no_tpm" not in tpm_out
     log("tpm", "TPM driver check", loaded=tpm_loaded)
 
-    # 2. Remove slow XMSS host keys — this is the critical fix.
+    # 2. Remove slow XMSS host keys AND create empty placeholder files.
+    #    FreeBSD's /etc/rc.d/sshd calls ssh-keygen on startup to generate any
+    #    missing host keys.  If ssh_host_xmss_key is absent, it regenerates it —
+    #    which takes hours and keeps sshd in a connection-reset loop.
+    #    Creating empty stub files makes the keygen check skip XMSS entirely.
     run_cmd(con, "rm -f /etc/ssh/ssh_host_xmss_key*", dry_run)
-    log("ssh-keys", "XMSS keys removed")
+    run_cmd(con, "touch /etc/ssh/ssh_host_xmss_key /etc/ssh/ssh_host_xmss_key.pub", dry_run)
+    log("ssh-keys", "XMSS keys removed, stubs created to prevent regeneration")
 
-    # 3. Regenerate a fast ed25519 host key.
+    # 3. Regenerate fast host keys so sshd can start immediately.
     run_cmd(
         con,
         'ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N "" -q 2>/dev/null || true',
         dry_run,
     )
-    log("ssh-keys", "ed25519 host key generated")
+    run_cmd(
+        con,
+        'ssh-keygen -t ecdsa -f /etc/ssh/ssh_host_ecdsa_key -N "" -q 2>/dev/null || true',
+        dry_run,
+    )
+    log("ssh-keys", "ed25519 + ecdsa host keys generated")
 
     # 4. Append sshd_config options unconditionally (FreeBSD UFS images have
     #    all options commented out; grep+sed would miss them).
@@ -264,8 +274,12 @@ def apply_fixes(con: Console, password: str, timeout: int, dry_run: bool) -> dic
     log("root-pw", "root password set", password="[redacted]")
 
     # 6. Restart sshd with the new configuration.
-    run_cmd(con, "service sshd onerestart", dry_run, timeout=30)
-    log("sshd", "sshd restarted")
+    #    Use pkill + direct sshd invocation instead of service(8) to bypass
+    #    the rc.d keygen wrapper (which would regenerate XMSS keys again).
+    run_cmd(con, "pkill -f '/usr/sbin/sshd' 2>/dev/null || true", dry_run)
+    run_cmd(con, "sleep 1", dry_run)
+    run_cmd(con, "/usr/sbin/sshd 2>/dev/null || service sshd onestart", dry_run, timeout=15)
+    log("sshd", "sshd restarted (direct invocation, bypassed rc.d keygen)")
 
     # 7. Poll for sshd to bind :22.
     log("sshd", "polling for sshd on port 22", max_polls=SSHD_MAX_POLLS)
