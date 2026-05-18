@@ -195,7 +195,7 @@ jobs:
             -o UserKnownHostsFile=/dev/null \
             -o ConnectTimeout=10 \
             -p "$SSH_PORT" root@127.0.0.1 \
-            'kldload tpm 2>/dev/null; ls /dev/tpm0 2>/dev/null && echo present || echo absent' \
+            'kldload tpm 2>/dev/null; test -c /dev/tpm0 && echo present || echo absent' \
             2>/dev/null || echo absent)
 
           echo "tpm_status=$TPM_STATUS" >> "$GITHUB_OUTPUT"
