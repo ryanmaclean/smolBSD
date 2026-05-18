@@ -277,10 +277,19 @@ def apply_fixes(con: Console, password: str, timeout: int, dry_run: bool) -> dic
     # 6. Restart sshd with the new configuration.
     #    Use pkill + direct sshd invocation instead of service(8) to bypass
     #    the rc.d keygen wrapper (which would regenerate XMSS keys again).
-    run_cmd(con, "pkill -f '/usr/sbin/sshd' 2>/dev/null || true", dry_run)
-    run_cmd(con, "sleep 1", dry_run)
-    run_cmd(con, "/usr/sbin/sshd 2>/dev/null || service sshd onestart", dry_run, timeout=15)
-    log("sshd", "sshd restarted (direct invocation, bypassed rc.d keygen)")
+    #
+    #    CRITICAL: run_cmd sends Ctrl-C before every command. If we call
+    #    run_cmd immediately after starting sshd, the Ctrl-C arrives before
+    #    sshd finishes daemonizing and kills it. Embed "sleep 3" in the same
+    #    shell command to keep sshd alive through the daemonization window.
+    run_cmd(con, "pkill -f '/usr/sbin/sshd' 2>/dev/null; sleep 1; true", dry_run, timeout=10)
+    run_cmd(
+        con,
+        "/usr/sbin/sshd 2>/dev/null || service sshd onestart 2>/dev/null; sleep 3",
+        dry_run,
+        timeout=20,
+    )
+    log("sshd", "sshd started (3s daemonize grace embedded in command)")
 
     # 7. Poll for sshd to bind :22.
     log("sshd", "polling for sshd on port 22", max_polls=SSHD_MAX_POLLS)
