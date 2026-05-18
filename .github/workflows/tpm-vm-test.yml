@@ -176,13 +176,19 @@ jobs:
             sleep 5
           done
 
+          # Ensure TPM driver loaded + tpm2-tools installed in the guest
+          sshpass -p smolbsd ssh \
+            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=30 -p "$SSH_PORT" root@127.0.0.1 \
+            'kldload tpm 2>/dev/null; pkg install -y tpm2-tools 2>&1 | tail -3' 2>&1 || true
+
           # Read PCR0 from the TPM
           PCR0_RAW=$(sshpass -p smolbsd ssh \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
-            -o ConnectTimeout=10 \
+            -o ConnectTimeout=30 \
             -p "$SSH_PORT" root@127.0.0.1 \
-            'tpm2_pcrread sha256:0 2>/dev/null | grep "0 :" | awk "{print \$3}"' 2>/dev/null || true)
+            'ls /dev/tpm0 2>/dev/null && tpm2_pcrread sha256:0 2>/dev/null | grep "0 :" | awk "{print \$3}"' 2>/dev/null || true)
 
           # Strip leading 0x and whitespace
           PCR0=$(printf '%s' "$PCR0_RAW" | sed 's/0x//g' | tr -d ' \n\r')
