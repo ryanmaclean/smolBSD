@@ -202,16 +202,21 @@ def run_cmd(con: Console, cmd: str, dry_run: bool, timeout: float = CMD_TIMEOUT)
     if dry_run:
         return ""
 
-    # Clear any stuck state first.
+    # Clear any stuck state: send Ctrl-C then CLEAR the accumulated buffer.
+    # The buffer accumulates ALL previous output across calls; without clearing
+    # it, read_until([b"# "]) returns immediately because the buffer already
+    # contains '#' from a previous prompt — making Ctrl-C fire before the
+    # previous command has actually finished.
     con.send_ctrl_c()
-    time.sleep(0.1)
+    time.sleep(0.3)  # give the shell time to process Ctrl-C and emit #
+    con._buf = b""   # clear accumulated history; only look at NEW output
 
-    # Drain any pending output from the Ctrl-C.
-    # We do a brief non-blocking drain rather than a blocking read.
+    # Now wait for the fresh # prompt that followed the Ctrl-C.
     try:
-        con.read_until([b"# "], timeout=3)
+        con.read_until([b"# "], timeout=5)
     except RuntimeError:
         pass  # No prompt yet — that's fine; we'll send the command anyway.
+    con._buf = b""   # clear again before sending the real command
 
     # Send the command.
     con.send_line(cmd)
