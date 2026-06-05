@@ -11,12 +11,24 @@
 #   T4: PCR 0 readable, non-zero
 #   T5: seal/unseal round-trip with PCR 0+7 policy
 #   T6: PCR changes after tpm2_pcrextend
+#
+# D-04 OVERRIDE: CONTEXT.md D-04 specified run-vm-tests.nu --tpm, but
+# RESEARCH.md Pitfall 1 documents that step-tpm-device in run-vm-tests.nu
+# uses nmdm console (FreeBSD-only, broken on Linux/QEMU). bhyve-tpm-pcr-verify.nu
+# is used instead — covered by Claude's Discretion: "Whether to run bhyve
+# or QEMU for the T2-T6 suite." smolBSD image does not need any VM fixup script.
 
 name: TPM VM Test
 
 on:
   push:
   workflow_dispatch:
+
+env:
+  SMOLBSD_IMAGE: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
+  SWTPM_STATE:   /var/run/smolbsd-tpm
+  SSH_PORT:      2241
+  SSH_PASS:      smolbsd
 
 jobs:
   tpm-t1-t6:
@@ -43,5 +55,73 @@ jobs:
       - name: Show Nushell version
         run: nu --version
 
-      - name: TPM T1-T6 test suite (placeholder — implemented in PLAN-06)
-        run: echo "TPM test suite not yet wired — see PLAN-06"
+      - name: Verify smolBSD image exists
+        run: |
+          test -f "$SMOLBSD_IMAGE" || {
+            echo "ERROR: smolBSD image not found at $SMOLBSD_IMAGE"
+            echo "Run build-image.yml workflow first to build the image."
+            exit 1
+          }
+          echo "Image found: $(ls -lh $SMOLBSD_IMAGE)"
+
+      - name: Reset swtpm state (fresh PCR baseline)
+        run: nu bin/swtpm-setup.nu --action reset --state-dir "$SWTPM_STATE"
+
+      - name: Boot smolBSD with QEMU+swtpm (background)
+        run: |
+          nohup nu bin/qemu-smolbsd.nu \
+            --image "$SMOLBSD_IMAGE" \
+            --arch amd64 \
+            --tpm \
+            --tpm-state "$SWTPM_STATE" \
+            --hostfwd-ssh "$SSH_PORT" \
+            --mem 512M \
+            --name smolbsd-tpm-ci \
+            > /tmp/smolbsd-qemu-ci.log 2>&1 &
+          echo "QEMU_PID=$!" >> "$GITHUB_ENV"
+          echo "QEMU launched (PID $!)"
+
+      - name: Wait for SSH boot-gate (120s timeout for KVM amd64)
+        run: |
+          for i in $(seq 1 120); do
+            if ssh \
+                 -o StrictHostKeyChecking=no \
+                 -o UserKnownHostsFile=/dev/null \
+                 -o ConnectTimeout=3 \
+                 -o BatchMode=yes \
+                 -p "$SSH_PORT" root@127.0.0.1 "echo UP" 2>/dev/null; then
+              echo "SSH_UP at ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "ERROR: SSH did not respond within 120s"
+          tail -30 /tmp/smolbsd-qemu-ci.log || true
+          exit 1
+
+      - name: Run T1-T6 TPM acceptance suite
+        run: |
+          nu tests/bhyve-tpm-pcr-verify.nu \
+            --host 127.0.0.1 \
+            --port "$SSH_PORT" \
+            --password "" \
+            2>&1 | tee /tmp/smolbsd-t1t6-ci.toml
+
+      - name: Report T1-T6 results in job summary
+        if: always()
+        run: |
+          echo "## TPM T1-T6 Results" >> "$GITHUB_STEP_SUMMARY"
+          echo '```toml' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/smolbsd-t1t6-ci.toml >> "$GITHUB_STEP_SUMMARY" || echo "(no results file)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup — shutdown guest and stop swtpm
+        if: always()
+        run: |
+          ssh \
+            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o BatchMode=yes \
+            -p "$SSH_PORT" root@127.0.0.1 "shutdown -p now" 2>/dev/null || true
+          sleep 5
+          nu bin/swtpm-setup.nu --action stop --state-dir "$SWTPM_STATE" || true
+          kill "$QEMU_PID" 2>/dev/null || true
