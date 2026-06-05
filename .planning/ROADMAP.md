@@ -59,14 +59,14 @@ backed by swtpm on pop4090 (Ryzen 9 7950X, KVM) before any hardware dependency.
 - swtpm setup scripts, bhyve harness, test scripts
 - CI smoke test on pop4090 (self-hosted runner, `/dev/tpm0 present` = green)
 
-**Plans:** 3/7 plans executed
+**Plans:** 5/7 plans executed
 
 Plans:
 - [x] 03-01-PLAN.md — Add VM_EXTRA_PACKAGES=tpm2-tools to smolbsd-qemu.conf; copy SMOLBSD configs to pop4090 freebsd-src
 - [x] 03-02-PLAN.md — Create tpm-vm-test.yml skeleton; install Nushell v0.112.2 on pop4090
 - [x] 03-03-PLAN.md — Build smolBSD amd64 image on pop4090 (make vm-image KERNCONF=SMOLBSD); write SHA256 manifest
-- [ ] 03-04-PLAN.md — Run bhyve-tpm-pcr-verify.nu T1/T2/T3/T4/T6 against live smolBSD guest
-- [ ] 03-05-PLAN.md — Run tpm-seal-test.nu live T5 seal/unseal via /dev/tpm0 in guest
+- [x] 03-04-PLAN.md — Run bhyve-tpm-pcr-verify.nu T1/T2/T3/T4/T6 against live smolBSD guest
+- [x] 03-05-PLAN.md — Run tpm-seal-test.nu live T5 seal/unseal via /dev/tpm0 in guest
 - [ ] 03-06-PLAN.md — Wire full T1-T6 test sequence into tpm-vm-test.yml; remove fix-freebsd-vm.py
 - [ ] 03-07-PLAN.md — Create build-image.yml CI workflow for smolBSD TPM image rebuild on pop4090
 

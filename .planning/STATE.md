@@ -3,19 +3,20 @@ gsd_state_version: 1.0
 milestone: v0.112.2
 milestone_name: milestone
 status: unknown
-last_updated: "2026-06-05T08:35:22.136Z"
+stopped_at: Completed 03-05-PLAN.md — T5 live seal/unseal pass (verdict=pass)
+last_updated: "2026-06-05T08:55:11.786Z"
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 7
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # smolBSD — Current State
 
 Updated: 2026-06-05
-Last session: 2026-06-05T08:33:00Z
-Stopped at: Completed 03-04-PLAN.md — T1-T6 all pass (6/6 verdicts: pass)
+Last session: 2026-06-05T08:55:11.782Z
+Stopped at: Completed 03-05-PLAN.md — T5 live seal/unseal pass (verdict=pass)
 
 ## Active phase
 
