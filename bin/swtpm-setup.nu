@@ -102,7 +102,10 @@ def action-start [paths: record] {
 
     let tpmstate_arg = $"dir=($paths.state_dir)"
     let ctrl_arg     = $"type=unixio,path=($paths.socket)"
-    ^$swtpm_bin socket --tpmstate $tpmstate_arg --tpm2 --ctrl $ctrl_arg --pid-file $paths.pid_file --daemon
+    # Note: FreeBSD swtpm uses --pid-file <path>; Ubuntu/Linux swtpm uses --pid file=<path>
+    # Use the Linux-compatible form ("--pid file=") which also works on FreeBSD >= 0.7.x
+    let pid_arg = $"file=($paths.pid_file)"
+    ^$swtpm_bin socket --tpmstate $tpmstate_arg --tpm2 --ctrl $ctrl_arg --pid $pid_arg --daemon
 
     # Verify socket appears within 3 seconds (poll every 0.3s, 10 attempts).
     let max_polls = 10
