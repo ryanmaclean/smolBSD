@@ -1,7 +1,7 @@
 # smolBSD — Current State
 
 Updated: 2026-06-04
-Last session: 2026-06-04 — completed 03-02 (tpm-vm-test.yml skeleton + Nushell install verified on pop4090)
+Last session: 2026-06-04 — completed 03-01 (VM_EXTRA_PACKAGES=tpm2-tools in smolbsd-qemu.conf; pop4090 freebsd-src build tree prepared; qemu-x86_64-static ABSENT documented)
 
 ## Active phase
 
@@ -17,6 +17,8 @@ Last session: 2026-06-04 — completed 03-02 (tpm-vm-test.yml skeleton + Nushell
 | `bin/bhyve-smolbsd.nu` | done |
 | `tests/tpm-attest.exp` | done |
 | `tests/tpm-seal-test.nu` | done |
+| smolbsd-qemu.conf: `VM_EXTRA_PACKAGES=tpm2-tools` | done |
+| pop4090 freebsd-src tree: SMOLBSD config + smolbsd-qemu.conf in place | done |
 | smolBSD image rebuilt with `device tpm` (T2–T6 full suite) | **pending** |
 | `bin/bhyve-host-setup.nu` | pending |
 | `bin/vultr-bhyve-provision.nu` | pending |
