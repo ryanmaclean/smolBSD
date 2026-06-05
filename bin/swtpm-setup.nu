@@ -86,7 +86,7 @@ def action-start [paths: record] {
     # Launch swtpm in daemon mode.
     # FreeBSD security/swtpm port installs to /usr/local/bin/swtpm (most versions)
     # or /usr/local/sbin/swtpm (some port revisions).  Probe both.
-    let swtpm_candidates = ["/usr/local/bin/swtpm", "/usr/local/sbin/swtpm"]
+    let swtpm_candidates = ["/usr/local/bin/swtpm", "/usr/local/sbin/swtpm", "/usr/bin/swtpm"]
     let swtpm_bin = $swtpm_candidates | where {|p| $p | path exists} | first 1
     if ($swtpm_bin | length) == 0 {
         error make {msg: $"swtpm binary not found in ($swtpm_candidates | str join ' or '); install security/swtpm"}
