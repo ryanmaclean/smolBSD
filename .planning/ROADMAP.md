@@ -59,7 +59,7 @@ backed by swtpm on pop4090 (Ryzen 9 7950X, KVM) before any hardware dependency.
 - swtpm setup scripts, bhyve harness, test scripts
 - CI smoke test on pop4090 (self-hosted runner, `/dev/tpm0 present` = green)
 
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans complete
 
 Plans:
 - [x] 03-01-PLAN.md — Add VM_EXTRA_PACKAGES=tpm2-tools to smolbsd-qemu.conf; copy SMOLBSD configs to pop4090 freebsd-src
