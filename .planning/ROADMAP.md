@@ -68,7 +68,7 @@ Plans:
 - [x] 03-04-PLAN.md — Run bhyve-tpm-pcr-verify.nu T1/T2/T3/T4/T6 against live smolBSD guest
 - [x] 03-05-PLAN.md — Run tpm-seal-test.nu live T5 seal/unseal via /dev/tpm0 in guest
 - [x] 03-06-PLAN.md — Wire full T1-T6 test sequence into tpm-vm-test.yml; remove fix-freebsd-vm.py
-- [ ] 03-07-PLAN.md — Create build-image.yml CI workflow for smolBSD TPM image rebuild on pop4090
+- [x] 03-07-PLAN.md — Create build-image.yml CI workflow for smolBSD TPM image rebuild on pop4090
 
 **Key files:** `bin/swtpm-setup.nu`, `bin/bhyve-smolbsd.nu`, `bin/qemu-smolbsd.nu`,
 `tests/tpm-attest.exp`, `tests/tpm-seal-test.nu`, `tests/bhyve-tpm-pcr-verify.nu`,
