@@ -142,6 +142,14 @@ nooptions COMPAT_FREEBSD10
 nooptions COMPAT_FREEBSD11
 
 # -----------------------------------------------------------------------
+# Filesystem and partition table support
+# -----------------------------------------------------------------------
+# MINIMAL does not include options FFS — must be added explicitly.
+# Without FFS, the kernel cannot mount a UFS root filesystem.
+options FFS                     # Berkeley Fast Filesystem (UFS — required for root)
+options GEOM_PART_GPT           # GPT partition table support (required for vtbd0p4)
+
+# -----------------------------------------------------------------------
 # TPM 2.0 support
 # -----------------------------------------------------------------------
 device tpm              # TPM 2.0 (CRB + FIFO interfaces)
