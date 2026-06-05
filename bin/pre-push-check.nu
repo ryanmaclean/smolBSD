@@ -22,15 +22,16 @@ def main [] {
         let line = $entry.item
         let lineno = $entry.index + 1
         # Simple public IP heuristic: x.x.x.x where first octet not 10/172/192
-        if ($line | find --regex '\b(?!10\.|172\.1[6-9]\.|172\.2\d\.|172\.3[01]\.|192\.168\.)(\d{1,3}\.){3}\d{1,3}\b' | length) > 0 {
-            $hits = $hits | append $"line ($lineno): possible public IP: ($line | str trim | str substring ..80)"
+        # Use =~ regex match operator (Nushell 0.111+)
+        if ($line =~ '(?:[0-9]{1,3}\.){3}[0-9]{1,3}') and not ($line =~ '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)') {
+            $hits = $hits | append $"line ($lineno): possible public IP: ($line | str trim)"
         }
         # Instance UUIDs (Vultr-style)
-        if ($line | find --regex '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | length) > 0 {
-            $hits = $hits | append $"line ($lineno): possible UUID/instance-id: ($line | str trim | str substring ..80)"
+        if ($line =~ '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}') {
+            $hits = $hits | append $"line ($lineno): possible UUID/instance-id: ($line | str trim)"
         }
         # API keys (long alphanum strings)
-        if ($line | find --regex 'api.key\s*[:=]\s*\S{20,}' | length) > 0 {
+        if ($line =~ 'api.key\s*[:=]\s*\S{20,}') {
             $hits = $hits | append $"line ($lineno): possible API key"
         }
     }
