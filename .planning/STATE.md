@@ -3,18 +3,19 @@ gsd_state_version: 1.0
 milestone: v0.112.2
 milestone_name: milestone
 status: unknown
-last_updated: "2026-06-05T07:14:41.465Z"
+last_updated: "2026-06-05T08:35:22.136Z"
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 7
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # smolBSD — Current State
 
 Updated: 2026-06-05
-Last session: 2026-06-05T07:14:41.461Z
+Last session: 2026-06-05T08:33:00Z
+Stopped at: Completed 03-04-PLAN.md — T1-T6 all pass (6/6 verdicts: pass)
 
 ## Active phase
 
@@ -33,6 +34,7 @@ Last session: 2026-06-05T07:14:41.461Z
 | smolbsd-qemu.conf: `VM_EXTRA_PACKAGES=tpm2-tools` | done |
 | pop4090 freebsd-src tree: SMOLBSD config + smolbsd-qemu.conf in place | done |
 | smolBSD image rebuilt with `device tpm` (T2–T6 full suite) | **done** — /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2 |
+| T1-T6 TPM acceptance tests | **done** — all 6 pass; results at 03-T1T6-RESULTS.toml |
 | `bin/bhyve-host-setup.nu` | pending |
 | `bin/vultr-bhyve-provision.nu` | pending |
 | Physical board (Pi 5 / RK3588) | Phase 4 |
