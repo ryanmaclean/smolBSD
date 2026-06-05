@@ -1,0 +1,182 @@
+# SPDX-License-Identifier: Apache-2.0
+# build-image.yml — Build smolBSD amd64 TPM image on pop4090.
+# Outputs: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
+#          /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2.sha256
+#
+# Trigger manually (workflow_dispatch) or automatically when the SMOLBSD kernel
+# config or smolbsd-qemu.conf changes.
+#
+# After a successful build, run tpm-vm-test.yml to validate T1-T6.
+#
+# Build strategy (D-01): the FreeBSD release toolchain runs inside a FreeBSD
+# QEMU VM on pop4090 (Linux x86_64 + KVM).  The workflow copies the smolBSD
+# configs into the pre-existing freebsd-src tree on the runner, then invokes
+# make cloudware-release inside that FreeBSD VM.
+#
+# CRITICAL: Do NOT add WITHOUT_QEMU, NOPKG, or NOPKGBASE to the make
+# invocation — those flags skip pkg install and would silently omit tpm2-tools
+# from the image (see 03-RESEARCH.md Pitfall 3).
+
+name: Build smolBSD TPM Image
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - sys/amd64/conf/SMOLBSD
+      - release/tools/smolbsd-qemu.conf
+
+env:
+  FREEBSD_SRC:  /home/studio/bsd-build/src/freebsd-src
+  WORLD_STAGE:  /home/studio/bsd-build/stage/amd64-postworld-20260411T130830
+  OUTPUT_DIR:   /home/studio/smolbsd-ci
+  OUTPUT_IMAGE: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
+
+jobs:
+  build:
+    name: Build smolBSD amd64 TPM qcow2
+    runs-on: [self-hosted, linux, amd64, kvm]
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify freebsd-src tree exists
+        run: |
+          test -d "$FREEBSD_SRC" || {
+            echo "ERROR: freebsd-src not found at $FREEBSD_SRC"
+            echo "Run initial setup on pop4090 to clone the FreeBSD source tree."
+            exit 1
+          }
+          echo "freebsd-src found at $FREEBSD_SRC"
+          ls "$FREEBSD_SRC/release/Makefile.vm" || {
+            echo "ERROR: release/Makefile.vm not found — freebsd-src may be incomplete"
+            exit 1
+          }
+
+      - name: Copy SMOLBSD configs into freebsd-src
+        run: |
+          # KERNCONF=SMOLBSD requires sys/amd64/conf/SMOLBSD in the src tree
+          cp -v sys/amd64/conf/SMOLBSD \
+            "$FREEBSD_SRC/sys/amd64/conf/SMOLBSD"
+
+          # cloudware-release needs smolbsd-qemu.conf in release/tools/
+          cp -v release/tools/smolbsd-qemu.conf \
+            "$FREEBSD_SRC/release/tools/smolbsd-qemu.conf"
+
+          # Verify copies: device tpm must be present in kernel config
+          grep "device tpm" "$FREEBSD_SRC/sys/amd64/conf/SMOLBSD" || {
+            echo "ERROR: 'device tpm' not found in SMOLBSD kernel config"
+            exit 1
+          }
+          # VM_EXTRA_PACKAGES=tpm2-tools must be present in qemu.conf
+          grep "VM_EXTRA_PACKAGES" "$FREEBSD_SRC/release/tools/smolbsd-qemu.conf" || {
+            echo "ERROR: VM_EXTRA_PACKAGES not found in smolbsd-qemu.conf"
+            exit 1
+          }
+          echo "Configs copied and verified"
+
+      - name: Create output directory
+        run: mkdir -p "$OUTPUT_DIR"
+
+      - name: Check for qemu-x86_64-static (informational)
+        run: |
+          # pop4090 is amd64 Linux; building amd64 FreeBSD does not need
+          # qemu-x86_64-static.  If it is present, we pass it to make so
+          # it can be used in the pkg chroot step; if absent, native
+          # execution suffices for amd64 targets.
+          if [ -f /usr/bin/qemu-x86_64-static ]; then
+            echo "QEMUSTATIC=/usr/bin/qemu-x86_64-static" >> "$GITHUB_ENV"
+            echo "qemu-x86_64-static found — will pass QEMUSTATIC to make"
+          else
+            echo "qemu-x86_64-static absent — native amd64 build, no QEMUSTATIC needed"
+            echo "QEMUSTATIC=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build smolBSD amd64 TPM image
+        run: |
+          set -e
+          cd "$FREEBSD_SRC"
+
+          # Use cloudware-release (not vm-image) with explicit FORMAT and FSLIST.
+          # 'make vm-image WITH_CLOUDWARE=yes CLOUDWARE=smolbsd' only generates a
+          # touch stub because smolbsd is not a predefined cloudware type in
+          # Makefile.vm.  cloudware-release with SMOLBSD_FORMAT + SMOLBSD_FSLIST
+          # generates the correct cw-smolbsd-ufs-qcow2 target.
+          #
+          # MK_DEBUG_FILES=no MK_TESTS=no MK_LIB32=no: skip install steps that
+          # require bootstrap obj dirs that may have been cleaned between runs.
+          make -C release cloudware-release \
+            KERNCONF=SMOLBSD \
+            CLOUDWARE=smolbsd \
+            CLOUDWARE_CONF="$FREEBSD_SRC/release/tools/smolbsd-qemu.conf" \
+            SMOLBSD_FORMAT=qcow2 \
+            SMOLBSD_FSLIST=ufs \
+            VMSIZE=4g \
+            WORLD_STAGE="$WORLD_STAGE" \
+            TARGET=amd64 TARGET_ARCH=amd64 \
+            MK_DEBUG_FILES=no MK_TESTS=no MK_LIB32=no \
+            ${QEMUSTATIC:+QEMUSTATIC="$QEMUSTATIC"} \
+            2>&1 | tee /tmp/smolbsd-build.log
+
+      - name: Copy artifact to stable path
+        run: |
+          set -e
+          # Find the built qcow2 — cloudware-release writes it under
+          # $FREEBSD_SRC/release/obj/ or a MAKEOBJDIRPREFIX subdir.
+          ARTIFACT=$(find "$FREEBSD_SRC/release" /home/studio/bsd-build \
+            -name "*.qcow2" -newer /tmp/smolbsd-build.log 2>/dev/null | head -1)
+          if [ -z "$ARTIFACT" ]; then
+            echo "ERROR: no qcow2 artifact found after build"
+            echo "--- last 80 lines of build log ---"
+            tail -80 /tmp/smolbsd-build.log
+            exit 1
+          fi
+          echo "Found artifact: $ARTIFACT"
+          cp -v "$ARTIFACT" "$OUTPUT_IMAGE"
+          echo "Copied to: $OUTPUT_IMAGE"
+
+      - name: Verify image size (warn if over 512 MiB)
+        run: |
+          # tpm2-tools + 12 deps push the image to ~700 MiB (known deviation
+          # from the 512 MiB plan target — accepted in plan-03 decisions).
+          # This step reports the size and warns but does not fail the build.
+          command -v qemu-img >/dev/null 2>&1 || {
+            echo "WARNING: qemu-img not found — install qemu-utils to enable size check"
+            echo "  sudo apt-get install -y qemu-utils"
+            exit 0
+          }
+          ACTUAL=$(qemu-img info --output=json "$OUTPUT_IMAGE" | \
+            python3 -c "import json,sys; info=json.load(sys.stdin); print(info.get('actual-size', 0))")
+          LIMIT=536870912
+          MIB=$(python3 -c "print(round($ACTUAL / 1048576, 1))")
+          echo "actual-size: $ACTUAL bytes (${MIB} MiB)"
+          if [ "$ACTUAL" -ge "$LIMIT" ]; then
+            echo "NOTE: image size ${MIB} MiB exceeds 512 MiB soft limit (tpm2-tools requirement accepted)"
+          else
+            echo "PASS: image size within 512 MiB budget"
+          fi
+
+      - name: Write SHA256 manifest
+        run: |
+          sha256sum "$OUTPUT_IMAGE" > "${OUTPUT_IMAGE}.sha256"
+          echo "SHA256 manifest:"
+          cat "${OUTPUT_IMAGE}.sha256"
+
+          # Build metadata record for cache invalidation and audit
+          {
+            echo "KERNCONF=SMOLBSD"
+            echo "VM_EXTRA_PACKAGES=tpm2-tools"
+            echo "VMSIZE=4g"
+            echo "SMOLBSD_FORMAT=qcow2"
+            echo "SMOLBSD_FSLIST=ufs"
+            echo "built: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            git rev-parse HEAD
+          } > "$OUTPUT_DIR/BUILD-INFO.txt"
+          echo ""
+          echo "Build metadata:"
+          cat "$OUTPUT_DIR/BUILD-INFO.txt"
+
+      - name: Upload build log on failure
+        if: failure()
+        run: tail -150 /tmp/smolbsd-build.log || true
