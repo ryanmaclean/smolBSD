@@ -1,6 +1,7 @@
 # smolBSD — Current State
 
 Updated: 2026-06-04
+Last session: 2026-06-04 — completed 03-02 (tpm-vm-test.yml skeleton + Nushell install verified on pop4090)
 
 ## Active phase
 
