@@ -499,7 +499,7 @@ def main [
     }
     print ""
 
-    ^...$qemu_cmd
+    run-external ($qemu_cmd | first) ...($qemu_cmd | skip 1)
     let qemu_exit = $env.LAST_EXIT_CODE
 
     log-step "qemu-exit" "QEMU exited" {exit_code: $qemu_exit, name: $name}
