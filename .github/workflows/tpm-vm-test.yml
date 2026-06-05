@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+# tpm-vm-test.yml — TPM 2.0 T1-T6 acceptance suite on pop4090 QEMU+swtpm.
+# Runs against the smolBSD amd64 image built with 'device tpm' + tpm2-tools.
+# Image path: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
+# Runner: pop4090-amd64 (self-hosted, linux, amd64, kvm)
+#
+# Phase-3 acceptance gates:
+#   T1: swtpm socket appears within 3s
+#   T2: /dev/tpm0 present in guest
+#   T3: tpmctl -G returns TPM 2.0 manufacturer info
+#   T4: PCR 0 readable, non-zero
+#   T5: seal/unseal round-trip with PCR 0+7 policy
+#   T6: PCR changes after tpm2_pcrextend
+
+name: TPM VM Test
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  tpm-t1-t6:
+    name: TPM T1-T6 acceptance suite
+    runs-on: [self-hosted, linux, amd64, kvm]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nushell
+        run: |
+          NU_VERSION="0.112.2"
+          ARCH=$(uname -m | sed 's/arm64/aarch64/')
+          case "$(uname -s)" in
+            Linux)  TRIPLE="${ARCH}-unknown-linux-musl" ;;
+            Darwin) TRIPLE="${ARCH}-apple-darwin" ;;
+          esac
+          ARCHIVE="nu-${NU_VERSION}-${TRIPLE}.tar.gz"
+          mkdir -p "$HOME/.local/bin"
+          curl -sSL "https://github.com/nushell/nushell/releases/download/${NU_VERSION}/${ARCHIVE}" \
+            | tar -xz -C "$HOME/.local/bin" --strip-components=1 "nu-${NU_VERSION}-${TRIPLE}/nu"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Show Nushell version
+        run: nu --version
+
+      - name: TPM T1-T6 test suite (placeholder — implemented in PLAN-06)
+        run: echo "TPM test suite not yet wired — see PLAN-06"
