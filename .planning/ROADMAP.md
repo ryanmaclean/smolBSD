@@ -47,7 +47,7 @@ TPM 2.0 measured boot and local attestation via QEMU + swtpm on amd64.
 backed by swtpm on pop4090 (Ryzen 9 7950X, KVM) before any hardware dependency.
 
 **Acceptance gates (T1–T6):**
-- T1: swtpm socket appears within 3 s ✅ (CI green)
+- T1: swtpm socket appears within 3 s (CI green)
 - T2: smolBSD guest boots with `/dev/tpm0` present (needs real smolBSD image)
 - T3: `tpmctl -G` returns TPM 2.0 manufacturer info
 - T4: PCR 0 readable, non-zero, stable
@@ -58,17 +58,22 @@ backed by swtpm on pop4090 (Ryzen 9 7950X, KVM) before any hardware dependency.
 - kernel configs (`device tpm` in all SMOLBSD configs)
 - swtpm setup scripts, bhyve harness, test scripts
 - CI smoke test on pop4090 (self-hosted runner, `/dev/tpm0 present` = green)
-- `bin/fix-freebsd-vm.py`, `bin/build-smolbsd-image.nu`, `.github/workflows/tpm-vm-test.yml`
 
-**Remaining:**
-- Build smolBSD amd64 image with `device tpm` + `tpm2-tools` in package set
-- Run full T2–T6 suite on pop4090 QEMU
-- Update CI to use real smolBSD image instead of stock FreeBSD
+**Plans:** 7 plans across 4 waves
+
+Plans:
+- [ ] 03-01-PLAN.md — Add VM_EXTRA_PACKAGES=tpm2-tools to smolbsd-qemu.conf; copy SMOLBSD configs to pop4090 freebsd-src
+- [ ] 03-02-PLAN.md — Create tpm-vm-test.yml skeleton; install Nushell v0.112.2 on pop4090
+- [ ] 03-03-PLAN.md — Build smolBSD amd64 image on pop4090 (make vm-image KERNCONF=SMOLBSD); write SHA256 manifest
+- [ ] 03-04-PLAN.md — Run bhyve-tpm-pcr-verify.nu T1/T2/T3/T4/T6 against live smolBSD guest
+- [ ] 03-05-PLAN.md — Run tpm-seal-test.nu live T5 seal/unseal via /dev/tpm0 in guest
+- [ ] 03-06-PLAN.md — Wire full T1-T6 test sequence into tpm-vm-test.yml; remove fix-freebsd-vm.py
+- [ ] 03-07-PLAN.md — Create build-image.yml CI workflow for smolBSD TPM image rebuild on pop4090
 
 **Key files:** `bin/swtpm-setup.nu`, `bin/bhyve-smolbsd.nu`, `bin/qemu-smolbsd.nu`,
-`tests/tpm-attest.exp`, `tests/tpm-seal-test.nu`, `tests/tpm-smoke-test.nu`,
-`.github/workflows/tpm-vm-test.yml`, `plans/tinyos/PHASE-3-TPM.md`,
-`bin/build-smolbsd-image.nu`, `release/tools/smolbsd-qemu.conf`
+`tests/tpm-attest.exp`, `tests/tpm-seal-test.nu`, `tests/bhyve-tpm-pcr-verify.nu`,
+`.github/workflows/tpm-vm-test.yml`, `.github/workflows/build-image.yml`,
+`plans/tinyos/PHASE-3-TPM.md`, `release/tools/smolbsd-qemu.conf`
 
 ---
 
