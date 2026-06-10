@@ -77,12 +77,53 @@ Plans:
 
 ---
 
-## Phase 4: Physical fTPM + Remote Attestation — NOT STARTED
+## Phase 4: Remote Attestation — READY (hardware-free)
 
-Physical board TPM via Pi 5 RP1 fTPM (RPi UEFI) and RK3588 ARM TrustZone
-+ OP-TEE fTPM TA. Remote attestation protocol (TPM quote + verifier service).
+TPM quote + verifier service. Builds and tests against the SAME swtpm+QEMU
+stack proven in Phase 3 — no physical hardware required.
 
-**Prerequisites:** Phase 3 T1–T6 all pass. OP-TEE license audit complete.
+**Scope:**
+- A1: smolBSD guest generates a TPM 2.0 quote (`tpm2_quote`) over PCR 0+7 with an AK
+- A2: Quote includes a fresh nonce (anti-replay) and is signed by an Attestation Key
+- A3: Host-side verifier (`bin/attest-verify.nu`) validates the quote signature + PCR digest + nonce
+- A4: Verifier emits a structured TOML attestation envelope (verdict + evidence) per the AX-first convention
+- A5: CI gate: attestation round-trip passes on pop4090 QEMU+swtpm
+
+**Prerequisites:** Phase 3 T1–T6 all pass ✅. License audit complete ✅ (all
+components BSD-2/BSD-2-Patent/BSD-3 — see License Compliance below).
+
+**Acceptance gates (A1–A5):**
+- A1: `tpm2_createak` produces an AK; `tpm2_quote` succeeds over sha256:0,7
+- A2: Quote message contains the supplied nonce; signature verifies with the AK pub
+- A3: `tpm2_checkquote` (or equivalent) validates quote against expected PCR digest
+- A4: Verifier writes `[attestation]` TOML block with `verdict`, `pcr_digest`, `nonce`, `ak_fingerprint`
+- A5: Full quote→verify round-trip green in CI against the smolBSD image
+
+---
+
+## Phase 5: Physical fTPM — BLOCKED (needs hardware)
+
+Physical board TPM via Pi 5 RP1 fTPM (RPi UEFI, edk2-platforms BSD-2-Clause-Patent)
+and RK3588 ARM TrustZone + OP-TEE fTPM TA (BSD-2-Clause). Ports the Phase 4
+attestation protocol to real hardware.
+
+**Prerequisites:** Phase 4 attestation passes ✅ (when done). Physical Pi 5 or
+RK3588 board connected. License audit complete ✅.
+
+---
+
+## License Compliance — Phase 4/5 components (audited 2026-06-05)
+
+| Component | SPDX | Status |
+|-----------|------|--------|
+| OP-TEE OS | BSD-2-Clause | ✅ allowed |
+| ms-tpm-20-ref (fTPM TA) | BSD-2-Clause | ✅ allowed |
+| edk2-platforms (RPi UEFI) | BSD-2-Clause-Patent | ✅ allowed (strict superset of BSD-2-Clause — additive patent grant, no new restriction) |
+| tpm2-tools | BSD-2/BSD-3-Clause | ✅ allowed |
+
+**One-time approval:** BSD-2-Clause-Patent is accepted for this project. It is
+BSD-2-Clause plus an additive royalty-free patent grant (OSI + FSF approved),
+strictly more permissive than plain BSD-2-Clause. No GPL/copyleft anywhere.
 
 ---
 

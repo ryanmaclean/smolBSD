@@ -26,7 +26,7 @@ on:
 
 env:
   SMOLBSD_IMAGE: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
-  SWTPM_STATE:   /var/run/smolbsd-tpm
+  SWTPM_STATE:   /tmp/smolbsd-tpm-ci
   SSH_PORT:      2241
   SSH_PASS:      smolbsd
 
