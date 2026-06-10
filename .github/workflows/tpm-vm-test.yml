@@ -64,6 +64,37 @@ jobs:
           }
           echo "Image found: $(ls -lh $SMOLBSD_IMAGE)"
 
+      # The cloudware-release build installs the loader to /EFI/freebsd/loader.efi
+      # but NOT to the UEFI removable-media fallback path /EFI/BOOT/BOOTX64.EFI.
+      # A fresh OVMF VARS file has no NVRAM boot entry, so without the fallback
+      # OVMF drops to the UEFI Shell instead of booting FreeBSD. Ensure the
+      # fallback exists (idempotent — skips if already present).
+      - name: Ensure UEFI fallback bootloader in ESP
+        run: |
+          set -e
+          # The ESP is partition 1 (efi) on the GPT image. Use guestfish to copy
+          # loader.efi to the fallback path without needing root/nbd.
+          if ! command -v guestfish >/dev/null 2>&1; then
+            sudo apt-get install -y libguestfs-tools
+          fi
+          # Check whether the fallback already exists
+          HAS_FALLBACK=$(sudo LIBGUESTFS_BACKEND=direct guestfish --ro -a "$SMOLBSD_IMAGE" -i \
+            exists /EFI/BOOT/BOOTX64.EFI 2>/dev/null || echo "false")
+          if [ "$HAS_FALLBACK" = "true" ]; then
+            echo "Fallback bootloader already present — no patch needed"
+          else
+            echo "Fallback bootloader missing — copying loader.efi to /EFI/BOOT/BOOTX64.EFI"
+            # guestfish inline command form (colon-separated) — avoids heredoc
+            # indentation issues inside the YAML run block.
+            sudo LIBGUESTFS_BACKEND=direct guestfish -a "$SMOLBSD_IMAGE" \
+              run : \
+              mount /dev/sda1 / : \
+              mkdir-p /EFI/BOOT : \
+              cp /EFI/freebsd/loader.efi /EFI/BOOT/BOOTX64.EFI : \
+              ls /EFI/BOOT/
+            echo "Fallback bootloader installed"
+          fi
+
       - name: Reset swtpm state (fresh PCR baseline)
         run: nu bin/swtpm-setup.nu --action reset --state-dir "$SWTPM_STATE"
 
