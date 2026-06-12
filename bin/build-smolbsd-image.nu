@@ -396,7 +396,7 @@ def main [
     log-step "vm-vm-image" "starting make vm-image (this takes ~30 min)" {}
     vm-step "vm-image" (
         "make -C /usr/src/release KERNCONF=SMOLBSD WITH_PKGBASE=yes " +
-        "VMFORMATS=qcow2 VMSIZE=4g " +
+        "VMFORMATS=qcow2 VMSIZE=2g " +
         "CLOUDWARE_CONF=/root/smolBSD/release/tools/smolbsd-qemu.conf vm-image"
     ) $ssh_port $dry_run
 
