@@ -14,7 +14,7 @@
 | Public IP | `107.191.39.47` | Vultr amd64 instance main IP |
 | Tailscale IP | `100.93.79.79` | `minim4-16` jump host |
 | Tailscale IP | `100.91.236.29` | SSH jump host in harvest commands |
-| Vultr API key | `BTA56PEJBU6CIDUTVAAYTS64HB4SGFZ7FQ6Q` | Found in live spool on disk — **ROTATE IMMEDIATELY** |
+| Vultr API key | `REDACTED-VULTR-API-KEY` | Found in live spool on disk — **ROTATE IMMEDIATELY** |
 
 Additional files in committed history also contained the above UUIDs/IPs:
 - `bin/vultr-bhyve-provision.nu` — hardcoded SSH key UUID `5518413b`
