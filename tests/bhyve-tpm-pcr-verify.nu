@@ -127,7 +127,7 @@ def test-t3 [host: string, port: int, password: string, dry_run: bool] {
     }
 
     # tpmctl absent or returned no TPM info — try tpm2_getcap
-    let r2 = ssh-guest $host $port $password "tpm2_getcap -c properties-fixed 2>&1 | head -10"
+    let r2 = ssh-guest $host $port $password "tpm2_getcap properties-fixed 2>&1 | head -10"
     if $r2.exit_code == 0 and (($r2.stdout | str contains "2.0") or ($r2.stdout | str contains "TPM") or ($r2.stdout | str contains "tpm2")) {
         let snip = $r2.stdout | str trim | split row "\n" | first 3 | str join " | "
         return (make-claim $t $sub $exp $prb $"tpm2_getcap fallback: ($snip)" "pass")
