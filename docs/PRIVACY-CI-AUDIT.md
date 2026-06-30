@@ -43,10 +43,10 @@ Confirmed sensitive content in `origin/main` git history (`git log origin/main -
 
 | Type | Value | Context |
 |---|---|---|
-| Public IP | `140.82.9.132` | Vultr amd64 buildworld host, multiple SSH harvest commands |
-| Public IP | `REDACTED-VULTR-IP` | Vultr instance (connection refused attempts logged) |
-| Tailscale IP | `100.91.236.29` | SSH jump host in harvest commands |
-| Tailscale IP | `100.93.79.79` | `minim4-16` jump host (matches CLAUDE.md fleet topology) |
+| Public IP | `REDACTED-VULTR-PUBLIC-IP-1` | Vultr amd64 buildworld host, multiple SSH harvest commands |
+| Public IP | `REDACTED-VULTR-PUBLIC-IP-2` | Vultr instance (connection refused attempts logged) |
+| Tailscale IP | `REDACTED-TAILSCALE-IP-1` | SSH jump host in harvest commands |
+| Tailscale IP | `REDACTED-TAILSCALE-IP-2` | `minim4-16` jump host (matches CLAUDE.md fleet topology) |
 | Vultr UUID | `REDACTED-VULTR-UUID-1` | Active Vultr instance; `terminate_cmd` also present |
 | Vultr UUID | `REDACTED-VULTR-UUID-2` | Second Vultr instance ID |
 | SSH key UUID | `REDACTED-VULTR-SSH-KEY-UUID` | `mbp-m1-ed25519` Vultr SSH key ID |

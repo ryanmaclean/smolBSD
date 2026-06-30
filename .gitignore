@@ -9,6 +9,10 @@ var/mail/spool.*
 # Spool lock files (future, when multi-coordinator is in scope)
 var/mail/*.lock
 
+# Per-task HALT envelopes — ephemeral FSM signaling per spec §11
+var/mail/HALT
+var/mail/HALT.*
+
 # Build artifacts (Phase I onward — qcow2/raw images are large + reproducible)
 build/
 *.qcow2
