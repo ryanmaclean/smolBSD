@@ -134,10 +134,10 @@ def test-t3 [host: string, port: int, password: string, dry_run: bool] {
     }
 
     # Both failed — check if TPM 2.0 version info is accessible via any means
-    let r3 = ssh-guest $host $port $password "tpm2_getcap 2>&1 | head -3"
-    if $r3.exit_code == 0 or ($r3.stderr | str contains "Usage") or ($r3.stdout | str contains "usage") {
-        # tpm2_getcap is present and responding — TPM is accessible
-        return (make-claim $t $sub $exp $prb "tpm2_getcap present and responding (TPM 2.0 confirmed)" "pass")
+    let r3 = ssh-guest $host $port $password "tpm2_getcap properties-fixed 2>&1 | head -10"
+    if $r3.exit_code == 0 and ($r3.stdout | str contains "TPM2_PT") {
+        let snip = $r3.stdout | str trim | split row "\n" | first 3 | str join " | "
+        return (make-claim $t $sub $exp $prb $"tpm2_getcap properties-fixed: ($snip)" "pass")
     }
 
     let ev = $"tpmctl exit ($r.exit_code): ($r.stderr | str trim); tpm2_getcap exit ($r2.exit_code): ($r2.stderr | str trim)"
