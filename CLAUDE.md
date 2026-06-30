@@ -32,6 +32,7 @@ Optional environment variables:
 | `HALT_INTERVAL` | `10` | Seconds to sleep while halted |
 | `STATE_FILE` | `var/run/coord-state.toml` | FSM state file |
 | `SPOOL` | `var/mail/spool` | mbox spool path |
+| `SMOLBSD_CLAUDE_MODEL` | `claude-sonnet-4-6` | Claude model for subagent dispatch |
 
 Run a single tick manually:
 
@@ -80,6 +81,18 @@ Critical sections:
 
 Active development branch: `claude/stoic-pascal-u6y3T`
 
-## 9. License
+## 9. Security — install hooks after clone
+
+After cloning, install the pre-push guard that prevents `var/mail/spool` data from reaching public remotes:
+
+```sh
+nu bin/setup-hooks.nu
+```
+
+This installs `.git/hooks/pre-push` which scans the spool for public IPs and instance UUIDs before any push.
+
+**Never commit `var/mail/spool`** — it contains live IPs, instance UUIDs, and credential references. It is gitignored, but force-adds (`git add -f`) are blocked by the hook.
+
+## 10. License
 
 Apache-2.0

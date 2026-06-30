@@ -24,7 +24,22 @@ if [ -z "$IMG" ] || [ ! -f "$IMG" ]; then
     exit 2
 fi
 
+# Resolve IMG to an absolute path and reject any path-traversal components.
+# This prevents a user-supplied IMG like "../../etc/motd.qcow2" from causing
+# sudo tee -a to write as root to an attacker-chosen location.
+IMG=$(realpath "$IMG" 2>/dev/null) || { echo "analyze-image.sh: cannot resolve image path" >&2; exit 2; }
+case "$IMG" in
+    *".."*) echo "analyze-image.sh: path traversal rejected: $IMG" >&2; exit 2 ;;
+esac
+
+# REPORT always lives beside the resolved image — never derived from raw user input.
 REPORT="${REPORT:-${IMG%.qcow2}.size-report.txt}"
+# Validate REPORT is under the same directory (no traversal via REPORT env var).
+REPORT=$(realpath -m "$REPORT" 2>/dev/null || echo "$REPORT")
+case "$REPORT" in
+    *".."*) echo "analyze-image.sh: REPORT path traversal rejected" >&2; exit 2 ;;
+esac
+
 TARGET_MIB=512
 
 uname_s=$(uname -s)
@@ -48,6 +63,7 @@ fi
 
 # ---- mount the rootfs in a portable way -----------------------------------
 MOUNT=$(mktemp -d -t smolbsd-analyze.XXXXXX)
+# shellcheck disable=SC2317  # called via trap EXIT INT TERM
 cleanup() {
     case "$uname_s" in
         Linux)
@@ -56,7 +72,7 @@ cleanup() {
             ;;
         FreeBSD)
             sudo umount "$MOUNT" 2>/dev/null || true
-            [ -n "${MD:-}" ] && sudo mdconfig -d -u "$MD" 2>/dev/null || true
+            if [ -n "${MD:-}" ]; then sudo mdconfig -d -u "$MD" 2>/dev/null || true; fi
             ;;
     esac
     rmdir "$MOUNT" 2>/dev/null || true

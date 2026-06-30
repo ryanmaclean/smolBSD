@@ -1,254 +1,158 @@
 # SPDX-License-Identifier: Apache-2.0
-# tpm-vm-test.yml — FreeBSD 15.1-STABLE TPM smoke test on pop4090 self-hosted runner.
+# tpm-vm-test.yml — TPM 2.0 T1-T6 acceptance suite on pop4090 QEMU+swtpm.
+# Runs against the smolBSD amd64 image built with 'device tpm' + tpm2-tools.
+# Image path: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
+# Runner: pop4090-amd64 (self-hosted, linux, amd64, kvm)
 #
-# Boots a FreeBSD qcow2 image under QEMU with a software TPM (swtpm), reads PCR0,
-# and verifies it matches the known-good value from manual validation.
+# Phase-3 acceptance gates:
+#   T1: swtpm socket appears within 3s
+#   T2: /dev/tpm0 present in guest
+#   T3: tpmctl -G returns TPM 2.0 manufacturer info
+#   T4: PCR 0 readable, non-zero
+#   T5: seal/unseal round-trip with PCR 0+7 policy
+#   T6: PCR changes after tpm2_pcrextend
 #
-# Runner requirements (pop4090):
-#   /dev/kvm, qemu-system-x86_64, swtpm, sshpass, python3
-#   /usr/share/qemu/OVMF.fd
+# D-04 OVERRIDE: CONTEXT.md D-04 specified run-vm-tests.nu --tpm, but
+# RESEARCH.md Pitfall 1 documents that step-tpm-device in run-vm-tests.nu
+# uses nmdm console (FreeBSD-only, broken on Linux/QEMU). bhyve-tpm-pcr-verify.nu
+# is used instead — covered by Claude's Discretion: "Whether to run bhyve
+# or QEMU for the T2-T6 suite." smolBSD image does not need any VM fixup script.
 
-name: TPM VM Smoke Test
+name: TPM VM Test
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - 'bin/swtpm-setup.nu'
-      - 'bin/qemu-smolbsd.nu'
-      - 'tests/tpm-*.nu'
-      - 'tests/tpm-*.exp'
-      - '.github/workflows/tpm-vm-test.yml'
+  workflow_dispatch:
+
+env:
+  SMOLBSD_IMAGE: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
+  SWTPM_STATE:   /tmp/smolbsd-tpm-ci
+  SSH_PORT:      2241
+  SSH_PASS:      smolbsd
 
 jobs:
-  tpm-smoke:
-    name: FreeBSD TPM smoke test
+  tpm-t1-t6:
+    name: TPM T1-T6 acceptance suite
     runs-on: [self-hosted, linux, amd64, kvm]
-    timeout-minutes: 10
-
-    env:
-      IMAGE_URL: "https://download.freebsd.org/snapshots/VM-IMAGES/15.1-STABLE/amd64/Latest/FreeBSD-15.1-STABLE-amd64-ufs.qcow2.xz"
-      IMAGE_XZ:  "FreeBSD-15.1-STABLE-amd64-ufs.qcow2.xz"
-      IMAGE_Q:   "FreeBSD-15.1-STABLE-amd64-ufs.qcow2"
-      IMGDIR:    "/tmp/smolbsd-ci"
-      TPM_DIR:   "/tmp/smolbsd-tpm"
-      TPM_SOCK:  "/tmp/smolbsd-tpm/swtpm.sock"
-      CONSOLE_SOCK: "/tmp/smolbsd-console.sock"
-      SSH_PORT:  "2241"
 
     steps:
-      # ── 1. Checkout ────────────────────────────────────────────────────────────
-      - name: Checkout repository
-        uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
-      # ── 1b. Ensure required tools present ─────────────────────────────────────
-      - name: Verify runner tools
+      - name: Install Nushell
         run: |
-          echo "=== Tool check ==="
-          which sshpass || sudo apt-get install -y sshpass
-          which qemu-system-x86_64
-          which swtpm
-          which python3
-          ls /usr/share/qemu/OVMF.fd
-          ls /dev/kvm
-          echo "=== Tool check OK ==="
+          NU_VERSION="0.112.2"
+          ARCH=$(uname -m | sed 's/arm64/aarch64/')
+          case "$(uname -s)" in
+            Linux)  TRIPLE="${ARCH}-unknown-linux-musl" ;;
+            Darwin) TRIPLE="${ARCH}-apple-darwin" ;;
+          esac
+          ARCHIVE="nu-${NU_VERSION}-${TRIPLE}.tar.gz"
+          mkdir -p "$HOME/.local/bin"
+          curl -sSL "https://github.com/nushell/nushell/releases/download/${NU_VERSION}/${ARCHIVE}" \
+            | tar -xz -C "$HOME/.local/bin" --strip-components=1 "nu-${NU_VERSION}-${TRIPLE}/nu"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      # ── 2. Compute cache key ───────────────────────────────────────────────────
-      - name: Compute image cache key
-        id: cache-key
+      - name: Show Nushell version
+        run: nu --version
+
+      - name: Verify smolBSD image exists
         run: |
-          KEY=$(printf '%s' "$IMAGE_URL" | sha256sum | cut -d' ' -f1)
-          echo "key=freebsd-image-${KEY}" >> "$GITHUB_OUTPUT"
-
-      # ── 3. Restore cached image ────────────────────────────────────────────────
-      - name: Restore FreeBSD image cache
-        id: cache-image
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.IMGDIR }}/${{ env.IMAGE_Q }}
-          key: ${{ steps.cache-key.outputs.key }}
-
-      # ── 4. Download + decompress (cache miss only) ─────────────────────────────
-      - name: Download FreeBSD image
-        if: steps.cache-image.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p "$IMGDIR"
-          echo "Downloading $IMAGE_URL ..."
-          curl -fsSL --retry 3 --retry-delay 5 \
-            -o "$IMGDIR/$IMAGE_XZ" \
-            "$IMAGE_URL"
-
-      - name: Decompress image
-        if: steps.cache-image.outputs.cache-hit != 'true'
-        run: |
-          # Remove stale decompressed copy if present (xz --keep won't overwrite)
-          rm -f "$IMGDIR/$IMAGE_Q"
-          xz --decompress --keep "$IMGDIR/$IMAGE_XZ"
-          echo "Image ready: $IMGDIR/$IMAGE_Q ($(du -sh "$IMGDIR/$IMAGE_Q" | cut -f1))"
-
-      - name: Verify image present
-        run: |
-          test -f "$IMGDIR/$IMAGE_Q" || { echo "ERROR: image missing" >&2; exit 1; }
-          echo "Image OK: $(ls -lh "$IMGDIR/$IMAGE_Q")"
-
-      # ── 5. Create throwaway working copy ──────────────────────────────────────
-      - name: Create working copy of image
-        run: cp "$IMGDIR/$IMAGE_Q" "/tmp/$IMAGE_Q"
-
-      # ── 6. Start swtpm daemon ──────────────────────────────────────────────────
-      - name: Start swtpm daemon
-        run: |
-          rm -rf "$TPM_DIR"
-          mkdir -p "$TPM_DIR"
-          sudo swtpm socket \
-            --tpmstate "dir=$TPM_DIR" \
-            --tpm2 \
-            --ctrl "type=unixio,path=$TPM_SOCK" \
-            --daemon
-          for i in $(seq 1 30); do
-            [ -S "$TPM_SOCK" ] && break
-            sleep 0.1
-          done
-          [ -S "$TPM_SOCK" ] || { echo "ERROR: swtpm socket did not appear" >&2; exit 1; }
-          echo "swtpm ready: $TPM_SOCK"
-
-      # ── 7. Boot QEMU in background ────────────────────────────────────────────
-      - name: Boot QEMU (background)
-        run: |
-          # The socket may be root-owned from a previous sudo run — use sudo rm
-          sudo rm -f "$CONSOLE_SOCK"
-          # Also kill any stale QEMU from previous runs before starting a new one
-          sudo pkill -f qemu-system-x86_64 2>/dev/null || true
-          sleep 1
-          sudo qemu-system-x86_64 \
-            -M q35 \
-            -accel kvm \
-            -cpu host \
-            -bios /usr/share/qemu/OVMF.fd \
-            -m 512M \
-            -smp 2 \
-            -drive "file=/tmp/$IMAGE_Q,format=qcow2,if=virtio" \
-            -nic "user,model=virtio-net-pci,hostfwd=tcp::${SSH_PORT}-:22" \
-            -chardev "socket,path=$TPM_SOCK,id=chrtpm" \
-            -tpmdev "emulator,id=tpm0,chardev=chrtpm" \
-            -device "tpm-tis,tpmdev=tpm0" \
-            -chardev "socket,path=$CONSOLE_SOCK,server=on,wait=off,id=console" \
-            -serial chardev:console \
-            -nographic \
-            -monitor none \
-            &
-          echo $! > /tmp/qemu.pid
-          echo "QEMU PID: $(cat /tmp/qemu.pid)"
-          # Wait for console socket to appear then chmod so the runner user can connect
-          for i in $(seq 1 30); do
-            [ -S "$CONSOLE_SOCK" ] && break
-            sleep 0.2
-          done
-          sudo chmod 666 "$CONSOLE_SOCK" 2>/dev/null || true
-          echo "Console socket: $(ls -la "$CONSOLE_SOCK" 2>/dev/null || echo 'not yet present')"
-
-      # ── 8. Fix sshd via console socket (removes XMSS keys, enables root login)
-      - name: Fix guest sshd via console
-        run: |
-          python3 bin/fix-freebsd-vm.py \
-            --socket "$CONSOLE_SOCK" \
-            --password smolbsd \
-            --timeout 120
-
-      # ── 9. Poll SSH then read PCR0 ────────────────────────────────────────────
-      - name: Read PCR0 via SSH
-        id: pcr-check
-        run: |
-          # Poll until sshd accepts connections (up to 120s)
-          for i in $(seq 1 24); do
-            if sshpass -p smolbsd ssh \
-              -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null \
-              -o ConnectTimeout=8 \
-              -o PasswordAuthentication=yes \
-              -o PubkeyAuthentication=no \
-              -p "$SSH_PORT" root@127.0.0.1 echo OK 2>&1; then
-              echo "SSH connected on attempt $i"
-              break
-            fi
-            echo "SSH attempt $i/24 failed (port check: $(nc -z 127.0.0.1 "$SSH_PORT" 2>/dev/null && echo open || echo closed))"
-            sleep 5
-          done
-
-          # Load TPM driver (idempotent — no-op if already loaded or compiled in)
-          # NOTE: do NOT run pkg install here — FreeBSD QEMU SLIRP has no outbound
-          # internet by default (the stock UFS image lacks ifconfig_vtnet0="DHCP"),
-          # so pkg(8) will hang indefinitely.  See FreeBSD Handbook §4.3 + SLIRP docs.
-          sshpass -p smolbsd ssh \
-            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-            -o ConnectTimeout=10 -p "$SSH_PORT" root@127.0.0.1 \
-            'kldload tpm 2>/dev/null; ls /dev/tpm0 && echo TPM_DEVICE_PRESENT || echo TPM_DEVICE_ABSENT' \
-            2>&1
-
-          # CI gate: /dev/tpm0 exists → TPM 2.0 device is attached and accessible.
-          # tpm2_pcrread (from tpm2-tools) is NOT run here because pkg install requires
-          # outbound internet which SLIRP doesn't provide on a stock FreeBSD image.
-          # PCR0 was validated manually (2026-05-16) and lives in docs/VM-TESTING.md.
-          TPM_STATUS=$(sshpass -p smolbsd ssh \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            -o ConnectTimeout=10 \
-            -p "$SSH_PORT" root@127.0.0.1 \
-            'kldload tpm 2>/dev/null; test -c /dev/tpm0 && echo present || echo absent' \
-            2>/dev/null || echo absent)
-
-          echo "tpm_status=$TPM_STATUS" >> "$GITHUB_OUTPUT"
-          echo "TPM device status: $TPM_STATUS"
-
-          # Use tpm_status as the pass/fail signal
-          PCR0="$TPM_STATUS"
-          echo "pcr0=$PCR0" >> "$GITHUB_OUTPUT"
-
-          if [ "$TPM_STATUS" != "present" ]; then
-            echo "ERROR: /dev/tpm0 absent — TPM device not attached or tpm.ko failed to load" >&2
+          test -f "$SMOLBSD_IMAGE" || {
+            echo "ERROR: smolBSD image not found at $SMOLBSD_IMAGE"
+            echo "Run build-image.yml workflow first to build the image."
             exit 1
-          fi
+          }
+          echo "Image found: $(ls -lh $SMOLBSD_IMAGE)"
 
-      # ── 10. Job summary ───────────────────────────────────────────────────────
-      - name: Report result
-        if: always()
+      # The cloudware-release build installs the loader to /EFI/freebsd/loader.efi
+      # but NOT to the UEFI removable-media fallback path /EFI/BOOT/BOOTX64.EFI.
+      # A fresh OVMF VARS file has no NVRAM boot entry, so without the fallback
+      # OVMF drops to the UEFI Shell instead of booting FreeBSD. Ensure the
+      # fallback exists (idempotent — skips if already present).
+      - name: Ensure UEFI fallback bootloader in ESP
         run: |
-          TPM_STATUS="${{ steps.pcr-check.outputs.tpm_status }}"
-          # Pass if /dev/tpm0 was present in the guest
-          if [ "${TPM_STATUS}" = "present" ]; then
-            RESULT="PASS"
+          set -e
+          # The ESP is partition 1 (efi) on the GPT image. Use guestfish to copy
+          # loader.efi to the fallback path without needing root/nbd.
+          if ! command -v guestfish >/dev/null 2>&1; then
+            sudo apt-get install -y libguestfs-tools
+          fi
+          # Check whether the fallback already exists
+          HAS_FALLBACK=$(sudo LIBGUESTFS_BACKEND=direct guestfish --ro -a "$SMOLBSD_IMAGE" -i \
+            exists /EFI/BOOT/BOOTX64.EFI 2>/dev/null || echo "false")
+          if [ "$HAS_FALLBACK" = "true" ]; then
+            echo "Fallback bootloader already present — no patch needed"
           else
-            RESULT="FAIL"
+            echo "Fallback bootloader missing — copying loader.efi to /EFI/BOOT/BOOTX64.EFI"
+            # guestfish inline command form (colon-separated) — avoids heredoc
+            # indentation issues inside the YAML run block.
+            sudo LIBGUESTFS_BACKEND=direct guestfish -a "$SMOLBSD_IMAGE" \
+              run : \
+              mount /dev/sda1 / : \
+              mkdir-p /EFI/BOOT : \
+              cp /EFI/freebsd/loader.efi /EFI/BOOT/BOOTX64.EFI : \
+              ls /EFI/BOOT/
+            echo "Fallback bootloader installed"
           fi
-          {
-            echo "### TPM Smoke Test"
-            echo ""
-            echo "| Field  | Value |"
-            echo "|--------|-------|"
-            echo "| /dev/tpm0 | \`${TPM_STATUS:-unknown}\` |"
-            echo "| Result    | **${RESULT}** |"
-            if [ "$RESULT" = "FAIL" ]; then
-              echo ""
-              echo "> /dev/tpm0 absent — TPM device not attached or tpm.ko failed to load."
-              echo "> Note: tpm2_pcrread not run (pkg install requires outbound internet; SLIRP NAT not available on stock image)."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-          [ "$RESULT" = "PASS" ] || exit 1
 
-      # ── 10. Cleanup (always) ──────────────────────────────────────────────────
-      - name: Cleanup QEMU and swtpm
+      - name: Reset swtpm state (fresh PCR baseline)
+        run: nu bin/swtpm-setup.nu --action reset --state-dir "$SWTPM_STATE"
+
+      - name: Boot smolBSD with QEMU+swtpm (background)
+        run: |
+          nohup nu bin/qemu-smolbsd.nu \
+            --image "$SMOLBSD_IMAGE" \
+            --arch amd64 \
+            --tpm \
+            --tpm-state "$SWTPM_STATE" \
+            --hostfwd-ssh "$SSH_PORT" \
+            --mem 512M \
+            --name smolbsd-tpm-ci \
+            > /tmp/smolbsd-qemu-ci.log 2>&1 &
+          echo "QEMU_PID=$!" >> "$GITHUB_ENV"
+          echo "QEMU launched (PID $!)"
+
+      - name: Wait for SSH boot-gate (120s timeout for KVM amd64)
+        run: |
+          for i in $(seq 1 120); do
+            if ssh \
+                 -o StrictHostKeyChecking=no \
+                 -o UserKnownHostsFile=/dev/null \
+                 -o ConnectTimeout=3 \
+                 -o BatchMode=yes \
+                 -p "$SSH_PORT" root@127.0.0.1 "echo UP" 2>/dev/null; then
+              echo "SSH_UP at ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "ERROR: SSH did not respond within 120s"
+          tail -30 /tmp/smolbsd-qemu-ci.log || true
+          exit 1
+
+      - name: Run T1-T6 TPM acceptance suite
+        run: |
+          nu tests/bhyve-tpm-pcr-verify.nu \
+            --host 127.0.0.1 \
+            --port "$SSH_PORT" \
+            --password "" \
+            2>&1 | tee /tmp/smolbsd-t1t6-ci.toml
+
+      - name: Report T1-T6 results in job summary
         if: always()
         run: |
-          if [ -f /tmp/qemu.pid ]; then
-            QPID=$(cat /tmp/qemu.pid)
-            sudo kill "$QPID" 2>/dev/null || true
-            sleep 2
-            sudo kill -9 "$QPID" 2>/dev/null || true
-            rm -f /tmp/qemu.pid
-          fi
-          sudo pkill -f qemu-system-x86_64 2>/dev/null || true
-          sudo pkill -f "swtpm.*smolbsd-tpm" 2>/dev/null || true
-          sudo rm -f "/tmp/$IMAGE_Q" "$CONSOLE_SOCK"
-          sudo rm -rf "$TPM_DIR"
-          echo "Cleanup done."
+          echo "## TPM T1-T6 Results" >> "$GITHUB_STEP_SUMMARY"
+          echo '```toml' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/smolbsd-t1t6-ci.toml >> "$GITHUB_STEP_SUMMARY" || echo "(no results file)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup — shutdown guest and stop swtpm
+        if: always()
+        run: |
+          ssh \
+            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o BatchMode=yes \
+            -p "$SSH_PORT" root@127.0.0.1 "shutdown -p now" 2>/dev/null || true
+          sleep 5
+          nu bin/swtpm-setup.nu --action stop --state-dir "$SWTPM_STATE" || true
+          kill "$QEMU_PID" 2>/dev/null || true

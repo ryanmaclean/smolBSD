@@ -1,0 +1,7 @@
+[[claims]]
+t        = "T5"
+subject  = "seal/unseal round-trip with PCR 0+7 policy on /dev/tpm0"
+expected = "tpm2_unseal output == 'smolbsd-seal-test'"
+probe    = "tpm2_createprimary + tpm2_createpolicy sha256:0,7 + tpm2_create + tpm2_load + tpm2_unseal --auth pcr:sha256:0,7"
+evidence = "unsealed output: smolbsd-seal-test (exact string match confirmed)"
+verdict  = "pass"
