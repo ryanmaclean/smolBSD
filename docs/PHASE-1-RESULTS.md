@@ -113,7 +113,8 @@ Current: 1.41 GiB qcow2 (target: ≤512 MiB)
 - clang/llvm/libcompiler_rt excluded from pkgbase
 - `/usr/lib/debug`, `/usr/share/doc`, `/usr/share/locale`, `/usr/share/man` stripped
 - `/usr/share/examples`, `/usr/tests`, `/var/cache/pkg`, `/usr/include`, `/usr/lib/*.a` stripped
-- Additional pkg exclusions: vi, games, rescue, sendmail, bsdinstall, caroot, inetd
+- Additional pkg exclusions: vi, games, rescue, sendmail, bsdinstall, inetd
+- `caroot` retained to preserve TLS certificate validation for HTTPS clients
 - Kernel module trim: bluetooth, sound, netgraph, geom_raid/mirror/stripe, bridge, pf
 
 ### Projected savings
