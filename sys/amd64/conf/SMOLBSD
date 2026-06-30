@@ -15,6 +15,12 @@
 include MINIMAL
 ident SMOLBSD
 
+# ur-bsd: MINIMAL ships UFS/FFS as a loadable module (ufs.ko), not compiled in.
+# Because MODULES_OVERRIDE (below) strips the module set and loader.conf has no
+# ufs_load, the UFS root could not be mounted → mountroot panic. Compile FFS in.
+# (arm64 needs no equivalent — std.arm64 already includes options FFS.)
+options FFS                 # statically compile the UFS root filesystem
+
 # -----------------------------------------------------------------------
 # Strip physical storage controllers (not needed in QEMU virtio-blk world)
 # -----------------------------------------------------------------------
