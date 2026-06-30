@@ -114,8 +114,8 @@ def test-t2 [host: string, port: int, password: string, dry_run: bool] {
 def test-t3 [host: string, port: int, password: string, dry_run: bool] {
     let t = "T3"
     let sub = "TPM manufacturer info query returns '2.0' or 'TPM' (tpmctl -G or tpm2_getcap fallback)"
-    let exp = "tpmctl -G or tpm2_getcap -c properties-fixed output matches /2.0|TPM/i"
-    let prb = $"ssh root@($host) -p ($port) 'tpmctl -G || tpm2_getcap -c properties-fixed 2>&1 | head -5'"
+    let exp = "tpmctl -G or tpm2_getcap properties-fixed output matches /2.0|TPM/i"
+    let prb = $"ssh root@($host) -p ($port) 'tpmctl -G || tpm2_getcap properties-fixed 2>&1 | head -5'"
 
     if $dry_run { return (make-claim $t $sub $exp $prb "dry_run — skipped" "dry_run") }
 
