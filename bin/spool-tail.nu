@@ -1,99 +1,162 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# spool-tail.nu — mbox spool viewer with TOML pretty-printing
-#
-# Displays the last N messages from the spool in a human-readable format,
-# with TOML bodies pretty-printed as Nushell tables.
+# bin/spool-tail.nu — mailx-style spool viewer with TOML pretty-printing
 #
 # Usage:
-#   nu bin/spool-tail.nu                        # last 10 messages
-#   nu bin/spool-tail.nu --last 0               # all messages
-#   nu bin/spool-tail.nu --filter t42           # only messages for task t42
-#   nu bin/spool-tail.nu --raw                  # raw mbox output, no formatting
+#   nu bin/spool-tail.nu                        # summary table of all messages
+#   nu bin/spool-tail.nu --last N               # last N messages, full envelope + TOML body
+#   nu bin/spool-tail.nu --id <message-id>      # one message by Message-ID (substring match)
+#   nu bin/spool-tail.nu --task <task-id>       # messages whose TOML body has task_id = "<task-id>"
+#   nu bin/spool-tail.nu --spool PATH           # override default spool path
+#
+# Default spool: var/mail/spool (relative to cwd).
 
-def log-step [step: string, msg: string, extra: record = {}] {
-    let ts   = date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ"
-    let base = {ts: $ts, step: $step, msg: $msg}
-    let row  = if ($extra | is-empty) { $base } else { $base | merge $extra }
-    $row | to toml | print
-    print "---"
+use mbox-parse.nu [parse-mbox, extract-toml, msg-id]
+
+# ── Internal helpers ───────────────────────────────────────────────────────────
+
+# Extract a named header value from a parsed message, returning "" if absent.
+def get-header [msg: record, key: string] {
+    $msg.headers | get -o $key | default ""
 }
 
+# Extract verdict from a parsed TOML body record, or "" if absent/parse error.
+def get-verdict [toml: record] {
+    if ($toml | get -o "_parse_error" | is-not-empty) {
+        "(malformed)"
+    } else {
+        $toml | get -o "verdict" | default ""
+    }
+}
+
+# Extract task_id from a parsed TOML body record, or "" if absent/parse error.
+def get-task-id [toml: record] {
+    if ($toml | get -o "_parse_error" | is-not-empty) {
+        ""
+    } else {
+        $toml | get -o "task_id" | default ""
+    }
+}
+
+# Build a summary row record from a parsed message and its index.
+def build-summary-row [msg: record, idx: int] {
+    let toml = extract-toml $msg
+    {
+        idx:        $idx
+        date:       (get-header $msg "Date")
+        from:       (get-header $msg "From")
+        to:         (get-header $msg "To")
+        subject:    (get-header $msg "Subject" | default "(no subject)")
+        "msg-id":   (msg-id $msg)
+        verdict:    (get-verdict $toml)
+    }
+}
+
+# Print a single message in full: envelope headers + pretty TOML body.
+def print-message [msg: record, idx: int] {
+    print $"\n━━━ Message #($idx) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    print $"from_line : ($msg.from_line)"
+
+    # Print headers in sorted order for consistency
+    let hdrs = $msg.headers
+    $hdrs | columns | sort | each {|k|
+        print $"($k): ($hdrs | get $k)"
+    }
+
+    print ""  # blank line separating headers from body
+    let body = $msg.body | str trim
+    if ($body | str length) == 0 {
+        print "(empty body)"
+    } else {
+        let toml = extract-toml $msg
+        if ($toml | get -o "_parse_error" | is-not-empty) {
+            print $"[TOML parse error: ($toml._parse_error)]"
+            print "--- raw body ---"
+            print $body
+        } else {
+            # Pretty-print by converting through nuon for structured display
+            print "--- TOML body ---"
+            print ($toml | table --expand)
+        }
+    }
+}
+
+# ── Entry point ────────────────────────────────────────────────────────────────
+
+# View messages in the smolBSD coordinator mbox spool.
 def main [
-    --spool:  string = "var/mail/spool"
-    --root:   string = "."
-    --last:   int    = 10     # 0 = all
-    --filter: string = ""     # substring match on task_id in body
-    --raw                     # print raw mbox text, no formatting
+    --spool: string = "var/mail/spool"   # path to the mbox spool file
+    --last: int = 0                       # show last N messages in full (0 = summary table)
+    --id: string = ""                     # show one message by Message-ID substring
+    --task: string = ""                   # filter messages by TOML task_id
 ] {
-    use ./mbox-parse.nu [parse-mbox, extract-toml, msg-id]
+    # Resolve spool path (support both relative-to-cwd and absolute paths)
+    let spool_path = if ($spool | path type) == "file" {
+        $spool
+    } else if ($spool | path exists) {
+        $spool
+    } else {
+        $spool
+    }
 
-    let abs_root  = $root | path expand
-    let abs_spool = [$abs_root, $spool] | path join
+    if not ($spool_path | path exists) {
+        error make {msg: $"spool not found: ($spool_path)"}
+    }
 
-    if not ($abs_spool | path exists) {
-        print "spool is empty (file absent)"
+    let content = open --raw $spool_path
+    let messages = parse-mbox $content
+
+    if ($messages | length) == 0 {
+        print "spool is empty"
         return
     }
 
-    let content  = open --raw $abs_spool
-    let messages = parse-mbox $content | compact
-
-    # Filter by task_id substring
-    let filtered = if $filter != "" {
-        $messages | where {|m|
-            let payload = extract-toml $m
-            let task_id = $payload | get "task_id"? | default ""
-            $task_id | str contains $filter
+    # ── --id mode: single message by Message-ID substring ─────────────────────
+    if ($id | str length) > 0 {
+        let matched = $messages | enumerate | where {|e|
+            (msg-id $e.item) | str contains $id
         }
-    } else {
-        $messages
-    }
-
-    let total = $filtered | length
-
-    # Apply --last limit
-    let shown = if $last > 0 and $last < $total {
-        $filtered | last $last
-    } else {
-        $filtered
-    }
-
-    let shown_count = $shown | length
-
-    # Print each message
-    mut idx = if $last > 0 and $last < $total { $total - $last + 1 } else { 1 }
-    for msg in $shown {
-        let from_h    = $msg.headers | get "From"?       | default "?"
-        let to_h      = $msg.headers | get "To"?         | default "?"
-        let subj      = $msg.headers | get "Subject"?    | default ""
-        let id        = msg-id $msg
-        let irt       = $msg.headers | get "In-Reply-To"? | default ""
-
-        print $"── [($idx)/($total)] ──────────────────────────────────────────"
-        print $"  From:    ($from_h)"
-        print $"  To:      ($to_h)"
-        if $subj != "" { print $"  Subject: ($subj)" }
-        print $"  MsgID:   ($id)"
-        if $irt != "" { print $"  IRT:     ($irt)" }
-
-        if $raw {
-            print ""
-            print $msg.body
-        } else {
-            let payload = extract-toml $msg
-            if "_parse_error" in ($payload | columns) {
-                print $"  Body:    (raw — ($payload._parse_error))"
-                print $msg.body
-            } else {
-                print ""
-                $payload | table | print
-            }
+        if ($matched | length) == 0 {
+            print $"no message found with Message-ID containing: ($id)"
+            return
         }
-        print ""
-        $idx = $idx + 1
+        $matched | each {|e|
+            print-message $e.item $e.index
+        }
+        return
     }
 
-    let n_shown = $shown | length
-    print $"Total: ($total) messages, showing ($n_shown)"
+    # ── --task mode: filter by TOML task_id ───────────────────────────────────
+    if ($task | str length) > 0 {
+        let matched = $messages | enumerate | where {|e|
+            let toml = extract-toml $e.item
+            (get-task-id $toml) == $task
+        }
+        if ($matched | length) == 0 {
+            print $"no messages found with task_id = \"($task)\""
+            return
+        }
+        $matched | each {|e|
+            print-message $e.item $e.index
+        }
+        return
+    }
+
+    # ── --last N mode: show last N messages in full ────────────────────────────
+    if $last > 0 {
+        let total = $messages | length
+        let skip_n = if $last >= $total { 0 } else { $total - $last }
+        let subset = $messages | enumerate | skip $skip_n
+        $subset | each {|e|
+            print-message $e.item $e.index
+        }
+        return
+    }
+
+    # ── Default: summary table of all messages ─────────────────────────────────
+    let rows = $messages | enumerate | each {|e|
+        build-summary-row $e.item $e.index
+    }
+    # Use a wide rendering so verdict column is not elided in narrow terminals
+    print ($rows | table --width 300)
 }

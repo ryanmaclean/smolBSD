@@ -1,107 +1,182 @@
-#!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# spool-archive.nu — rotate the smolBSD mbox spool when it exceeds N messages
+# spool-archive.nu — rotate spool > N messages to var/mail/spool.YYYY-MM-DD
 #
-# When the spool grows beyond --max-msgs, the oldest messages are moved to a
-# dated archive file (var/mail/spool.YYYY-MM-DD), keeping only --keep recent
-# messages in the live spool.  Prevents unbounded growth during long campaigns.
+# Per design spec §15: archive the OLDEST (count - threshold) messages,
+# keeping the newest <threshold> messages active in the spool.
 #
 # Usage:
-#   nu bin/spool-archive.nu                        # archive if >500 msgs, keep 50
-#   nu bin/spool-archive.nu --max-msgs 200 --keep 20
-#   nu bin/spool-archive.nu --dry-run              # show what would happen
+#   nu bin/spool-archive.nu
+#   nu bin/spool-archive.nu --threshold 50
+#   nu bin/spool-archive.nu --spool /path/to/spool
+#   nu bin/spool-archive.nu --dry-run
+#
+# FSM safety: never archives a message whose Message-ID is referenced by
+# var/run/coord-state.toml (pending_request_id).
+#
+# Output: one JSON line to stdout — a record with:
+#   archived_count  int
+#   active_count    int
+#   archive_path    string | null
+#   skipped_reason  string | null
 
-def log-step [step: string, msg: string, extra: record = {}] {
-    let ts   = date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ"
-    let base = {ts: $ts, step: $step, msg: $msg}
-    let row  = if ($extra | is-empty) { $base } else { $base | merge $extra }
-    $row | to toml | print
-    print "---"
+use ./mbox-parse.nu [parse-mbox, msg-id]
+
+# Emit a structured log line to stderr (stdout is reserved for the summary JSON).
+def log-info [msg: string, payload: record] {
+    let ts = date now | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%SZ"
+    print --stderr $"[spool-archive] ($ts) ($msg) ($payload | to nuon)"
 }
 
-def main [
-    --spool:    string = "var/mail/spool"
-    --root:     string = "."
-    --max-msgs: int    = 500   # archive when spool exceeds this count
-    --keep:     int    = 50    # keep this many recent messages in live spool
-    --dry-run              # print plan without modifying files
+# Emit the summary record as compact JSON to stdout.
+# All exit paths funnel through here.
+def summarize [result: record] {
+    print ($result | to json --raw)
+}
+
+# Load coord-state.toml and return the list of Message-IDs that are live
+# (currently pending / in-flight — must not be rotated out of the active spool).
+def live-ids-from-state [state_path: string] {
+    if not ($state_path | path exists) {
+        return []
+    }
+    let state = try {
+        open --raw $state_path | from toml
+    } catch {
+        log-info "state_load_error" {path: $state_path, reason: "parse failed"}
+        return []
+    }
+
+    mut ids = []
+
+    # pending_request_id — the coordinator is waiting for a reply to this message.
+    let pending = $state | get "pending_request_id"? | default ""
+    if ($pending | str trim | str length) > 0 {
+        $ids = $ids | append $pending
+    }
+
+    $ids
+}
+
+# Reconstruct a single mbox message string from its parsed record.
+# from_line already carries the "From " prefix.
+def msg-to-mbox [msg: record] {
+    let header_str = (
+        $msg.headers
+        | transpose key val
+        | each {|pair| $"($pair.key): ($pair.val)"}
+        | str join "\n"
+    )
+    $"($msg.from_line)\n($header_str)\n\n($msg.body)\n"
+}
+
+# Main entry point.
+export def main [
+    --threshold: int    = 100    # keep newest N messages; archive the rest
+    --spool:     string = "var/mail/spool"
+    --state:     string = "var/run/coord-state.toml"
+    --dry-run                    # print what would happen; touch no files
+    --root:      string = "."    # project root
 ] {
-    use ./mbox-parse.nu [parse-mbox, msg-id]
+    let abs_root      = $root | path expand
+    let abs_spool     = [$abs_root, $spool] | path join
+    let abs_state     = [$abs_root, $state] | path join
+    let abs_mail_dir  = $abs_spool | path dirname
 
-    let abs_root  = $root | path expand
-    let abs_spool = [$abs_root, $spool] | path join
-
+    # ── Guard: spool must exist ───────────────────────────────────────────────
     if not ($abs_spool | path exists) {
-        log-step "archive-check" "spool absent — nothing to archive" {}
+        summarize {
+            archived_count: 0
+            active_count:   0
+            archive_path:   null
+            skipped_reason: $"spool not found: ($abs_spool)"
+        }
         return
     }
 
+    # ── Parse messages ────────────────────────────────────────────────────────
     let content  = open --raw $abs_spool
-    let messages = parse-mbox $content | compact
+    let messages = parse-mbox $content
     let total    = $messages | length
 
-    if $total <= $max_msgs {
-        log-step "archive-check" "no archive needed" {total: $total, max_msgs: $max_msgs}
+    if $total <= $threshold {
+        summarize {
+            archived_count: 0
+            active_count:   $total
+            archive_path:   null
+            skipped_reason: $"spool has ($total) messages <= threshold ($threshold); nothing to do"
+        }
         return
     }
 
-    let archive_count = $total - $keep
-    let date_str      = date now | date to-timezone utc | format date "%Y-%m-%d"
-    let archive_path  = $"($abs_spool).($date_str)"
+    let archive_count = $total - $threshold
+    let to_archive    = $messages | first $archive_count
+    let to_keep       = $messages | last $threshold
 
-    log-step "archive-plan" "archiving old messages" {
-        total:         $total
-        to_archive:    $archive_count
-        to_keep:       $keep
-        archive_path:  $archive_path
-        dry_run:       $dry_run
+    # ── FSM safety check ─────────────────────────────────────────────────────
+    let protected_ids = live-ids-from-state $abs_state
+
+    # Build the set of Message-IDs we would archive.
+    let archive_ids = $to_archive | each {|m| msg-id $m} | where {|id| ($id | str length) > 0}
+
+    # Check: any protected id lands in the archive set?
+    let blocked = $protected_ids | where {|id| $id in $archive_ids}
+
+    if ($blocked | length) > 0 {
+        let reason = $"archive would orphan live FSM message-ids: ($blocked | str join ', ')"
+        log-info "archive_blocked" {reason: $reason, protected: ($blocked | str join ", ")}
+        summarize {
+            archived_count: 0
+            active_count:   $total
+            archive_path:   null
+            skipped_reason: $reason
+        }
+        return
     }
 
+    # ── Build archive path ────────────────────────────────────────────────────
+    let utc_date     = date now | date to-timezone UTC | format date "%Y-%m-%d"
+    let archive_path = $"($abs_spool).($utc_date)"
+
+    # ── Dry-run short circuit ─────────────────────────────────────────────────
     if $dry_run {
-        print $"Would archive ($archive_count) messages to ($archive_path)"
-        print $"Would keep ($keep) most recent messages in ($abs_spool)"
+        summarize {
+            archived_count: $archive_count
+            active_count:   $threshold
+            archive_path:   $archive_path
+            skipped_reason: "dry-run: no files modified"
+        }
         return
     }
 
-    # Split: oldest archive_count messages → archive, newest keep → live spool.
-    # Reconstruct mbox by splitting raw content on "\nFrom " separator.
-    # Each segment after split had its "From " prefix consumed; we restore it.
-    let segments = (
-        $content
-        | split row "\nFrom "
-        | enumerate
-        | each {|e|
-            if $e.index == 0 { $e.item } else { $"From ($e.item)" }
-        }
-        | where {|s| ($s | str trim | str length) > 0 }
-    )
-
-    let seg_count = $segments | length
-    if $seg_count != $total {
-        # Parse count and segment count diverge (edge case) — use segment split
-        log-step "archive-warn" "segment count mismatch; using segment split" {
-            parsed: $total, segments: $seg_count
-        }
+    # ── Append archived messages to the date-stamped archive file ────────────
+    # Append (not overwrite) — multiple runs on the same UTC day accumulate.
+    if not ($abs_mail_dir | path exists) {
+        mkdir $abs_mail_dir
     }
 
-    let n_archive = if $seg_count > $keep { $seg_count - $keep } else { 0 }
-    let n_keep    = $seg_count - $n_archive
+    for msg in $to_archive {
+        (msg-to-mbox $msg) | save --append $archive_path
+    }
 
-    let archive_segs = $segments | first $n_archive
-    let live_segs    = $segments | last $n_keep
+    log-info "archived" {count: $archive_count, path: $archive_path}
 
-    # Append to archive (may already exist from a same-day earlier run)
-    let archive_text = $archive_segs | str join "\n"
-    $archive_text | save --append $archive_path
+    # ── Rewrite the active spool with only the kept messages ──────────────────
+    # Write to a temp file first, then rename over the original (atomic replace).
+    let tmp_path = $"($abs_spool).tmp.($nu.pid)"
 
-    # Overwrite live spool with kept messages
-    let live_text = $live_segs | str join "\n"
-    $live_text | save --force $abs_spool
+    for msg in $to_keep {
+        (msg-to-mbox $msg) | save --append $tmp_path
+    }
 
-    log-step "archive-done" "archive complete" {
-        archived:     $n_archive
-        kept:         $n_keep
-        archive_path: $archive_path
-        spool:        $abs_spool
+    mv --force $tmp_path $abs_spool
+
+    log-info "spool_rewritten" {active_count: $threshold, spool: $abs_spool}
+
+    # ── Summary report ────────────────────────────────────────────────────────
+    summarize {
+        archived_count: $archive_count
+        active_count:   $threshold
+        archive_path:   $archive_path
+        skipped_reason: null
     }
 }

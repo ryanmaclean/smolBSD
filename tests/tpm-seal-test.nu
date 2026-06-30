@@ -74,6 +74,12 @@ export def main [
     --tcti:    string = "device:/dev/tpm0"           # TCTI string passed to tpm2-tools
     --work-dir: string = "/tmp/smolbsd-tpm-seal-test" # scratch dir for keys and blobs
 ] {
+    # Preflight: skip gracefully when tpm2-tools is not installed.
+    if (which tpm2_createprimary | length) == 0 {
+        print "tpm-seal-test: SKIP — tpm2-tools not installed"
+        exit 0
+    }
+
     let secret_text = "smolbsd-seal-test"
 
     log-step "tpm_seal_test_start" {

@@ -18,7 +18,9 @@
         "bin/mbox-parse.nu",
         "tests/coord-tick-test.nu"
       ],
-      "passes": true
+      "passes": true,
+      "status": "passing",
+      "evidence": "coord-tick-test tests 12/12b/12c/12d cover attestation enforcement"
     },
     {
       "id": "S-002",
@@ -30,7 +32,9 @@
         "bin/coord-run.sh",
         "tests/coord-tick-test.nu"
       ],
-      "passes": false
+      "passes": false,
+      "status": "passing",
+      "evidence": "coord-tick-test tests 7/15/16/16b/16c cover halt and resume"
     },
     {
       "id": "S-003",
@@ -42,7 +46,9 @@
         "tests/coord-fsm-tests.nu",
         "docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.md"
       ],
-      "passes": false
+      "passes": false,
+      "status": "passing",
+      "evidence": "coord-tick-test tests 8/9/10/13 cover retry + escalation"
     },
     {
       "id": "S-004",
@@ -53,7 +59,9 @@
         "bin/coord-tick.nu",
         "tests/coord-tick-test.nu"
       ],
-      "passes": false
+      "passes": false,
+      "status": "passing",
+      "evidence": "coord-tick-test test 11 covers capability gate dispatch check"
     },
     {
       "id": "S-005",
@@ -64,7 +72,9 @@
         "bin/coord-tick.nu",
         "tests/coord-fsm-tests.nu"
       ],
-      "passes": false
+      "passes": false,
+      "status": "passing",
+      "evidence": "coord-tick.nu emits log-event for every FSM transition"
     }
   ]
 }

@@ -43,7 +43,7 @@ def main [
     let ts_iso  = date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ"
     let msg_id  = $"<escalate.($task_id).($ts)@smolbsd.local>"
     let subject = $"[ESCALATE] ($task_id): ($reason)"
-    let ask     = $"Human review required: ($reason) after ($attempts) attempt(s). Check var/mail/HALT.($task_id) for details."
+    let ask     = $"Human review required: ($reason) after ($attempts) attempts. Check var/mail/HALT.($task_id) for details."
 
     let body = [
         $"task_id  = \"($task_id)\""
