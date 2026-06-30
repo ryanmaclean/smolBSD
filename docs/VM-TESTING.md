@@ -281,3 +281,45 @@ test evidence:
 ```sh
 swtpm --version
 ```
+
+## Validated: QEMU + swtpm TPM 2.0 on pop4090 (2026-05-16)
+
+**Host:** pop4090 — AMD Ryzen 9 7950X, Pop!_OS 24.04, KVM available (`/dev/kvm`)
+**Guest:** FreeBSD 15.1-STABLE amd64 (`GENERIC` kernel with `kldload tpm`)
+**swtpm:** 0.7.3
+**QEMU:** 8.2.2
+
+### Verified working command line
+
+```sh
+# Start swtpm
+sudo swtpm socket --tpmstate dir=/tmp/smolbsd-tpm --tpm2 \
+  --ctrl type=unixio,path=/tmp/smolbsd-tpm/swtpm.sock --daemon
+
+# Launch FreeBSD VM with TPM
+sudo qemu-system-x86_64 \
+  -M q35 -accel kvm -cpu host \
+  -bios /usr/share/qemu/OVMF.fd \
+  -m 512M -smp 2 \
+  -drive file=<image>.qcow2,format=qcow2,if=virtio \
+  -nic user,model=virtio-net-pci,hostfwd=tcp::2241-:22 \
+  -chardev socket,path=/tmp/smolbsd-tpm/swtpm.sock,id=chrtpm \
+  -tpmdev emulator,id=tpm0,chardev=chrtpm \
+  -device tpm-tis,tpmdev=tpm0 \
+  -nographic -monitor none
+```
+
+### Guest-side verification
+
+```
+# In guest (after kldload tpm):
+tpm2_pcrread sha256:0
+# sha256:
+#   0 : 0xB6A903D197F7F1DFDAD0C3D74244009C9AA407F55AE5F753D7F8B3F0C10F5727
+```
+
+**Key notes:**
+- Standard FreeBSD UFS VM image generates XMSS host keys on first boot, blocking sshd for hours.
+  Fix: `rm -f /etc/ssh/ssh_host_xmss_key*` before sshd starts (smolBSD conf already does this).
+- `tpm-tis` device works on amd64 QEMU; `tpm-tis-device` (aarch64) generates ControlArea=0 in ACPI.
+- `kldload tpm` is required in GENERIC kernel; smolBSD kernel configs already include `device tpm`.
