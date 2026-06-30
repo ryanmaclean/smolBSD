@@ -129,6 +129,12 @@ nodevice hyperv
 
 # Reduce debug overhead in production image
 makeoptions DEBUG=          # no debug symbols in kernel binary
+
+# ur-bsd: build only the modules the VM can actually load.
+# Everything QEMU needs (virtio, vtnet, ahci, tpm) is compiled in via
+# MINIMAL / explicit devices above; the default full module set adds
+# hundreds of MiB to /boot/kernel for hardware this kernel can never see.
+makeoptions MODULES_OVERRIDE="tmpfs nullfs fdescfs procfs"
 nooptions KDB_UNATTENDED    # panic reboot, not drop to debugger
 nooptions WITNESS           # no lock order checker in production
 nooptions INVARIANTS        # no internal consistency checks
@@ -140,6 +146,14 @@ nooptions FULL_BUF_TRACKING
 # COMPAT_FREEBSD10, COMPAT_FREEBSD11 can be dropped for size
 nooptions COMPAT_FREEBSD10
 nooptions COMPAT_FREEBSD11
+
+# -----------------------------------------------------------------------
+# Filesystem and partition table support
+# -----------------------------------------------------------------------
+# MINIMAL does not include options FFS — must be added explicitly.
+# Without FFS, the kernel cannot mount a UFS root filesystem.
+options FFS                     # Berkeley Fast Filesystem (UFS — required for root)
+options GEOM_PART_GPT           # GPT partition table support (required for vtbd0p4)
 
 # -----------------------------------------------------------------------
 # TPM 2.0 support

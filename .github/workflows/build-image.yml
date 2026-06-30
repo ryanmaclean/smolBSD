@@ -1,0 +1,352 @@
+# SPDX-License-Identifier: Apache-2.0
+# build-image.yml — Build smolBSD amd64 TPM image on pop4090.
+# Outputs: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
+#          /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2.sha256
+#
+# Trigger manually (workflow_dispatch) or automatically when the SMOLBSD kernel
+# config or smolbsd-qemu.conf changes.
+#
+# After a successful build, run tpm-vm-test.yml to validate T1-T6.
+#
+# Build strategy (PATH B — D-01): qemu-x86_64-static is ABSENT on pop4090, so
+# the FreeBSD release toolchain cannot run directly on Linux.  Instead we boot
+# a stock FreeBSD 15.1-STABLE VM, run buildworld+buildkernel+cloudware-release
+# INSIDE it, and scp the qcow2 artifact back.  Total build time is ~96 minutes.
+#
+# The host freebsd-src tree is shared read/write into the VM via virtio-9p so
+# that the configs copied in pre-build steps are visible inside the VM without
+# a separate scp.  A 20 GB scratch qcow2 is attached as a second drive so that
+# build objects (13 GB+) do not fill the VM rootfs (4.8 GB).
+#
+# CRITICAL: Do NOT add WITHOUT_QEMU, NOPKG, or NOPKGBASE to the make
+# invocation — those flags skip pkg install and would silently omit tpm2-tools
+# from the image (see 03-RESEARCH.md Pitfall 3).
+
+name: Build smolBSD TPM Image
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - sys/amd64/conf/SMOLBSD
+      - release/tools/smolbsd-qemu.conf
+
+env:
+  FREEBSD_SRC:  /home/studio/bsd-build/src/freebsd-src
+  WORLD_STAGE:  /home/studio/bsd-build/stage/amd64-postworld-20260411T130830
+  OUTPUT_DIR:   /home/studio/smolbsd-ci
+  OUTPUT_IMAGE: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
+
+jobs:
+  build:
+    name: Build smolBSD amd64 TPM qcow2
+    runs-on: [self-hosted, linux, amd64, kvm]
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify freebsd-src tree exists
+        run: |
+          test -d "$FREEBSD_SRC" || {
+            echo "ERROR: freebsd-src not found at $FREEBSD_SRC"
+            echo "Run initial setup on pop4090 to clone the FreeBSD source tree."
+            exit 1
+          }
+          echo "freebsd-src found at $FREEBSD_SRC"
+          ls "$FREEBSD_SRC/release/Makefile.vm" || {
+            echo "ERROR: release/Makefile.vm not found — freebsd-src may be incomplete"
+            exit 1
+          }
+
+      - name: Copy SMOLBSD configs into freebsd-src
+        run: |
+          # KERNCONF=SMOLBSD requires sys/amd64/conf/SMOLBSD in the src tree
+          cp -v sys/amd64/conf/SMOLBSD \
+            "$FREEBSD_SRC/sys/amd64/conf/SMOLBSD"
+
+          # cloudware-release needs smolbsd-qemu.conf in release/tools/
+          cp -v release/tools/smolbsd-qemu.conf \
+            "$FREEBSD_SRC/release/tools/smolbsd-qemu.conf"
+
+          # Verify copies: device tpm must be present in kernel config
+          grep "device tpm" "$FREEBSD_SRC/sys/amd64/conf/SMOLBSD" || {
+            echo "ERROR: 'device tpm' not found in SMOLBSD kernel config"
+            exit 1
+          }
+          # VM_EXTRA_PACKAGES=tpm2-tools must be present in qemu.conf
+          grep "VM_EXTRA_PACKAGES" "$FREEBSD_SRC/release/tools/smolbsd-qemu.conf" || {
+            echo "ERROR: VM_EXTRA_PACKAGES not found in smolbsd-qemu.conf"
+            exit 1
+          }
+          echo "Configs copied and verified"
+
+      - name: Create output directory
+        run: mkdir -p "$OUTPUT_DIR"
+
+      - name: Build smolBSD amd64 TPM image (PATH B — inside FreeBSD VM)
+        run: |
+          set -e
+
+          # PATH B: qemu-x86_64-static is absent on pop4090 (confirmed in
+          # 03-PREFLIGHT-NOTES.md).  The FreeBSD release toolchain cannot run on
+          # Linux.  We boot a stock FreeBSD 15.1-STABLE VM, share the host
+          # freebsd-src tree into it via virtio-9p, attach a 20 GB scratch disk
+          # for build objects, run buildworld+buildkernel+cloudware-release inside
+          # the VM, and scp the finished qcow2 back to the host.
+          #
+          # Artifact output path inside VM: /usr/obj/amd64.amd64/usr/src/release/vm.ufs.qcow2
+          # (set by MAKEOBJDIRPREFIX=/usr/obj which is the FreeBSD default when
+          #  /usr/obj is a symlink pointing at the scratch disk)
+
+          FBSD_IMAGE="/home/studio/smolbsd-tpm-test/FreeBSD-15.1-STABLE-amd64-ufs.qcow2"
+          SCRATCH_DISK="/tmp/smolbsd-build-scratch-$$.qcow2"
+          BUILD_VM_PID_FILE="/tmp/smolbsd-build-vm-$$.pid"
+          BUILD_SSH_PORT=2242
+
+          # Sanity-check the stock FreeBSD image is present.
+          test -f "$FBSD_IMAGE" || {
+            echo "ERROR: FreeBSD 15.1-STABLE image not found at $FBSD_IMAGE"
+            echo "Download from https://download.freebsd.org/releases/VM-IMAGES/15.1-STABLE/amd64/Latest/"
+            exit 1
+          }
+
+          # --- Cleanup helper (runs on exit/error) ---
+          cleanup() {
+            echo "--- cleanup: shutting down build VM ---"
+            if [ -f "$BUILD_VM_PID_FILE" ]; then
+              BUILD_VM_PID=$(cat "$BUILD_VM_PID_FILE")
+              kill "$BUILD_VM_PID" 2>/dev/null || true
+              rm -f "$BUILD_VM_PID_FILE"
+            fi
+            rm -f "$SCRATCH_DISK"
+          }
+          trap cleanup EXIT
+
+          # --- Create 20 GB scratch disk for build objects ---
+          # The FreeBSD VM rootfs is ~4.8 GB; buildworld+buildkernel produces
+          # 13 GB+ of objects.  A scratch disk prevents rootfs overflow.
+          echo "Creating 20 GB scratch disk at $SCRATCH_DISK ..."
+          qemu-img create -f qcow2 "$SCRATCH_DISK" 20G
+
+          # --- Boot the FreeBSD build VM ---
+          # Matches q35 + KVM + OVMF pattern from tpm-vm-test.yml.
+          # virtio-9p shares the host freebsd-src tree as "hostsrc" (read-write
+          # so the VM can write build stamps back into the tree).
+          # Second drive is the scratch disk.
+          echo "Booting FreeBSD 15.1-STABLE build VM on port $BUILD_SSH_PORT ..."
+          sudo qemu-system-x86_64 \
+            -M q35 \
+            -accel kvm \
+            -cpu host \
+            -bios /usr/share/qemu/OVMF.fd \
+            -m 4096M \
+            -smp 4 \
+            -drive "file=${FBSD_IMAGE},format=qcow2,if=virtio,snapshot=on" \
+            -drive "file=${SCRATCH_DISK},format=qcow2,if=virtio" \
+            -virtfs "local,path=${FREEBSD_SRC},mount_tag=hostsrc,security_model=mapped-xattr,id=hostsrc" \
+            -nic "user,model=virtio-net-pci,hostfwd=tcp::${BUILD_SSH_PORT}-:22" \
+            -nographic \
+            -monitor none \
+            -serial file:/tmp/smolbsd-build-serial.log \
+            > /tmp/smolbsd-build-vm.log 2>&1 &
+          echo $! > "$BUILD_VM_PID_FILE"
+          echo "Build VM PID: $(cat $BUILD_VM_PID_FILE)"
+
+          # --- Wait for SSH (up to 120s) ---
+          echo "Waiting for build VM SSH on port $BUILD_SSH_PORT ..."
+          for i in $(seq 1 120); do
+            if ssh \
+                -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null \
+                -o ConnectTimeout=3 \
+                -o BatchMode=yes \
+                -p "$BUILD_SSH_PORT" root@127.0.0.1 "echo UP" 2>/dev/null; then
+              echo "Build VM SSH up at ${i}s"
+              break
+            fi
+            if [ "$i" -eq 120 ]; then
+              echo "ERROR: build VM SSH did not respond within 120s"
+              tail -30 /tmp/smolbsd-build-serial.log || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # --- Run the build inside the FreeBSD VM ---
+          # Steps performed in sequence:
+          #   1. Partition and mount the scratch disk as /build
+          #   2. Symlink /usr/obj -> /build/obj  (redirects MAKEOBJDIRPREFIX)
+          #   3. Mount the 9p hostsrc share at /usr/src
+          #   4. Copy smolBSD configs into the src tree (already done by host
+          #      pre-build steps, visible via the 9p share)
+          #   5. buildworld + buildkernel KERNCONF=SMOLBSD
+          #   6. cloudware-release KERNCONF=SMOLBSD CLOUDWARE=smolbsd
+          #      SMOLBSD_FORMAT=qcow2 SMOLBSD_FSLIST=ufs
+          #      MK_DEBUG_FILES=no MK_TESTS=no MK_LIB32=no
+          #      NOPKGBASE=yes (uses installworld, not pkgbase repos)
+          #      NOTE: do NOT add WITHOUT_QEMU/NOPKG — those skip tpm2-tools pkg install
+          #   7. The artifact lands at /usr/obj/amd64.amd64/usr/src/release/vm.ufs.qcow2
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o BatchMode=yes \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=5 \
+            -p "$BUILD_SSH_PORT" \
+            root@127.0.0.1 'set -ex
+
+          # 1. Partition and mount scratch disk (second virtio drive = vtbd1)
+          gpart create -s gpt vtbd1
+          gpart add -t freebsd-ufs -l buildscratch vtbd1
+          newfs -U /dev/vtbd1p1
+          mkdir -p /build
+          mount /dev/vtbd1p1 /build
+          echo "Scratch disk mounted at /build ($(df -h /build | tail -1 | awk "{print \$4}") free)"
+
+          # 2. Redirect build objects to scratch disk
+          mkdir -p /build/obj
+          ln -sf /build/obj /usr/obj
+          echo "Symlinked /usr/obj -> /build/obj"
+
+          # 3. Mount the host freebsd-src tree via 9p
+          mkdir -p /usr/src
+          mount -t virtfs -o trans=virtio hostsrc /usr/src
+          echo "9p hostsrc mounted at /usr/src"
+          ls /usr/src/sys/amd64/conf/SMOLBSD || {
+            echo "ERROR: SMOLBSD kernel config not visible at /usr/src/sys/amd64/conf/SMOLBSD"
+            exit 1
+          }
+          grep "device tpm" /usr/src/sys/amd64/conf/SMOLBSD || {
+            echo "ERROR: device tpm missing from SMOLBSD kernel config"
+            exit 1
+          }
+          grep "VM_EXTRA_PACKAGES" /usr/src/release/tools/smolbsd-qemu.conf || {
+            echo "ERROR: VM_EXTRA_PACKAGES missing from smolbsd-qemu.conf"
+            exit 1
+          }
+          echo "Config checks passed"
+
+          # 4. buildworld (uses all CPUs; objects go to /build/obj via /usr/obj symlink)
+          ncpu=$(sysctl -n hw.ncpu)
+          echo "Building world with -j${ncpu} ..."
+          make -C /usr/src buildworld \
+            TARGET=amd64 TARGET_ARCH=amd64 \
+            MK_DEBUG_FILES=no MK_TESTS=no MK_LIB32=no \
+            -j${ncpu} \
+            2>&1 | tee /tmp/smolbsd-buildworld.log
+
+          # 5. buildkernel KERNCONF=SMOLBSD
+          echo "Building kernel KERNCONF=SMOLBSD with -j${ncpu} ..."
+          make -C /usr/src buildkernel \
+            KERNCONF=SMOLBSD \
+            TARGET=amd64 TARGET_ARCH=amd64 \
+            MK_DEBUG_FILES=no MK_TESTS=no \
+            -j${ncpu} \
+            2>&1 | tee /tmp/smolbsd-buildkernel.log
+
+          # 6. cloudware-release — generates cw-smolbsd-ufs-qcow2 target.
+          #    SMOLBSD is not a predefined cloudware type in Makefile.vm so
+          #    SMOLBSD_FORMAT and SMOLBSD_FSLIST must be set explicitly.
+          #    NOPKGBASE=yes uses installworld rather than pkgbase repos.
+          #    Do NOT add WITHOUT_QEMU/NOPKG — those skip tpm2-tools pkg install.
+          echo "Running cloudware-release ..."
+          make -C /usr/src/release cloudware-release \
+            KERNCONF=SMOLBSD \
+            CLOUDWARE=smolbsd \
+            CLOUDWARE_CONF=/usr/src/release/tools/smolbsd-qemu.conf \
+            SMOLBSD_FORMAT=qcow2 \
+            SMOLBSD_FSLIST=ufs \
+            VMSIZE=4g \
+            TARGET=amd64 TARGET_ARCH=amd64 \
+            MK_DEBUG_FILES=no MK_KERNEL_SYMBOLS=no MK_TESTS=no MK_LIB32=no \
+            NOPKGBASE=yes \
+            2>&1 | tee /tmp/smolbsd-cloudware.log
+
+          echo "Build complete"
+          ls -lh /usr/obj/amd64.amd64/usr/src/release/vm.ufs.qcow2
+          ' 2>&1 | tee /tmp/smolbsd-build.log
+
+          # --- scp the qcow2 artifact from the VM back to the host ---
+          echo "Copying artifact from build VM ..."
+          mkdir -p "$OUTPUT_DIR"
+          scp \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -P "$BUILD_SSH_PORT" \
+            "root@127.0.0.1:/usr/obj/amd64.amd64/usr/src/release/vm.ufs.qcow2" \
+            "$OUTPUT_IMAGE"
+          echo "Artifact copied to: $OUTPUT_IMAGE"
+
+          # Graceful guest shutdown before cleanup trap fires.
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o BatchMode=yes \
+            -p "$BUILD_SSH_PORT" \
+            root@127.0.0.1 "shutdown -p now" 2>/dev/null || true
+          sleep 5
+
+      - name: Verify artifact was copied to stable path
+        run: |
+          set -e
+          # The PATH B build step scp'd the artifact directly to $OUTPUT_IMAGE.
+          # This step confirms the copy succeeded before downstream steps run.
+          if [ ! -f "$OUTPUT_IMAGE" ]; then
+            echo "ERROR: no qcow2 artifact found at $OUTPUT_IMAGE"
+            echo "--- last 80 lines of build log ---"
+            tail -80 /tmp/smolbsd-build.log || true
+            exit 1
+          fi
+          echo "Artifact present: $(ls -lh $OUTPUT_IMAGE)"
+
+      - name: Verify image size (warn if over 512 MiB)
+        run: |
+          # tpm2-tools + 12 deps push the image to ~700 MiB (known deviation
+          # from the 512 MiB plan target — accepted in plan-03 decisions).
+          # This step reports the size and warns but does not fail the build.
+          command -v qemu-img >/dev/null 2>&1 || {
+            echo "WARNING: qemu-img not found — install qemu-utils to enable size check"
+            echo "  sudo apt-get install -y qemu-utils"
+            exit 0
+          }
+          ACTUAL=$(qemu-img info --output=json "$OUTPUT_IMAGE" | \
+            python3 -c "import json,sys; info=json.load(sys.stdin); print(info.get('actual-size', 0))")
+          LIMIT=536870912
+          MIB=$(python3 -c "print(round($ACTUAL / 1048576, 1))")
+          echo "actual-size: $ACTUAL bytes (${MIB} MiB)"
+          if [ "$ACTUAL" -ge "$LIMIT" ]; then
+            echo "NOTE: image size ${MIB} MiB exceeds 512 MiB soft limit (tpm2-tools requirement accepted)"
+          else
+            echo "PASS: image size within 512 MiB budget"
+          fi
+
+      - name: Write SHA256 manifest
+        run: |
+          sha256sum "$OUTPUT_IMAGE" > "${OUTPUT_IMAGE}.sha256"
+          echo "SHA256 manifest:"
+          cat "${OUTPUT_IMAGE}.sha256"
+
+          # Build metadata record for cache invalidation and audit
+          {
+            echo "KERNCONF=SMOLBSD"
+            echo "VM_EXTRA_PACKAGES=tpm2-tools"
+            echo "VMSIZE=4g"
+            echo "SMOLBSD_FORMAT=qcow2"
+            echo "SMOLBSD_FSLIST=ufs"
+            echo "built: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            git rev-parse HEAD
+          } > "$OUTPUT_DIR/BUILD-INFO.txt"
+          echo ""
+          echo "Build metadata:"
+          cat "$OUTPUT_DIR/BUILD-INFO.txt"
+
+      - name: Upload build log on failure
+        if: failure()
+        run: |
+          echo "=== smolbsd-build.log (last 150 lines) ==="
+          tail -150 /tmp/smolbsd-build.log || true
+          echo "=== smolbsd-build-serial.log (last 50 lines) ==="
+          tail -50 /tmp/smolbsd-build-serial.log || true
+          echo "=== smolbsd-cloudware.log (last 80 lines, if present) ==="
+          tail -80 /tmp/smolbsd-cloudware.log || true

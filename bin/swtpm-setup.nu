@@ -86,7 +86,7 @@ def action-start [paths: record] {
     # Launch swtpm in daemon mode.
     # FreeBSD security/swtpm port installs to /usr/local/bin/swtpm (most versions)
     # or /usr/local/sbin/swtpm (some port revisions).  Probe both.
-    let swtpm_candidates = ["/usr/local/bin/swtpm", "/usr/local/sbin/swtpm"]
+    let swtpm_candidates = ["/usr/local/bin/swtpm", "/usr/local/sbin/swtpm", "/usr/bin/swtpm"]
     let swtpm_bin = $swtpm_candidates | where {|p| $p | path exists} | first 1
     if ($swtpm_bin | length) == 0 {
         error make {msg: $"swtpm binary not found in ($swtpm_candidates | str join ' or '); install security/swtpm"}
@@ -102,7 +102,10 @@ def action-start [paths: record] {
 
     let tpmstate_arg = $"dir=($paths.state_dir)"
     let ctrl_arg     = $"type=unixio,path=($paths.socket)"
-    ^$swtpm_bin socket --tpmstate $tpmstate_arg --tpm2 --ctrl $ctrl_arg --pid-file $paths.pid_file --daemon
+    # Note: FreeBSD swtpm uses --pid-file <path>; Ubuntu/Linux swtpm uses --pid file=<path>
+    # Use the Linux-compatible form ("--pid file=") which also works on FreeBSD >= 0.7.x
+    let pid_arg = $"file=($paths.pid_file)"
+    ^$swtpm_bin socket --tpmstate $tpmstate_arg --tpm2 --ctrl $ctrl_arg --pid $pid_arg --daemon
 
     # Verify socket appears within 3 seconds (poll every 0.3s, 10 attempts).
     let max_polls = 10

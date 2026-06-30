@@ -153,6 +153,12 @@ device uart             # Generic UART driver; arm64 serial console path
 
 # Reduce debug overhead in production image
 makeoptions DEBUG=          # no debug symbols in kernel binary
+
+# ur-bsd: build only the modules the VM can actually load.
+# Everything QEMU needs (virtio, vtnet, uart, tpm) is compiled in via
+# std.virt / explicit devices above; the default full module set adds
+# hundreds of MiB to /boot/kernel for hardware this kernel can never see.
+makeoptions MODULES_OVERRIDE="tmpfs nullfs fdescfs procfs"
 nooptions KDB_UNATTENDED    # panic reboot, not drop to debugger
 nooptions WITNESS           # no lock order checker in production
 nooptions INVARIANTS        # no internal consistency checks
