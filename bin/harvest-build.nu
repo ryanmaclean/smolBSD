@@ -44,11 +44,13 @@ def ssh-builder [
     dry_run: bool
 ] {
     if $dry_run {
-        print $"[dry-run] ssh -J ($jump) -p ($port) ($target) \"($cmd)\""
+        let jump_disp = if $jump == "" { "" } else { $" -J ($jump)" }
+        print $"[dry-run] ssh($jump_disp) -p ($port) ($target) \"($cmd)\""
         return {exit_code: 0, stdout: "", stderr: ""}
     }
     let port_s = $port | into string
-    (^ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 -J $jump -p $port_s $target $cmd | complete)
+    let jump_args = if $jump == "" { [] } else { ["-J" $jump] }
+    (^ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 ...$jump_args -p $port_s $target $cmd | complete)
 }
 
 # ── Poll helpers ───────────────────────────────────────────────────────────────
@@ -246,11 +248,9 @@ def main [
     --dry-run
     --check-now
 ] {
-    # Jump host is deliberately not defaulted in-repo (internal hostname).
+    # Jump host is site-specific: --ssh-jump, or $SMOLBSD_SSH_JUMP, or none
+    # (empty means connect directly, no -J).
     let ssh_jump = if $ssh_jump != "" { $ssh_jump } else { $env.SMOLBSD_SSH_JUMP? | default "" }
-    if $ssh_jump == "" {
-        error make {msg: "No jump host: pass --ssh-jump or set SMOLBSD_SSH_JUMP"}
-    }
     log-step "harvest-build" "starting" {
         session:  $screen_session
         log:      $log_file

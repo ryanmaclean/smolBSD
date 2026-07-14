@@ -3,9 +3,8 @@
 # bin/harvest.sh — Harvest qcow2 build artifacts from remote build hosts
 #                  and run acceptance tests.
 #
-# Build hosts (internal names/addresses are NOT committed — see private
-# inventory; pass via env):
-#   aarch64: JUMP_HOST=<jump> AARCH64_REMOTE=builder@localhost:<path>
+# Build hosts are site-specific — point the env vars at yours:
+#   aarch64: AARCH64_REMOTE=<user@host>:<path>   (optional JUMP_HOST=<jump>)
 #   amd64:   AMD64_REMOTE=<user@host>:<path>
 #
 # Acceptance gates:
@@ -119,7 +118,14 @@ report ""
 report "--- Harvesting aarch64 from the aarch64 build host ---"
 log "SCP aarch64: $AARCH64_REMOTE -> $AARCH64_IMAGE"
 
-if scp -J "${JUMP_HOST:?Set JUMP_HOST to the aarch64 jump host (internal — not committed)}" -P 2222 \
+# JUMP_HOST is optional and site-specific: set it if your aarch64 builder is
+# only reachable via an SSH jump host; leave unset for a direct connection.
+if [ -n "${JUMP_HOST:-}" ]; then
+    _scp_aarch64() { scp -J "$JUMP_HOST" -P 2222 "$@"; }
+else
+    _scp_aarch64() { scp -P 2222 "$@"; }
+fi
+if _scp_aarch64 \
         "$AARCH64_REMOTE" \
         "$AARCH64_IMAGE"; then
     report "  OK    aarch64 image fetched: $AARCH64_IMAGE"

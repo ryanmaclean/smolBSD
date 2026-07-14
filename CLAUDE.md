@@ -89,18 +89,11 @@ After cloning, install the pre-push guard that prevents `var/mail/spool` data fr
 nu bin/setup-hooks.nu
 ```
 
-This installs `.git/hooks/pre-push` which, before any push, scans (a) the spool
-for public IPs and instance UUIDs, and (b) the entire tracked tree (HEAD) for
-private/CGNAT IPs (RFC1918 + 100.64/10; QEMU's `10.0.2.2`/`10.0.2.15` protocol
-constants are allowlisted) and for denylisted internal hostnames.
+This installs `.git/hooks/pre-push` which scans the spool for public IPs and instance UUIDs before any push.
 
 **Never commit `var/mail/spool`** — it contains live IPs, instance UUIDs, and credential references. It is gitignored, but force-adds (`git add -f`) are blocked by the hook.
 
-**Never commit internal hostnames or private IPs** — use placeholders
-(`<kvm-host>`, `<internal-ip>`, …) in docs and environment variables
-(`JUMP_HOST`, `SMOLBSD_SSH_JUMP`, `AMD64_REMOTE`, …) in scripts. Put the real
-hostnames, one per line, in `var/private-hostnames.txt` (gitignored) so the
-hook can block them — the denylist itself must never be committed.
+**Never commit internal hostnames or private IPs** — use placeholders (`<kvm-host>`, `<internal-ip>`, …) in docs, and env vars (`JUMP_HOST`, `SMOLBSD_SSH_JUMP`, `SMOLBSD_IRC_HOST`, `AMD64_REMOTE`, …) for site-specific values in scripts.
 
 ## 10. License
 

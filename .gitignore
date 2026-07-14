@@ -30,6 +30,3 @@ build/
 
 # jj-internal: do not check the .jj/working-copy contents into git via colocated repo
 # (jj manages this on its own; this is a defense-in-depth comment)
-
-# Internal hostname denylist for the pre-push guard — never commit
-var/private-hostnames.txt
