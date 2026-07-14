@@ -8,7 +8,7 @@ likely latent bug that must be confirmed before trusting the build scripts.
 
 ## State of the branch
 
-Commit `4e077df` (Fable session) + the FFS fix below. All changes are repo-side;
+The ur-bsd changes merged via PR #30 + the fixes below. All changes are repo-side;
 **none have been run on a FreeBSD host.** The Linux container this work was done
 in cannot build a FreeBSD image.
 
@@ -40,6 +40,12 @@ mountroot panic. **Fix applied:** added `options FFS` to the amd64 kernconf.
 arm64 is unaffected — `std.arm64` already compiles `options FFS` in.
 (virtio/vtnet/ahci/nvme are statically compiled in both arches — confirmed — so
 the device side is fine; only the filesystem driver was the gap.)
+
+Same class, second instance (found in review): `vmimage.subr` appends a
+`/dev/gpt/efiboot0 /boot/efi msdosfs` line to fstab AFTER `vm_extra_pre_umount`
+runs, and amd64 MINIMAL has no `options MSDOSFS` — with the module set
+stripped, `mount -a` fails at boot and rc drops to single-user. Fixed by
+adding `options MSDOSFS` to the amd64 kernconf (arm64 has it via std.arm64).
 
 The four override modules (tmpfs/nullfs/fdescfs/procfs) are not actually needed
 to reach login (no fstab mounts them), but are cheap, conservative insurance.
@@ -144,8 +150,7 @@ Every FIX-9/FIX-10 assumption was checked directly against
    record per-change deltas (VMSIZE 2g vs 4g; module strip; pkg filter; trim) in
    `docs/PHASE-1-RESULTS.md`. If still over 512 MiB, the analyze-image report
    names the next targets.
-6. **amd64** on a Linux/KVM host via `bin/build-smolbsd-image.nu` (after the
-   step-1 fix is mirrored into that script's in-VM make line), then
+6. **amd64** on a Linux/KVM host via `bin/build-smolbsd-image.nu`, then
    `bin/analyze-image.sh` + `tests/time-to-ready-amd64-tcg.exp` (or KVM gate).
 7. **Then pursue the sub-100 MiB ur-image** per `docs/UR-BSD.md`: direct kernel
    boot (`-kernel`, drop EFI partition), MFS/ramdisk root, and coordinator-driven

@@ -48,7 +48,7 @@ Analysis of the build inputs (not yet a mounted-image audit — run
 | File | Change |
 |---|---|
 | `sys/arm64/conf/SMOLBSD`, `sys/amd64/conf/SMOLBSD` | `MODULES_OVERRIDE="tmpfs nullfs fdescfs procfs"` — only modules the VM can load; everything else is compiled in |
-| `release/tools/smolbsd-qemu-aarch64.conf`, `smolbsd-qemu.conf` | `VMSIZE`/`SWAPSIZE` now respect the caller (`${VMSIZE:-2g}`, `${SWAPSIZE:-128m}`); pkgbase filter extended (lld, dtrace, zfs, rescue, games, sendmail, telnet); size-trim extended (firmware, rescue, clang runtime, share/* leftovers, etcupdate db) |
+| `release/tools/smolbsd-qemu-aarch64.conf`, `smolbsd-qemu.conf` | `VMSIZE`/`SWAPSIZE` now respect the caller (`${VMSIZE:-2g}`); pkgbase filter replaced by an explicit leaf-package list (FIX-10 — see UR-BSD-VERIFY.md Finding 4); size-trim extended (firmware, rescue, clang runtime, share/* leftovers, etcupdate db) |
 | `bin/build-smolbsd-image.nu` | in-VM release step now `cloudware-release` + `SMOLBSDCONF=` with `VMSIZE=2g` (was `vm-image ... CLOUDWARE_CONF=` at 4g — see FIX-9 in UR-BSD-VERIFY.md) |
 
 Notes on safety:
@@ -57,8 +57,10 @@ Notes on safety:
   because rc and common tooling auto-load them on mount; all storage, net,
   console, and TPM support is compiled into the kernel via `std.virt` /
   `MINIMAL` plus explicit `device` lines.
-- The pkgbase filter is `grep -v` over the package list, so filtering a
-  package name that doesn't exist in a given build is a harmless no-op.
+- The pkgbase filter is an explicit leaf-package allowlist (FIX-10): the old
+  `grep -v` could never exclude set dependencies. The failure mode is now
+  fail-closed — a listed-but-missing package breaks `pkg install` visibly,
+  and an omitted one drops functionality; see UR-BSD-VERIFY.md Finding 4.
 - The physical-board configs (`SMOLBSD-PI5`, `SMOLBSD-RK3588`,
   `smolbsd-pi5.conf`, `smolbsd-rk3588.conf`) are deliberately untouched —
   boards need real driver modules and firmware.

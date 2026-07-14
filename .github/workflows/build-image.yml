@@ -88,7 +88,7 @@ jobs:
 
       - name: Build smolBSD amd64 TPM image (PATH B — inside FreeBSD VM)
         run: |
-          set -e
+          set -eo pipefail
 
           # PATH B: qemu-x86_64-static is absent on pop4090 (confirmed in
           # 03-PREFLIGHT-NOTES.md).  The FreeBSD release toolchain cannot run on
@@ -97,9 +97,9 @@ jobs:
           # for build objects, run buildworld+buildkernel+cloudware-release inside
           # the VM, and scp the finished qcow2 back to the host.
           #
-          # Artifact output path inside VM: /usr/obj/amd64.amd64/usr/src/release/vm.ufs.qcow2
-          # (set by MAKEOBJDIRPREFIX=/usr/obj which is the FreeBSD default when
-          #  /usr/obj is a symlink pointing at the scratch disk)
+          # Artifact lands under /usr/obj as <cloudware>.ufs.qcow2 (layout varies:
+          # unified objdir /usr/obj/usr/src/<arch>/release vs legacy
+          # /usr/obj/<arch>/usr/src/release) — discovered with find below.
 
           FBSD_IMAGE="/home/studio/smolbsd-tpm-test/FreeBSD-15.1-STABLE-amd64-ufs.qcow2"
           SCRATCH_DISK="/tmp/smolbsd-build-scratch-$$.qcow2"
@@ -267,17 +267,26 @@ jobs:
             2>&1 | tee /tmp/smolbsd-cloudware.log
 
           echo "Build complete"
-          ls -lh /usr/obj/amd64.amd64/usr/src/release/*.ufs.qcow2
+          # Objdir layout differs between trees (unified: /usr/obj/usr/src/<arch>/release,
+          # legacy: /usr/obj/<arch>/usr/src/release) — find it instead of hardcoding.
+          find /usr/obj -name "*.ufs.qcow2" -exec ls -lh {} + | grep . \
+            || { echo "ERROR: no *.ufs.qcow2 produced"; exit 1; }
           ' 2>&1 | tee /tmp/smolbsd-build.log
 
           # --- scp the qcow2 artifact from the VM back to the host ---
           echo "Copying artifact from build VM ..."
           mkdir -p "$OUTPUT_DIR"
+          ART=$(ssh \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -p "$BUILD_SSH_PORT" \
+            root@127.0.0.1 "find /usr/obj -name '*.ufs.qcow2' | head -1")
+          test -n "$ART" || { echo "ERROR: no artifact found in build VM"; exit 1; }
           scp \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             -P "$BUILD_SSH_PORT" \
-            "root@127.0.0.1:/usr/obj/amd64.amd64/usr/src/release/*.ufs.qcow2" \
+            "root@127.0.0.1:$ART" \
             "$OUTPUT_IMAGE"
           echo "Artifact copied to: $OUTPUT_IMAGE"
 

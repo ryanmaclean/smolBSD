@@ -8,7 +8,7 @@
 # Hard-won fixes encoded here:
 #   FIX-1: /etc/src.conf must exist before buildworld (WITHOUT_SENDMAIL etc.)
 #           Without it: freebsd.cf install fails, cascades through 8 make levels.
-#   FIX-2: make vm-image must run as root — release chroot requires it;
+#   FIX-2: the release image stage must run as root — release chroot requires it;
 #           running as builder produces empty pkgbase silently.
 #   FIX-3: VMSIZE=2g — sparse image works for smolBSD; 4g needs ~4G disk free.
 #   FIX-4: WITHOUT_DEPEND_FILES=yes — prevents bad substitution from bsd.dep.mk
@@ -16,7 +16,12 @@
 #   FIX-5: Disk check before starting — buildworld needs ~50GB in /usr/obj.
 #   FIX-6: Pipeline gating — release must not start if buildworld failed.
 #   FIX-7: git safe.directory — release make checks git; must be set before release.
-#   FIX-8: Kernel obj cleanup after buildworld to free space before vm-image.
+#   FIX-8: Kernel obj cleanup after buildworld — DISABLED by FIX-9 (see Stage 3).
+#   FIX-9: release image via cloudware-release + SMOLBSDCONF — the old
+#           'vm-image ... CLOUDWARE_CONF=' invocation never sourced the conf
+#           (see docs/UR-BSD-VERIFY.md Finding 3).
+#   FIX-10: pkgbase filter replaced by an explicit leaf-package list in the
+#           release confs (see docs/UR-BSD-VERIFY.md Finding 4).
 #
 # Usage:
 #   sudo nu bin/build-smolbsd.nu                    # full pipeline
@@ -32,7 +37,7 @@ export def main [
     --vmsize: string = "2g"          # qcow2 sparse size (FIX-3: 2g not 4g)
     --jobs: int = 0                  # parallelism (0 = nproc)
     --skip-buildworld                # skip to release (obj already populated)
-    --skip-release                   # buildworld+kernel only, no vm-image
+    --skip-release                   # buildworld+kernel only, no release image
     --check                          # preflight only, no build
     --log: string = "/var/tmp/smolbsd-build.log"
 ] {
@@ -115,19 +120,25 @@ export def main [
     }
 
     # =========================================================================
-    # STAGE 3: Kernel obj cleanup (FIX-8: free space before vm-image)
+    # STAGE 3: Kernel obj cleanup — DISABLED by FIX-9.
+    # FIX-8 freed space by deleting ${obj}/.../sys/${kernconf} before the old
+    # (no-op) vm-image stage. The cloudware-release stage depends on
+    # pkgbase-repo -> `make -C /usr/src packages`, whose stagekernel step
+    # reads exactly that objdir (distributekernel: cd ${KRNLOBJDIR}/SMOLBSD).
+    # Deleting it here fails the release stage hours in. Clean up AFTER the
+    # image is built if disk pressure demands it.
     # =========================================================================
     if not $skip_buildworld and not $skip_release {
-        cleanup_kernel_obj $obj $arch_freebsd $arch_target $kernconf
+        print "[skip] kernel obj cleanup (FIX-8) — kernel objs are needed by 'make packages' (FIX-9)"
     }
 
     # =========================================================================
-    # STAGE 4: make vm-image
+    # STAGE 4: make cloudware-release
     # =========================================================================
     if not $skip_release {
         build_vm_image $src $obj $nj $log $kernconf $vmsize $release_conf $arch_freebsd $arch_target
     } else {
-        print "[skip] vm-image (--skip-release)"
+        print "[skip] cloudware-release (--skip-release)"
     }
 
     # =========================================================================
@@ -138,6 +149,11 @@ export def main [
 
     if not $skip_release {
         let qcow2 = find_qcow2 $obj $arch_freebsd $arch_target
+        # The cw recipe ends in '|| true', so make exits 0 even when
+        # mk-vmimage.sh failed. No artifact => the build FAILED; say so.
+        if ($qcow2 | str starts-with "<") {
+            error make {msg: $"cloudware-release produced no qcow2 under ($obj) — the image stage failed; check the log."}
+        }
         print_summary $arch_target $kernconf $qcow2 $elapsed_secs
     } else {
         let elapsed_fmt = format_elapsed $elapsed_secs
@@ -378,7 +394,7 @@ def cleanup_kernel_obj [
     arch_target: string
     kernconf: string
 ] {
-    print "==> Stage 3: Kernel obj cleanup (FIX-8 — free space before vm-image)"
+    print "==> Stage 3: Kernel obj cleanup (FIX-8 — disabled by FIX-9)"
 
     # Path pattern: /usr/obj/usr/src/<arch>.<arch_target>/sys/KERNCONF
     # e.g. /usr/obj/usr/src/arm64.aarch64/sys/SMOLBSD
@@ -402,7 +418,7 @@ def cleanup_kernel_obj [
 }
 
 # =========================================================================
-# STAGE 4: make vm-image
+# STAGE 4: make cloudware-release
 # =========================================================================
 def build_vm_image [
     src: string
@@ -415,20 +431,22 @@ def build_vm_image [
     arch_freebsd: string
     arch_target: string
 ] {
-    print "==> Stage 4: make vm-image"
+    print "==> Stage 4: make cloudware-release"
 
     # FIX-2: verify still root
     let euid = (^id -u | str trim | into int)
     if $euid != 0 {
-        error make {msg: "vm-image must run as root (release chroot requires root). Re-run with sudo."}
+        error make {msg: "cloudware-release must run as root (release chroot requires root). Re-run with sudo."}
     }
 
-    # Disk check before release (need ~3 GiB after buildworld; FIX-5)
+    # Disk check before release (FIX-5). cloudware-release also builds the
+    # full pkgbase repo under ${obj} ('make packages'), so ~10 GiB is needed,
+    # not the 3 GiB the old vm-image stage assumed.
     let df_out = (^df -k $obj | lines | last | split row -r '\s+')
     let free_kb = try { $df_out | get 3 | into int } catch { 0 }
     let free_gb = ($free_kb / 1_048_576.0 | math round --precision 1)
-    if $free_kb < 3_000_000 {
-        error make {msg: $"Insufficient disk space: ($free_gb) GiB free in ($obj). Need at least 3 GiB for vm-image."}
+    if $free_kb < 10_000_000 {
+        error make {msg: $"Insufficient disk space: ($free_gb) GiB free in ($obj). Need at least 10 GiB for cloudware-release (pkgbase repo + image)."}
     }
     print $"  Disk: ($free_gb) GiB free in ($obj)"
 
@@ -452,14 +470,16 @@ def build_vm_image [
         "SMOLBSD_FORMAT=qcow2"
         "SMOLBSD_FSLIST=ufs"
         $"VMSIZE=($vmsize)"          # FIX-3: 2g not 4g (conf respects caller)
+        "SWAPSIZE=128m"              # Makefile.vm defaults to 1g and always sets
+                                     # the env, so the conf's fallback never fires
     ]
     let cmd_args = ["make" "-C" $"($src)/release" "cloudware-release"] ++ $make_args
 
     print $"  Command: ($cmd_args | str join ' ')"
     print $"  Release conf: ($release_conf)"
 
-    run_logged $cmd_args $log "vm-image"
-    print "  vm-image complete."
+    run_logged $cmd_args $log "cloudware-release"
+    print "  cloudware-release complete."
     print ""
 }
 

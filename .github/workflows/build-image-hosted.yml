@@ -50,6 +50,9 @@ jobs:
     name: Build smolBSD ${{ inputs.arch }} qcow2
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    defaults:
+      run:
+        shell: bash   # explicit shell => bash -eo pipefail (tee must not mask failures)
 
     steps:
       - uses: actions/checkout@v4
@@ -93,6 +96,12 @@ jobs:
             echo '  - name: root'
             echo '    ssh_authorized_keys:'
             echo "      - $(cat ci_key.pub)"
+            # FreeBSD sshd defaults to PermitRootLogin no and neither the
+            # BASIC-CLOUDINIT conf nor nuageinit changes it — without this the
+            # key is installed but every root login is refused.
+            echo 'runcmd:'
+            echo "  - echo 'PermitRootLogin prohibit-password' >> /etc/ssh/sshd_config"
+            echo '  - service sshd restart || true'
           } > user-data
           genisoimage -output seed.iso -volid cidata -joliet -rock user-data meta-data
 
@@ -112,8 +121,10 @@ jobs:
             -serial "file:${WORK}/serial.log" \
             -pidfile "${WORK}/vm.pid"
 
+          # First boot runs growfs and firstboot_freebsd_update before sshd
+          # comes up — allow 10 minutes.
           echo "Waiting for SSH (cloud-init key auth) ..."
-          for i in $(seq 1 60); do
+          for i in $(seq 1 120); do
             if ssh -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                    -o ConnectTimeout=3 -o BatchMode=yes -p "$SSH_PORT" \
                    root@127.0.0.1 'echo VM_UP && uname -rm'; then
@@ -143,17 +154,20 @@ jobs:
           tar -C "$GITHUB_WORKSPACE" -cf - . | $SSH 'mkdir -p /root/smolBSD && tar -C /root/smolBSD -xf -'
 
       - name: Build (world + kernel + cloudware-release) inside VM
+        env:
+          VMSIZE_INPUT: ${{ inputs.vmsize }}
         run: |
           set -e
           cd "$WORK"
           SSH="ssh -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p $SSH_PORT root@127.0.0.1"
           $SSH "cd /root/smolBSD && nu bin/build-smolbsd.nu \
-                  --arch '${{ inputs.arch }}' --vmsize '${{ inputs.vmsize }}'" \
+                  --arch '${{ inputs.arch }}' --vmsize '$VMSIZE_INPUT'" \
             2>&1 | tee build.log
           # Locate the artifact (FIX-9: cloudware-release writes
           # <objdir>/usr/src/release/smolbsd.ufs.qcow2)
-          ART=$($SSH "find /usr/obj -name 'smolbsd.ufs.qcow2' -o -name '*.ufs.qcow2' 2>/dev/null | head -1")
+          ART=$($SSH "find /usr/obj -name smolbsd.ufs.qcow2 2>/dev/null | head -1")
+          [ -n "$ART" ] || ART=$($SSH "find /usr/obj -name '*.ufs.qcow2' 2>/dev/null | head -1")
           test -n "$ART" || { echo "ERROR: no qcow2 artifact found in /usr/obj"; exit 1; }
           echo "artifact=$ART"
           scp -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
@@ -162,7 +176,8 @@ jobs:
           ls -lh "$WORK/smolbsd-${{ inputs.arch }}.qcow2"
 
       - name: Size gate (<= 512 MiB)
-        continue-on-error: true   # report the budget, don't hide the boot gate
+        id: size
+        continue-on-error: true   # deferred: enforced after the boot gate below
         run: |
           BYTES=$(wc -c < "$WORK/smolbsd-${{ inputs.arch }}.qcow2")
           LIMIT=536870912
@@ -194,6 +209,12 @@ jobs:
               timeout         { puts "\nVERDICT=fail (no login within 60s)"; exit 1 }
               eof             { puts "\nVERDICT=fail (qemu exited)"; exit 2 }
             }'
+
+      - name: Enforce size gate
+        if: ${{ steps.size.outcome == 'failure' }}
+        run: |
+          echo "Size gate failed (see 'Size gate' step) — failing the job now that the boot gate has reported."
+          exit 1
 
       - name: Upload artifacts
         if: always()

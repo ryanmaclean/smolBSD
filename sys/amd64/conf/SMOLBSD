@@ -154,6 +154,10 @@ nooptions COMPAT_FREEBSD11
 # Without FFS, the kernel cannot mount a UFS root filesystem.
 options FFS                     # Berkeley Fast Filesystem (UFS — required for root)
 options GEOM_PART_GPT           # GPT partition table support (required for vtbd0p4)
+options MSDOSFS                 # FAT — vmimage.subr fstab mounts the ESP at /boot/efi;
+                                # without it mount -a fails and rc drops to single-user.
+                                # (arm64 gets MSDOSFS via std.arm64; MINIMAL has none and
+                                # MODULES_OVERRIDE strips msdosfs.ko.)
 
 # -----------------------------------------------------------------------
 # TPM 2.0 support

@@ -25,10 +25,11 @@ REPORT="$ARTIFACTS_DIR/harvest-report.txt"
 
 # FIX-9: cloudware-release writes the artifact to the release objdir root as
 # ${CLOUDWARE:tl}.${FS}.${FMT} — smolbsd.ufs.qcow2 on releng/15.0 (verified in
-# Makefile.vm; the vm.ufs.qcow2 name seen on pop4090 was that host's
-# stable/15 tree). Defaults are overridable: AMD64_REMOTE=... sh bin/harvest.sh
-AMD64_REMOTE="${AMD64_REMOTE:-root@REDACTED-VULTR-IP:/usr/obj/amd64.amd64/usr/src/release/smolbsd.ufs.qcow2}"
-AARCH64_REMOTE="${AARCH64_REMOTE:-builder@localhost:/usr/obj/arm64.aarch64/usr/src/release/smolbsd.ufs.qcow2}"
+# Makefile.vm). Default paths use the unified objdir layout
+# (/usr/obj/usr/src/<arch>/release — src.sys.obj.mk MK_UNIFIED_OBJDIR=yes).
+# Defaults are overridable per-run: AMD64_REMOTE=... sh bin/harvest.sh
+AMD64_REMOTE="${AMD64_REMOTE:-root@REDACTED-VULTR-IP:/usr/obj/usr/src/amd64.amd64/release/smolbsd.ufs.qcow2}"
+AARCH64_REMOTE="${AARCH64_REMOTE:-builder@localhost:/usr/obj/usr/src/arm64.aarch64/release/smolbsd.ufs.qcow2}"
 
 AMD64_IMAGE="$ARTIFACTS_DIR/FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2"
 AARCH64_IMAGE="$ARTIFACTS_DIR/FreeBSD-15.0-RELEASE-arm64-SMOLBSD.qcow2"
