@@ -128,9 +128,12 @@ Every FIX-9/FIX-10 assumption was checked directly against
    `make -C /usr/src/release -V CLOUDWARE_TYPES -V VMSIZE CLOUDWARE=smolbsd` .
    FIX-9 is already applied to the scripts with the pop4090-proven spelling;
    this step only guards against releng-branch drift.
-2. **Build aarch64 on fbuild** with the corrected invocation:
-   `sudo nu bin/build-smolbsd.nu --arch aarch64` (after step 1's fix).
-   Stream `/var/tmp/smolbsd-build.log`.
+2. **Build via pipeline or host.** Preferred: dispatch
+   `.github/workflows/build-image-hosted.yml` (GitHub-hosted runner, KVM,
+   no manual host needed — builds, size-gates, and boot-gates amd64
+   end-to-end; cross-builds aarch64). Manual alternative: on a FreeBSD host,
+   `sudo nu bin/build-smolbsd.nu --arch <arch>`, streaming
+   `/var/tmp/smolbsd-build.log`.
 3. **Run the size audit** on the artifact: `sh bin/analyze-image.sh <qcow2>`.
    Capture the top-30 dir/file lists and the budget delta. This is the ground
    truth that replaces all the estimation above.

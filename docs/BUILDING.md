@@ -61,6 +61,20 @@ tail -f /var/tmp/smolbsd-build.log
 
 The script prints the exact path, size, sha256, and elapsed time on completion.
 
+## Building in a pipeline (no build host required)
+
+Two CI paths exist; neither needs a human at an SSH prompt:
+
+| Workflow | Runner | What it does |
+|---|---|---|
+| `.github/workflows/build-image-hosted.yml` | **GitHub-hosted** `ubuntu-latest` (x64 runners expose `/dev/kvm`) | Boots a stock FreeBSD 15.0 BASIC-CLOUDINIT VM under KVM, shallow-clones `releng/15.0`, runs `bin/build-smolbsd.nu` inside, then runs the **size gate** and (amd64) the **KVM boot gate** on the runner and uploads the qcow2 as a workflow artifact. Dispatch with `arch: amd64` or `arch: aarch64` (aarch64 is cross-built; its boot gate needs ARM hardware — see `docs/BHYVE-GATE-FBRYZ3070.md`). |
+| `.github/workflows/build-image.yml` | self-hosted `pop4090` (Linux/KVM) | The original PATH-B TPM-image pipeline with a pre-staged src tree. |
+
+Hosted-runner caveats: buildworld at `-j4` inside the nested VM takes ~2.5–4 h
+(job timeout is set just under the 6 h ceiling); first runs of the cloud-init
+SSH bootstrap should be debugged from the uploaded `serial.log`. If the time
+budget doesn't fit, use a larger runner or the self-hosted path.
+
 ## Size tuning
 
 The release configs in `release/tools/` filter packages and strip non-essential
