@@ -7,7 +7,7 @@
 # it (FIX-9 cloudware-release path), scp the artifact out, and run the size
 # and boot gates on the runner itself.
 #
-# vs build-image.yml (PATH B on pop4090): same nested-VM strategy, but the
+# vs build-image.yml (PATH B, self-hosted): same nested-VM strategy, but the
 # base image is downloaded instead of pre-staged, /usr/src is shallow-cloned
 # inside the VM, and root SSH access is bootstrapped with a NoCloud cloud-init
 # seed (FreeBSD nuageinit) instead of a pre-configured password image.
@@ -195,7 +195,7 @@ jobs:
           set -e
           cd "$WORK"
           # aarch64 is skipped: TCG on x64 is >480s (PHASE-1); the ARM boot
-          # gate runs on HVF/bhyve hardware per docs/BHYVE-GATE-FBRYZ3070.md.
+          # gate runs on HVF/bhyve hardware per docs/BHYVE-GATE-AMD64.md.
           expect -c '
             set timeout 60
             set t0 [clock seconds]

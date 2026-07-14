@@ -2,9 +2,9 @@
 
 - **Date** : 2026-04-30
 - **Projet** : smolBSD
-- **Statut** : v1.2 — réconciliation fb-vm-24/fbuild, port 2222, problème de socket screen, mise en garde contexte réseau .local
+- **Statut** : v1.2 — réconciliation fb-vm-24/<aarch64-builder>, port 2222, problème de socket screen, mise en garde contexte réseau .local
 - **Licence** : BSD-2-Clause (défaut du projet)
-- **Historique** : v1 (2026-04-30 13:30 — sections ouvertes différées) ; v1.1 (2026-04-30 14:30 — réponses des agents collectées et intégrées) ; v1.2 (2026-04-30 15:00 — réconciliation fb-vm-24/fbuild, port 2222, problème de socket screen, mise en garde contexte réseau .local)
+- **Historique** : v1 (2026-04-30 13:30 — sections ouvertes différées) ; v1.1 (2026-04-30 14:30 — réponses des agents collectées et intégrées) ; v1.2 (2026-04-30 15:00 — réconciliation fb-vm-24/<aarch64-builder>, port 2222, problème de socket screen, mise en garde contexte réseau .local)
 
 ## 1. Objet
 

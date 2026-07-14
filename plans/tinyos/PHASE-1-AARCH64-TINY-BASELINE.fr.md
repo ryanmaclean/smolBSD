@@ -14,11 +14,11 @@
 
 Construire la plus petite VM QEMU FreeBSD 15 arm64 stable qui démarre sans
 intervention jusqu'à l'invite de connexion en **≤ 30 secondes** (accélérée par
-HVF sur `minim4-24`), exécute sh, vi/ed, rc.d et pkg, utilise UFS, et tient
+HVF sur `<hypervisor-host>`), exécute sh, vi/ed, rc.d et pkg, utilise UFS, et tient
 dans 512 Mio sur disque (objectif aspirationnel : artefact qcow2 < 128 Mio).
 
 **Il s'agit de la branche principale de la Phase I.** L'accélérateur HVF sur
-Apple Silicon (`minim4-24`) est natif à l'ISA uniquement : un invité aarch64
+Apple Silicon (`<hypervisor-host>`) est natif à l'ISA uniquement : un invité aarch64
 sous HVF s'exécute à une vitesse proche du bare-metal, tandis qu'un invité amd64
 bascule sur TCG (émulation logicielle, 5 à 10 fois plus lent). La porte
 d'acceptation de ≤ 30 secondes avant connexion ne peut être franchie sur l'hôte
@@ -32,17 +32,17 @@ n'est exécutée ici.
 
 ## 2. Hôte de compilation et mode de compilation
 
-### 2.1 Hôte de compilation : `fbuild` (FreeBSD 15 aarch64 sur `minim4-24`)
+### 2.1 Hôte de compilation : `<aarch64-builder>` (FreeBSD 15 aarch64 sur `<hypervisor-host>`)
 
-La VM fbuild est FreeBSD 15.0-RELEASE **aarch64** — la même ISA que la cible.
+La VM <aarch64-builder> est FreeBSD 15.0-RELEASE **aarch64** — la même ISA que la cible.
 Cela signifie **qu'aucune compilation croisée n'est nécessaire** : le système de
 compilation utilise sa chaîne d'outils native de bout en bout.
 
-**Notes opérationnelles de fbuild** (voir §18 de la spécification de conception pour les détails complets) :
+**Notes opérationnelles de <aarch64-builder>** (voir §18 de la spécification de conception pour les détails complets) :
 
-- Le nom canonique de skill `fb-vm-24` est obsolète — le nom réel de la VM est `fbuild`.
-- Port SSH : `ssh -J minim4-24 -p 2222 builder@localhost` (pas le 2225 obsolète du skill).
-- Partage virtfs côté hôte : `/Users/studio/Users/studio/share/fbuild/` (bogue de préfixe doublé, documenté séparément).
+- Le nom canonique de skill `fb-vm-24` est obsolète — le nom réel de la VM est `<aarch64-builder>`.
+- Port SSH : `ssh -J <hypervisor-host> -p 2222 builder@localhost` (pas le 2225 obsolète du skill).
+- Partage virtfs côté hôte : `/Users/studio/Users/studio/share/<aarch64-builder>/` (bogue de préfixe doublé, documenté séparément).
 - Risque de perte de socket screen : `pgrep qemu` et `screen -ls` peuvent diverger ; voir §18.4 de la spécification pour la récupération.
 
 ### 2.2 Mode de compilation : arm64 natif — sans compilation croisée
@@ -62,6 +62,6 @@ make -j4 -C /usr/src buildworld buildkernel \
 ```
 
 À comparer avec la branche amd64, qui doit être compilée en croisé depuis l'hôte
-fbuild arm64 en utilisant `TARGET=amd64 TARGET_ARCH=amd64`. Le chemin natif
+<aarch64-builder> arm64 en utilisant `TARGET=amd64 TARGET_ARCH=amd64`. Le chemin natif
 supprime l'étape de la chaîne d'outils croisée, réduisant le temps de
 compilation et les modes d'échec.

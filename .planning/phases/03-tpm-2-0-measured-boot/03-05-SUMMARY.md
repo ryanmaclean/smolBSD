@@ -6,7 +6,7 @@ tags: [freebsd, tpm2, swtpm, qemu, pcr, measured-boot, seal-unseal, testing]
 
 requires:
   - phase: 03-tpm-2-0-measured-boot
-    provides: "03-03: smolbsd-amd64-tpm.qcow2 at /home/studio/smolbsd-ci/ on pop4090"
+    provides: "03-03: smolbsd-amd64-tpm.qcow2 at /home/studio/smolbsd-ci/ on <kvm-host>"
   - phase: 03-tpm-2-0-measured-boot
     provides: "03-04: T1-T6 acceptance tests all pass"
 
@@ -36,7 +36,7 @@ key-files:
 key-decisions:
   - "Ran full TPM sequence (createprimary → createpolicy → create → load → unseal) as a single SSH heredoc rather than separate SSH calls: TPM transient object memory (0x902) is exhausted when each command opens and holds a new object without the prior command's object being flushed. Single-session approach ensures flush happens at the right point."
   - "Used OVMF_CODE_4M.fd + OVMF_VARS_4M.fd pflash (not -bios OVMF.fd) for UEFI boot: -bios OVMF.fd resets NVRAM on every boot so UEFI falls through to EFI Internal Shell; pflash VARS file persists boot order so OVMF finds FreeBSD BOOTX64.EFI on vtbd0p2 (ESP)."
-  - "Deployed studio@pop4090 ed25519 public key to /root/.ssh/authorized_keys via socat serial console: sshd PasswordAuthentication fix did not persist from PLAN-04, so password auth was not available on fresh boot. Key auth bypasses the issue."
+  - "Deployed studio@<kvm-host> ed25519 public key to /root/.ssh/authorized_keys via socat serial console: sshd PasswordAuthentication fix did not persist from PLAN-04, so password auth was not available on fresh boot. Key auth bypasses the issue."
 
 requirements-completed: [TPM-T5-SEAL]
 
@@ -58,7 +58,7 @@ completed: 2026-06-05
 
 ## Accomplishments
 
-- Fresh smolBSD guest booted on pop4090 with QEMU+KVM+swtpm 0.7.3 and /dev/tpm0 present
+- Fresh smolBSD guest booted on <kvm-host> with QEMU+KVM+swtpm 0.7.3 and /dev/tpm0 present
 - T5 seal/unseal round-trip executed on live /dev/tpm0:
   - `tpm2_createprimary -T device:/dev/tpm0 -C o -g sha256 -G ecc`: exit 0
   - `tpm2_createpolicy -T device:/dev/tpm0 --policy-pcr -l sha256:0,7`: exit 0
@@ -98,7 +98,7 @@ completed: 2026-06-05
 **2. [Rule 1 - Bug] FreeBSD sshd PasswordAuthentication fix not persisted from PLAN-04**
 - **Found during:** Task 1 (Step 2, SSH verification)
 - **Issue:** The runtime sshd_config fix applied in PLAN-04 (`PasswordAuthentication yes`, `PermitRootLogin yes`) was applied only to the running guest's in-memory filesystem, not written back to the qcow2 image. Fresh boot restored the original `PasswordAuthentication no` default from FreeBSD 15.1-STABLE GENERIC.
-- **Fix:** Used socat+serial console to log in as root and: (a) append `PasswordAuthentication yes` to sshd_config, (b) add studio@pop4090 ed25519 public key to `/root/.ssh/authorized_keys`, (c) restart sshd. Key auth then worked for all subsequent SSH commands.
+- **Fix:** Used socat+serial console to log in as root and: (a) append `PasswordAuthentication yes` to sshd_config, (b) add studio@<kvm-host> ed25519 public key to `/root/.ssh/authorized_keys`, (c) restart sshd. Key auth then worked for all subsequent SSH commands.
 - **Files modified:** Running guest /etc/ssh/sshd_config + /root/.ssh/authorized_keys (runtime only — not committed to image)
 
 **3. [Rule 1 - Bug] TPM transient object context exhaustion (0x902) between separate SSH calls**

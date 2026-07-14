@@ -15,7 +15,7 @@
 #   nu tests/run-all-vm-tests.nu --image smolbsd-amd64.raw \
 #       --results-dir /tmp/ci --required-passes 3 --gap-seconds 30
 #   nu tests/run-all-vm-tests.nu --image smolbsd-amd64.raw \
-#       --remote fbuild.example.com --tpm
+#       --remote <aarch64-builder>.example.com --tpm
 #
 # Exit codes:
 #   0  GATE OPEN  — >= required-passes consecutive passes achieved

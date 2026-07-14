@@ -4,7 +4,7 @@
 #                              using a FreeBSD QEMU VM as the build environment.
 #
 # Why a nested VM?  `make release` / `make vm-image` requires FreeBSD-native tools
-# (newfs, mdconfig, etc.).  pop4090 (10.0.2.42) is a Linux/KVM host, so we boot a
+# (newfs, mdconfig, etc.).  <kvm-host> (<kvm-host-ip>) is a Linux/KVM host, so we boot a
 # stock FreeBSD VM, inject our configs, build inside it, then SCP the artifact out.
 #
 # Typical call:

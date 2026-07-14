@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# build-image.yml — Build smolBSD amd64 TPM image on pop4090.
+# build-image.yml — Build smolBSD amd64 TPM image on <kvm-host>.
 # Outputs: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
 #          /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2.sha256
 #
@@ -8,7 +8,7 @@
 #
 # After a successful build, run tpm-vm-test.yml to validate T1-T6.
 #
-# Build strategy (PATH B — D-01): qemu-x86_64-static is ABSENT on pop4090, so
+# Build strategy (PATH B — D-01): qemu-x86_64-static is ABSENT on <kvm-host>, so
 # the FreeBSD release toolchain cannot run directly on Linux.  Instead we boot
 # a stock FreeBSD 15.1-STABLE VM, run buildworld+buildkernel+cloudware-release
 # INSIDE it, and scp the qcow2 artifact back.  Total build time is ~96 minutes.
@@ -52,7 +52,7 @@ jobs:
         run: |
           test -d "$FREEBSD_SRC" || {
             echo "ERROR: freebsd-src not found at $FREEBSD_SRC"
-            echo "Run initial setup on pop4090 to clone the FreeBSD source tree."
+            echo "Run initial setup on <kvm-host> to clone the FreeBSD source tree."
             exit 1
           }
           echo "freebsd-src found at $FREEBSD_SRC"
@@ -90,7 +90,7 @@ jobs:
         run: |
           set -eo pipefail
 
-          # PATH B: qemu-x86_64-static is absent on pop4090 (confirmed in
+          # PATH B: qemu-x86_64-static is absent on <kvm-host> (confirmed in
           # 03-PREFLIGHT-NOTES.md).  The FreeBSD release toolchain cannot run on
           # Linux.  We boot a stock FreeBSD 15.1-STABLE VM, share the host
           # freebsd-src tree into it via virtio-9p, attach a 20 GB scratch disk

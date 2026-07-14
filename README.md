@@ -15,11 +15,11 @@ As of 2026-05-08:
 
 | Leg     | Boot gate              | Image size            | Notes                                  |
 |---------|------------------------|-----------------------|----------------------------------------|
-| aarch64 | 11s on HVF — PASS      | 1.41 GiB (INVESTIGATING vs 512 MiB target) | Native build on `fbuild` |
+| aarch64 | 11s on HVF — PASS      | 1.41 GiB (INVESTIGATING vs 512 MiB target) | Native build on `<aarch64-builder>` |
 | amd64   | KVM gate pending       | 2.5 GiB (official VM image) | Use Vultr/x86 KVM host for gate run |
 
 See `docs/PHASE-1-RESULTS.md` for the full report (sha256s, fleet deploy on
-fbrpi403, amd64 BIOS-boot verification).
+<pi-node>, amd64 BIOS-boot verification).
 
 ## Build
 
@@ -38,7 +38,7 @@ a long build, or `--arch amd64` to cross-compile.
 
 ## Harvest and acceptance gates
 
-`bin/harvest.sh` fetches qcow2 artifacts from the remote build hosts (fbuild
+`bin/harvest.sh` fetches qcow2 artifacts from the remote build hosts (<aarch64-builder>
 via jump host for aarch64, Vultr for amd64) into `var/artifacts/`, then runs
 the size and boot gates and writes `var/artifacts/harvest-report.txt`:
 

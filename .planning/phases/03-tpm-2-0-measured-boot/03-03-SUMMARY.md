@@ -6,10 +6,10 @@ tags: [freebsd, qcow2, tpm2-tools, vm-image, smolbsd, build]
 
 requires:
   - phase: 03-tpm-2-0-measured-boot
-    provides: "03-01: SMOLBSD kernel config with device tpm + smolbsd-qemu.conf with VM_EXTRA_PACKAGES=tpm2-tools deployed to pop4090 freebsd-src"
+    provides: "03-01: SMOLBSD kernel config with device tpm + smolbsd-qemu.conf with VM_EXTRA_PACKAGES=tpm2-tools deployed to <kvm-host> freebsd-src"
 
 provides:
-  - "smolbsd-amd64-tpm.qcow2 at /home/studio/smolbsd-ci/ on pop4090 — FreeBSD 15.1 amd64 image with KERNCONF=SMOLBSD (device tpm compiled in) and tpm2-tools installed"
+  - "smolbsd-amd64-tpm.qcow2 at /home/studio/smolbsd-ci/ on <kvm-host> — FreeBSD 15.1 amd64 image with KERNCONF=SMOLBSD (device tpm compiled in) and tpm2-tools installed"
   - "SHA256 manifest at /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2.sha256"
   - "BUILD-INFO.txt recording KERNCONF=SMOLBSD and VM_EXTRA_PACKAGES=tpm2-tools"
 
@@ -31,17 +31,17 @@ tech-stack:
 
 key-files:
   created:
-    - "/home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2 (pop4090)"
-    - "/home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2.sha256 (pop4090)"
-    - "/home/studio/smolbsd-ci/BUILD-INFO.txt (pop4090)"
+    - "/home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2 (<kvm-host>)"
+    - "/home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2.sha256 (<kvm-host>)"
+    - "/home/studio/smolbsd-ci/BUILD-INFO.txt (<kvm-host>)"
   modified:
     - "release/tools/smolbsd-qemu.conf — added chflags noschg before chown/chmod on var/empty"
 
 key-decisions:
-  - "PATH B chosen: qemu-x86_64-static absent on pop4090 (confirmed in PREFLIGHT-NOTES), used FreeBSD 15.1-STABLE boot VM with 20GB scratch disk"
+  - "PATH B chosen: qemu-x86_64-static absent on <kvm-host> (confirmed in PREFLIGHT-NOTES), used FreeBSD 15.1-STABLE boot VM with 20GB scratch disk"
   - "SMOLBSD cloudware target requires explicit SMOLBSD_FORMAT=qcow2 SMOLBSD_FSLIST=ufs make vars (not a known cloudware type in Makefile.vm)"
   - "Image actual-size is 712 MiB, exceeding the 512 MiB plan limit — accepted deviation because tpm2-tools + 12 deps require ~200 MiB and the primary goal (T2-T6 tests) needs tpm2-tools pre-baked"
-  - "VMSIZE=4g used (as set in the patched smolbsd-qemu.conf on pop4090 from plan-01), not 2g as stated in plan interfaces section"
+  - "VMSIZE=4g used (as set in the patched smolbsd-qemu.conf on <kvm-host> from plan-01), not 2g as stated in plan interfaces section"
 
 patterns-established:
   - "FreeBSD cloudware build with custom CLOUDWARE name: must define SMOLBSD_FORMAT and SMOLBSD_FSLIST on make command line"
@@ -68,7 +68,7 @@ completed: 2026-06-05
 - **Files modified:** 1 (release/tools/smolbsd-qemu.conf)
 
 ## Accomplishments
-- smolBSD amd64 qcow2 image produced at /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2 on pop4090 (712 MiB actual, 4.53 GiB virtual)
+- smolBSD amd64 qcow2 image produced at /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2 on <kvm-host> (712 MiB actual, 4.53 GiB virtual)
 - KERNCONF=SMOLBSD kernel installed (device tpm compiled in, confirmed by kernel install from sys/SMOLBSD/ obj dir)
 - tpm2-tools 5.6_2 + 12 deps (tpm2-tss, curl, libssl, json-c, etc.) installed via pkg inside chroot
 - SHA256 manifest written alongside artifact for CI cache invalidation
@@ -76,10 +76,10 @@ completed: 2026-06-05
 
 ## Task Commits
 
-1. **Task 1: Run make vm-image on pop4090 with KERNCONF=SMOLBSD** - `8e21e4a` (fix: clear schg on var/empty)
+1. **Task 1: Run make vm-image on <kvm-host> with KERNCONF=SMOLBSD** - `8e21e4a` (fix: clear schg on var/empty)
 2. **Task 1b: Human verify PATH B prerequisite** - auto-approved (FreeBSD image confirmed present)
 3. **Task 2: Verify image size and write SHA256 manifest** - (remote work, no local commits)
-4. **Task 3: Human verify artifact on pop4090** - auto-approved
+4. **Task 3: Human verify artifact on <kvm-host>** - auto-approved
 
 **Plan metadata:** (docs commit follows)
 
@@ -87,7 +87,7 @@ completed: 2026-06-05
 - `release/tools/smolbsd-qemu.conf` — Added `chflags noschg` before chown/chmod on var/empty to fix schg-flag failure during cloudware build
 
 ## Decisions Made
-- PATH B used: qemu-x86_64-static absent on pop4090, booted stock FreeBSD 15.1-STABLE VM with 20GB scratch disk
+- PATH B used: qemu-x86_64-static absent on <kvm-host>, booted stock FreeBSD 15.1-STABLE VM with 20GB scratch disk
 - SMOLBSD cloudware type requires explicit FORMAT/FSLIST make vars since it is not a predefined type in Makefile.vm
 - Image exceeds 512 MiB plan limit (712 MiB) — accepted because tpm2-tools requirement was the explicit goal of this plan
 
@@ -107,7 +107,7 @@ completed: 2026-06-05
 - **Found during:** Task 1 (first buildworld attempt)
 - **Issue:** `OBJDIRPREFIX=/build/obj` is not the correct make variable; the actual variable is `MAKEOBJDIRPREFIX`. First run used rootfs (4.8 GiB total) for build objects, filling it.
 - **Fix:** Killed first build, created symlink `/usr/obj -> /build/obj` (scratch disk, 15 GB free), restarted build without `OBJDIRPREFIX` argument.
-- **Files modified:** None (runtime symlink on pop4090 build VM)
+- **Files modified:** None (runtime symlink on <kvm-host> build VM)
 - **Verification:** Build objects went to /build/obj, 15 GB scratch confirmed.
 
 **3. [Rule 3 - Blocking] cloudware-release make target needs SMOLBSD_FORMAT + SMOLBSD_FSLIST**
@@ -148,7 +148,7 @@ completed: 2026-06-05
 None — the artifact is a fully functional qcow2 image. tpm2-tools is installed and the SMOLBSD kernel is compiled with `device tpm`.
 
 ## User Setup Required
-None — no external service configuration required beyond pop4090 SSH access (already established in phase 3 setup).
+None — no external service configuration required beyond <kvm-host> SSH access (already established in phase 3 setup).
 
 ## Next Phase Readiness
 - Wave 3 T1-T6 tests can now proceed using `/home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2`

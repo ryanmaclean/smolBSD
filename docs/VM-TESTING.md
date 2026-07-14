@@ -125,7 +125,7 @@ All six must pass for Phase III acceptance.
 > locate the MMIO CRB region, treats zero as invalid, and refuses to attach.
 > **Use amd64 QEMU with `-device tpm-tis`** (`bin/qemu-smolbsd.nu --arch amd64
 > --tpm`) for OS-level TPM testing (T2–T6). amd64 QEMU with TCG works on
-> macOS/minim4-24 without VT-x. See `plans/tinyos/PHASE-3-TPM.md §4a.3` for
+> macOS/<hypervisor-host> without VT-x. See `plans/tinyos/PHASE-3-TPM.md §4a.3` for
 > the full analysis and evidence from task-0031.
 
 ---
@@ -282,9 +282,9 @@ test evidence:
 swtpm --version
 ```
 
-## Validated: QEMU + swtpm TPM 2.0 on pop4090 (2026-05-16)
+## Validated: QEMU + swtpm TPM 2.0 on <kvm-host> (2026-05-16)
 
-**Host:** pop4090 — AMD Ryzen 9 7950X, Pop!_OS 24.04, KVM available (`/dev/kvm`)
+**Host:** <kvm-host> — AMD Ryzen 9 7950X, Pop!_OS 24.04, KVM available (`/dev/kvm`)
 **Guest:** FreeBSD 15.1-STABLE amd64 (`GENERIC` kernel with `kldload tpm`)
 **swtpm:** 0.7.3
 **QEMU:** 8.2.2

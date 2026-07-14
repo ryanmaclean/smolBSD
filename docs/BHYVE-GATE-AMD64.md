@@ -1,11 +1,11 @@
-# amd64 boot gate on fbryz3070 — bhyve runbook
+# amd64 boot gate — bhyve runbook (bare-metal FreeBSD host)
 
-fbryz3070 is a bare-metal FreeBSD 15.0-RELEASE-p6 amd64 host (Ryzen 9 5950X,
-32 cores, 127 GB RAM). The amd64 boot gate was stuck "pending KVM host"
-(PHASE-1) because QEMU/TCG was too slow — but this host runs bhyve natively,
-which is the right gate vehicle. Run everything as root. Phase 1 already
-confirmed `kldload vmm` works here (`/dev/vmmctl` present), but the test image
-was deleted post-test and must be re-transferred.
+Target: any bare-metal FreeBSD 15 amd64 host with many cores. The amd64 boot
+gate was stuck "pending KVM host" (PHASE-1) because QEMU/TCG was too slow —
+a FreeBSD host runs bhyve natively, which is the right gate vehicle. Run
+everything as root. Phase 1 already confirmed `kldload vmm` works on the
+designated host (`/dev/vmmctl` present), but the test image was deleted
+post-test and must be re-transferred.
 
 ## 0. Host prep (once)
 
@@ -43,7 +43,7 @@ nu bin/setup-hooks.nu        # pre-push spool guard (CLAUDE.md §9)
 ## 1. Transfer the image
 
 ```sh
-scp FreeBSD-15-amd64-smolbsd.qcow2 root@10.0.2.44:/root/   # LAN-only 10.0.2.x
+scp FreeBSD-15-amd64-smolbsd.qcow2 root@<bhyve-host>:/root/   # host address is internal — see private inventory
 ```
 
 ## 2. Convert qcow2 → raw (bhyve needs raw)
@@ -95,7 +95,7 @@ Expect exit codes: 0 pass, 1 timeout, 2 hard failure (kernel panic /
 `mountroot>` / UEFI shell — a `mountroot>` here on the NEW image would mean the
 MODULES_OVERRIDE/FFS change is wrong; see docs/UR-BSD-VERIFY.md Finding 2).
 
-Timing: on a 5950X with native vmm expect login in ~10–25 s. NOTE: the bhyve
+Timing: on a modern many-core host with native vmm expect login in ~10–25 s. NOTE: the bhyve
 expect script's built-in threshold is 60 s, not the documented 30 s gate — for
 a strict ≤30 s claim, read the printed `TIME_TO_LOGIN` yourself.
 
@@ -138,7 +138,7 @@ nu bin/ci-gate.nu --results-dir /tmp/smolbsd-results
 6. `bhyve-host-setup.nu` is Vultr-specific: may rewrite resolv.conf, pins a
    quarterly pkg repo, auto-bridges the first physical NIC (dangerous on a box
    you're SSH'd into), installs swtpm unconditionally.
-7. `bin/setup-runner.sh` and docs/CICD.md are the Linux/KVM (pop4090) path —
+7. `bin/setup-runner.sh` and docs/CICD.md are the Linux/KVM self-hosted path —
    not applicable to this host.
 8. Docs and prep-bhyve-image.nu error text say "qemu-utils"; the FreeBSD pkg
    is `qemu-tools`.

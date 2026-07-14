@@ -11,17 +11,17 @@ re_verification:
   gaps_remaining: []
   regressions: []
 human_verification:
-  - test: "Trigger build-image.yml on pop4090 via workflow_dispatch"
+  - test: "Trigger build-image.yml on <kvm-host> via workflow_dispatch"
     expected: "'Copy SMOLBSD configs into freebsd-src' step passes (grep VM_EXTRA_PACKAGES succeeds); tpm2-tools appears in final image at /usr/local/bin/tpm2_pcrread"
-    why_human: "build-image.yml runs a 90-minute FreeBSD make cloudware-release on pop4090; cannot verify from this host"
-  - test: "Re-run tpm-vm-test.yml T1-T6 suite on pop4090 after image rebuild"
+    why_human: "build-image.yml runs a 90-minute FreeBSD make cloudware-release on <kvm-host>; cannot verify from this host"
+  - test: "Re-run tpm-vm-test.yml T1-T6 suite on <kvm-host> after image rebuild"
     expected: "All 6 T1-T6 claims show verdict = pass with tpm2-tools from image (not from runtime install)"
-    why_human: "Requires live QEMU+swtpm session on pop4090 self-hosted runner"
+    why_human: "Requires live QEMU+swtpm session on <kvm-host> self-hosted runner"
 ---
 
 # Phase 3: TPM 2.0 Measured Boot — Verification Report
 
-**Phase Goal:** Build smolBSD amd64 qcow2 with `device tpm` + `tpm2-tools`; run full T1-T6 acceptance suite on pop4090 QEMU+swtpm; update CI to use real smolBSD image.
+**Phase Goal:** Build smolBSD amd64 qcow2 with `device tpm` + `tpm2-tools`; run full T1-T6 acceptance suite on <kvm-host> QEMU+swtpm; update CI to use real smolBSD image.
 **Verified:** 2026-06-05T09:00:00Z
 **Status:** passed
 **Re-verification:** Yes — after gap closure (commit f6be262 restores VM_EXTRA_PACKAGES)
@@ -37,9 +37,9 @@ human_verification:
 | 1  | smolbsd-qemu.conf exports VM_EXTRA_PACKAGES containing tpm2-tools           | VERIFIED  | Line 16: `export VM_EXTRA_PACKAGES="tpm2-tools"` present in HEAD (commit f6be262). Gap closed.                   |
 | 2  | SMOLBSD kernel config has `device tpm` compiled in                          | VERIFIED  | sys/amd64/conf/SMOLBSD line 155: `device tpm  # TPM 2.0 (CRB + FIFO interfaces)`                               |
 | 3  | SMOLBSD kernel config has options FFS + GEOM_PART_GPT                       | VERIFIED  | sys/amd64/conf/SMOLBSD lines 149-150: `options FFS` and `options GEOM_PART_GPT`. Commit d49693d.               |
-| 4  | T1-T6 acceptance suite all pass on pop4090 QEMU+swtpm                       | VERIFIED  | 03-T1T6-RESULTS.toml: total=6 pass=6 fail=0 verdict=pass. PCR0=B6A903D...5727 (non-zero).                       |
+| 4  | T1-T6 acceptance suite all pass on <kvm-host> QEMU+swtpm                       | VERIFIED  | 03-T1T6-RESULTS.toml: total=6 pass=6 fail=0 verdict=pass. PCR0=B6A903D...5727 (non-zero).                       |
 | 5  | T5 live seal/unseal round-trip passes with PCR 0+7 policy                   | VERIFIED  | 03-T5-RESULTS.toml: verdict=pass; tpm2_unseal stdout == "smolbsd-seal-test" (exact match confirmed).            |
-| 6  | tpm-vm-test.yml runs complete T1-T6 suite on pop4090 self-hosted runner     | VERIFIED  | .github/workflows/tpm-vm-test.yml: full sequence — swtpm reset, QEMU boot, SSH gate, bhyve-tpm-pcr-verify.nu.  |
+| 6  | tpm-vm-test.yml runs complete T1-T6 suite on <kvm-host> self-hosted runner     | VERIFIED  | .github/workflows/tpm-vm-test.yml: full sequence — swtpm reset, QEMU boot, SSH gate, bhyve-tpm-pcr-verify.nu.  |
 | 7  | build-image.yml CI workflow can rebuild the smolBSD TPM image               | VERIFIED  | Workflow exists (183 lines); OUTPUT_IMAGE=/home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2; VM_EXTRA_PACKAGES guard will now pass. |
 
 **Score:** 7/7 truths verified
@@ -52,7 +52,7 @@ human_verification:
 |------------------------------------------------|-------------------------------------------------------|-------------|-----------------------------------------------------------------------------------------------|
 | `release/tools/smolbsd-qemu.conf`              | Exports VM_EXTRA_PACKAGES=tpm2-tools                  | VERIFIED   | Line 16: `export VM_EXTRA_PACKAGES="tpm2-tools"` with 2-line comment block. Restored f6be262.|
 | `sys/amd64/conf/SMOLBSD`                       | Kernel config with device tpm + FFS + GEOM_PART_GPT   | VERIFIED   | All three options confirmed present (lines 149, 150, 155).                                   |
-| `.github/workflows/tpm-vm-test.yml`            | Full T1-T6 suite wired to pop4090 runner              | VERIFIED   | 128-line workflow: swtpm reset, QEMU launch, SSH gate, bhyve-tpm-pcr-verify.nu, cleanup.     |
+| `.github/workflows/tpm-vm-test.yml`            | Full T1-T6 suite wired to <kvm-host> runner              | VERIFIED   | 128-line workflow: swtpm reset, QEMU launch, SSH gate, bhyve-tpm-pcr-verify.nu, cleanup.     |
 | `.github/workflows/build-image.yml`            | CI workflow for rebuilding smolBSD TPM image          | VERIFIED   | 183-line workflow; OUTPUT_IMAGE references /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2. |
 | `bin/swtpm-setup.nu`                           | swtpm lifecycle manager with Linux/Ubuntu path        | VERIFIED   | /usr/bin/swtpm in candidates list (commit 5c2a286); --pid file= form for Ubuntu.             |
 | `bin/qemu-smolbsd.nu`                          | QEMU launcher with --tpm, -M q35, run-external spread | VERIFIED   | run-external spread at line 502 (commit 95119ae); -M q35 at line 309.                        |
@@ -135,17 +135,17 @@ No blockers. No TODOs, stubs, or empty returns in any critical path file. The T3
 
 ## Human Verification Required
 
-### 1. build-image.yml workflow run on pop4090
+### 1. build-image.yml workflow run on <kvm-host>
 
-**Test:** Trigger build-image.yml via workflow_dispatch on pop4090.
+**Test:** Trigger build-image.yml via workflow_dispatch on <kvm-host>.
 **Expected:** All steps pass; artifact at /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2 contains /usr/local/bin/tpm2_pcrread (confirm via SSH into fresh guest).
-**Why human:** 90-minute FreeBSD make cloudware-release on pop4090 — cannot verify from this host.
+**Why human:** 90-minute FreeBSD make cloudware-release on <kvm-host> — cannot verify from this host.
 
 ### 2. tpm-vm-test.yml full T1-T6 CI run post-rebuild
 
 **Test:** After build-image.yml completes with tpm2-tools baked in, trigger tpm-vm-test.yml.
 **Expected:** CI job passes, GITHUB_STEP_SUMMARY shows 6/6 pass, PCR0 non-zero.
-**Why human:** Requires live pop4090 KVM + swtpm session; automated check from this host is not possible.
+**Why human:** Requires live <kvm-host> KVM + swtpm session; automated check from this host is not possible.
 
 ---
 

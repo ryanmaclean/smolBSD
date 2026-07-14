@@ -2,8 +2,8 @@
 
 ## Nushell Install Verified
 
-- nu 0.112.2 installed at /home/studio/.local/bin/nu on pop4090 (10.0.2.42)
-- curl to github.com/nushell releases succeeds from pop4090 (outbound internet available)
+- nu 0.112.2 installed at /home/studio/.local/bin/nu on <kvm-host> (<kvm-host-ip>)
+- curl to github.com/nushell releases succeeds from <kvm-host> (outbound internet available)
 - Binary is x86_64-unknown-linux-musl (self-contained, no libc dependency)
 - Verified: 2026-06-04
 - Command: `$HOME/.local/bin/nu --version` outputs `0.112.2`
@@ -15,10 +15,10 @@
 
 Status: ABSENT
 
-`/usr/bin/qemu-x86_64-static` does not exist on pop4090.
+`/usr/bin/qemu-x86_64-static` does not exist on <kvm-host>.
 
 FALLBACK: pkg chroot via QEMUSTATIC is not possible. Wave 2 must use the
-native FreeBSD build approach (D-01): the build runs directly on pop4090
+native FreeBSD build approach (D-01): the build runs directly on <kvm-host>
 (Linux x86_64 host with FreeBSD toolchain in chroot, or a FreeBSD VM/jail).
 The VM image build should not require cross-architecture emulation since the
 target architecture (amd64) matches the build host architecture (x86_64).

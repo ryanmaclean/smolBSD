@@ -1,7 +1,7 @@
 # ur-BSD — verification runbook for the next FreeBSD build host session
 
 Companion to `docs/UR-BSD.md`. This is the plan to execute **when a FreeBSD 15
-build host is available again** (fbuild for aarch64; a Linux/KVM x86 host for
+build host is available again** (<aarch64-builder> for aarch64; a Linux/KVM x86 host for
 amd64). It records what was changed on branch `claude/ur-bsd-26-qnmjho`, what was
 verified without a build, and the ordered steps to validate — including one
 likely latent bug that must be confirmed before trusting the build scripts.
@@ -64,7 +64,7 @@ invocation in `bin/build-smolbsd.nu` and `bin/build-smolbsd-image.nu` — did
 
 Confirmation came from the repo's own history, not just the mirror review: the
 `.planning/phases/03-*` records and `.github/workflows/build-image.yml` show the
-pop4090 builds succeeded with `cloudware-release` + `CLOUDWARE=smolbsd` +
+prior self-hosted CI builds succeeded with `cloudware-release` + `CLOUDWARE=smolbsd` +
 `SMOLBSD_FORMAT=qcow2 SMOLBSD_FSLIST=ufs` (generating `cw-smolbsd-ufs-qcow2`,
 artifact at `<objdir>/usr/src/release/vm.ufs.qcow2`) — while still passing the
 fake `CLOUDWARE_CONF`, meaning even those builds never sourced the conf. And
@@ -117,7 +117,7 @@ Every FIX-9/FIX-10 assumption was checked directly against
 | `cloudware-release` exists and needs `WITH_CLOUDWARE` + non-empty `CLOUDWARE` | TRUE (Makefile.vm:112, 307–311; empty target otherwise) | We pass both; also added `WITH_CLOUDWARE=yes` to build-image.yml |
 | Per-type conf var is `SMOLBSDCONF`; must be passed explicitly | TRUE (`${_CW:tu}CONF`; auto-default only if `tools/smolbsd.conf` exists — it doesn't) | Passed explicitly everywhere |
 | `-s ${VMSIZE}` / `SWAPSIZE` reach mk-vmimage on the cw path | TRUE (Makefile.vm:141, 156) | Conf `${VMSIZE:-2g}` pattern correct as-is |
-| Artifact basename | `smolbsd.ufs.qcow2` in release objdir root (`${_CW:tl}.${_FS}.${_FMT}`, Makefile.vm:124) — `vm.ufs.qcow2` seen on pop4090 is that host's stable/15 naming | harvest.sh default updated; workflow ls/scp made glob-tolerant; find_qcow2 already globs |
+| Artifact basename | `smolbsd.ufs.qcow2` in release objdir root (`${_CW:tl}.${_FS}.${_FMT}`, Makefile.vm:124) — `vm.ufs.qcow2` seen in prior self-hosted CI runs is that tree's stable/15 naming | harvest.sh default updated; workflow ls/scp made glob-tolerant; find_qcow2 already globs |
 | `WITH_PKGBASE=yes` selects pkgbase | FALSE — no such release variable; pkgbase is the DEFAULT, `NOPKGBASE=yes` opts out (vmimage.subr:98) | Removed from all invocations and headers |
 | cw target self-builds the pkgbase repo | TRUE — depends on `pkgbase-repo-dir` → `make -C /usr/src packages` (release/Makefile:218–229), which requires buildworld | Added the missing buildworld step to `bin/build-smolbsd-image.nu` |
 | `FreeBSD-set-kernels` works with custom KERNCONF | TRUE — sets are generated from package `set` annotations at repo-build time (create-sets.sh) | Watch item removed |
@@ -132,7 +132,7 @@ Every FIX-9/FIX-10 assumption was checked directly against
    (→ `SMOLBSDCONF`), and whether the type list variable is `CLOUDWARE` or
    `CLOUDWARE_TYPES` on this tree. Then dry-check the target:
    `make -C /usr/src/release -V CLOUDWARE_TYPES -V VMSIZE CLOUDWARE=smolbsd` .
-   FIX-9 is already applied to the scripts with the pop4090-proven spelling;
+   FIX-9 is already applied to the scripts with the CI-proven spelling;
    this step only guards against releng-branch drift.
 2. **Build via pipeline or host.** Preferred: dispatch
    `.github/workflows/build-image-hosted.yml` (GitHub-hosted runner, KVM,

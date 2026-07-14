@@ -19,7 +19,7 @@
 # Prerequisites (must be present on FreeBSD build host):
 #   qemu-img, mdconfig, mount_msdosfs, mount, umount, cp, truncate
 #
-# This script is designed to run on the FreeBSD fbuild VM (aarch64).
+# This script is designed to run on the FreeBSD <aarch64-builder> VM (aarch64).
 # Running on macOS is NOT supported for the mdconfig path; use a FreeBSD host.
 
 # ── Board profiles ─────────────────────────────────────────────────────────────
@@ -296,7 +296,7 @@ export def main [
     let os = $nu.os-info.name
     if $os != "freebsd" {
         error make {
-            msg: $"This script requires a FreeBSD host (mdconfig). Detected OS: ($os). Run on the fbuild VM (ssh -J minim4-24 -p 2222 builder@localhost)."
+            msg: $"This script requires a FreeBSD host (mdconfig). Detected OS: ($os). Run on the <aarch64-builder> VM (ssh -J <hypervisor-host> -p 2222 builder@localhost)."
         }
     }
 

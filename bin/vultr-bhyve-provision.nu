@@ -3,7 +3,7 @@
 # vultr-bhyve-provision.nu — provision a Vultr bare-metal or dedicated amd64
 # FreeBSD 15 instance suitable for running bhyve with real VT-x.
 #
-# Background: fbuild (fb-vm-24) is an arm64 VM under Apple HVF; EL2 is not
+# Background: <aarch64-builder> (fb-vm-24) is an arm64 VM under Apple HVF; EL2 is not
 # exposed to guests, so /dev/vmm is never created and bhyve cannot run.
 # The Phase-III TPM test also requires amd64 bhyve (virtio-tpm PCI device).
 # This script provisions the correct host type on Vultr.

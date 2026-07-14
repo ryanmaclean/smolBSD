@@ -33,7 +33,7 @@ DM primary + spool HALT marker fallback.
 
 ### 2. aarch64-first (task-0003a REPLAN, 2026-04-30)
 
-Original plan targeted amd64 inside fbuild. After verifying that HVF on Apple
+Original plan targeted amd64 inside <aarch64-builder>. After verifying that HVF on Apple
 Silicon only accelerates a matching-ISA guest, the plan was replanned: aarch64
 is the primary leg (native HVF, 10–30s boot), amd64 is the secondary leg (Vultr
 KVM, needed because TCG on aarch64 is 5–10x too slow for the 30s gate).
@@ -58,7 +58,7 @@ parses mbox + TOML bodies into structured records. Smoke-tested (task-0012):
 ### 5. Infrastructure drift correction (task-0003b)
 
 The upstream `freebsd-build-vm` skill named the build VM `fb-vm-24` (stale) and
-listed SSH port `2225` (stale). Ground truth: VM is `fbuild`, port is `2222`.
+listed SSH port `2225` (stale). Ground truth: VM is `<aarch64-builder>`, port is `2222`.
 All smolBSD docs use the correct names. The global skill needs a separate update
 PR (flagged but out-of-scope for this repo). Gitea: `i9-zfs-pop:3001`, not
 `gitea.local:3000` (QNAS hosts something else on :3000).
@@ -88,13 +88,13 @@ PR (flagged but out-of-scope for this repo). Gitea: `i9-zfs-pop:3001`, not
 
 Two `buildworld` + `buildkernel` + `make release` pipelines are in flight:
 
-**aarch64 on fbuild** (`ssh -J 100.91.236.29 -p 2222 builder@localhost`):
+**aarch64 on <aarch64-builder>** (`ssh -J <jump-host> -p 2222 builder@localhost`):
 - Screen session: `smolbsd-world` (PID 15999, started 21:01:17 UTC)
 - Native arm64 build; no cross-compile flags needed
 - Monitor: `screen -r smolbsd-world` or `tail -f /var/tmp/smolbsd-world.log`
 
 **amd64 on Vultr** (`REDACTED-VULTR-IP`, instance `REDACTED-VULTR-UUID-2`):
-- Cross-compiled from fbuild arm64 host with `TARGET=amd64 TARGET_ARCH=amd64`
+- Cross-compiled from <aarch64-builder> arm64 host with `TARGET=amd64 TARGET_ARCH=amd64`
 - Status: provisioned (attempt 3); buildworld running
 
 ---

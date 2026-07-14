@@ -116,7 +116,7 @@ Step 1: Convert to raw
     smolbsd-aarch64.raw
 
 Step 2: Mount raw image (macOS: hdiutil / FreeBSD: mdconfig)
-  # On FreeBSD build host (fbuild):
+  # On FreeBSD build host (<aarch64-builder>):
   mdconfig -f smolbsd-aarch64.raw -u 0   # -> /dev/md0
 
 Step 3: Inject board DTB into ESP
@@ -150,7 +150,7 @@ Step 6: Unmount + seal
 ### 4.2 SD card write
 
 ```sh
-# On macOS (minim4-24):
+# On macOS (<hypervisor-host>):
 diskutil unmountDisk /dev/diskN
 dd if=smolbsd-aarch64-pi5.raw of=/dev/rdiskN bs=4m status=progress
 sync
@@ -330,7 +330,7 @@ ls -l smolbsd-aarch64-pi5.raw
 3. **DTB source**: FreeBSD 15 `sys/contrib/device-tree/` includes many ARM
    DTBs but BCM2712 and RK3588 coverage is still catching up. May need to
    pull DTBs from upstream Linux `arch/arm64/boot/dts/` and compile with
-   `dtc` on fbuild.
+   `dtc` on <aarch64-builder>.
 
 4. **UFS vs ZFS on SD**: SD cards have limited random-write endurance. UFS
    soft-updates (no journaling) is preferred for Phase II. ZFS deferred; its
@@ -346,7 +346,7 @@ ls -l smolbsd-aarch64-pi5.raw
    gate to 90s and note card class in evidence.
 
 7. **USB serial adapter availability**: The CI harness assumes a CP2102-based
-   USB-UART adapter is present on minim4-24. Verify `/dev/tty.usbserial-*`
+   USB-UART adapter is present on <hypervisor-host>. Verify `/dev/tty.usbserial-*`
    exists before running expect scripts.
 
 ---

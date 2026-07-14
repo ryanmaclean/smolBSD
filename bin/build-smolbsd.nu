@@ -456,7 +456,7 @@ def build_vm_image [
     # that sources smolbsd-qemu*.conf — and thus runs the pkgbase filter, the
     # size-trim, and sshd enablement — is the cloudware machinery with the
     # real per-type variable ${TYPE}CONF (SMOLBSDCONF for CLOUDWARE=smolbsd).
-    # Proven on pop4090 (.planning/phases/03-*, .github/workflows/build-image.yml):
+    # Proven by prior self-hosted CI builds (.planning/phases/03-*, build-image.yml):
     # cloudware-release generates the cw-smolbsd-ufs-qcow2 target.
     # NOTE: pkgbase is the DEFAULT on releng/15.0 (NOPKGBASE=yes opts out into
     # installworld); WITH_PKGBASE was never a release Makefile variable. The

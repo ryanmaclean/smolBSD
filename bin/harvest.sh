@@ -3,9 +3,10 @@
 # bin/harvest.sh — Harvest qcow2 build artifacts from remote build hosts
 #                  and run acceptance tests.
 #
-# Build hosts:
-#   aarch64: fbuild  — scp -J 100.91.236.29 -P 2222 builder@localhost
-#   amd64:   Vultr   — root@REDACTED-VULTR-IP
+# Build hosts (internal names/addresses are NOT committed — see private
+# inventory; pass via env):
+#   aarch64: JUMP_HOST=<jump> AARCH64_REMOTE=builder@localhost:<path>
+#   amd64:   AMD64_REMOTE=<user@host>:<path>
 #
 # Acceptance gates:
 #   Artifact size: <= 512 MiB
@@ -112,19 +113,19 @@ report "============================================================"
 report ""
 
 # ---------------------------------------------------------------------------
-# Step 1: Harvest aarch64 from fbuild (via jump host)
+# Step 1: Harvest aarch64 from <aarch64-builder> (via jump host)
 # ---------------------------------------------------------------------------
 
-report "--- Harvesting aarch64 from fbuild ---"
+report "--- Harvesting aarch64 from the aarch64 build host ---"
 log "SCP aarch64: $AARCH64_REMOTE -> $AARCH64_IMAGE"
 
-if scp -J 100.91.236.29 -P 2222 \
+if scp -J "${JUMP_HOST:?Set JUMP_HOST to the aarch64 jump host (internal — not committed)}" -P 2222 \
         "$AARCH64_REMOTE" \
         "$AARCH64_IMAGE"; then
     report "  OK    aarch64 image fetched: $AARCH64_IMAGE"
     report "  INFO  aarch64 timestamp: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 else
-    gate_fail "aarch64 SCP from fbuild failed"
+    gate_fail "aarch64 SCP from build host failed"
 fi
 
 # ---------------------------------------------------------------------------
@@ -132,14 +133,14 @@ fi
 # ---------------------------------------------------------------------------
 
 report ""
-report "--- Harvesting amd64 from Vultr ---"
+report "--- Harvesting amd64 from the amd64 build host ---"
 log "SCP amd64: $AMD64_REMOTE -> $AMD64_IMAGE"
 
 if scp "$AMD64_REMOTE" "$AMD64_IMAGE"; then
     report "  OK    amd64 image fetched: $AMD64_IMAGE"
     report "  INFO  amd64 timestamp: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 else
-    gate_fail "amd64 SCP from Vultr failed"
+    gate_fail "amd64 SCP from build host failed"
 fi
 
 # ---------------------------------------------------------------------------

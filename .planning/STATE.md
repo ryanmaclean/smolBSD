@@ -31,8 +31,8 @@ Updated: 2026-06-05
 |-------------|--------|
 | `device tpm` in all SMOLBSD kernel configs | ✅ done |
 | `smolbsd-qemu.conf`: `VM_EXTRA_PACKAGES=tpm2-tools` | ✅ done |
-| SMOLBSD configs on pop4090 freebsd-src | ✅ done |
-| Nushell 0.112.2 on pop4090 runner | ✅ done |
+| SMOLBSD configs on <kvm-host> freebsd-src | ✅ done |
+| Nushell 0.112.2 on <kvm-host> runner | ✅ done |
 | smolBSD amd64 qcow2 image with tpm2-tools pre-baked | ✅ done — `/home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2` (712 MiB) |
 | T1–T6 TPM acceptance suite | ✅ all pass — `03-T1T6-RESULTS.toml` |
 | T5 live seal/unseal | ✅ pass — `smolbsd-seal-test` recovered exactly |
@@ -40,7 +40,7 @@ Updated: 2026-06-05
 | `build-image.yml` for repeatable smolBSD TPM image rebuild | ✅ done |
 | PR #28 open for review | ✅ pushed to gsd/phase-3-tpm |
 
-## Human verification pending (pop4090)
+## Human verification pending (<kvm-host>)
 
 - [ ] Trigger `build-image.yml` → confirm image rebuild reproducible end-to-end
 - [ ] Trigger `tpm-vm-test.yml` → full T1–T6 CI pass with real smolBSD image (not stock FreeBSD)

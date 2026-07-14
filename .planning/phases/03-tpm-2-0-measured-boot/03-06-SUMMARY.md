@@ -66,7 +66,7 @@ completed: 2026-06-05
 
 ## Decisions Made
 
-- **Key auth instead of sshpass/password**: PLAN-05 found that `PasswordAuthentication yes` runtime fix does not persist across guest reboots. The studio@pop4090 ed25519 public key was added to `/root/.ssh/authorized_keys` in PLAN-05 and persists in the qcow2 image. Using `--password ""` in the bhyve-tpm-pcr-verify.nu invocation relies on key auth via the runner's ssh-agent.
+- **Key auth instead of sshpass/password**: PLAN-05 found that `PasswordAuthentication yes` runtime fix does not persist across guest reboots. The studio@<kvm-host> ed25519 public key was added to `/root/.ssh/authorized_keys` in PLAN-05 and persists in the qcow2 image. Using `--password ""` in the bhyve-tpm-pcr-verify.nu invocation relies on key auth via the runner's ssh-agent.
 
 - **D-04 override comment preserved**: The D-04 decision in CONTEXT.md originally specified `run-vm-tests.nu --tpm`. RESEARCH.md Pitfall 1 documented that `step-tpm-device` in that script uses nmdm console (FreeBSD-only, not available on Linux/QEMU). The workflow uses `bhyve-tpm-pcr-verify.nu` directly, with the override rationale documented in the workflow header comment.
 

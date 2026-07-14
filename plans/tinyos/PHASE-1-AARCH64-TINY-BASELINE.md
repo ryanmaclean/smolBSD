@@ -13,12 +13,12 @@
 ## 1. Mission Statement
 
 Build the smallest stable FreeBSD 15 arm64 QEMU VM that boots unattended to a
-login prompt in **≤ 30 seconds** (HVF-accelerated on `minim4-24`), runs sh,
+login prompt in **≤ 30 seconds** (HVF-accelerated on `<hypervisor-host>`), runs sh,
 vi/ed, rc.d, and pkg, uses UFS, and fits inside 512 MiB on disk (aspirational:
 qcow2 artifact < 128 MiB).
 
 **This is the PRIMARY Phase-I leg.** The HVF accelerator on Apple Silicon
-(`minim4-24`) is native-ISA-only: an aarch64 guest under HVF runs at near-bare-
+(`<hypervisor-host>`) is native-ISA-only: an aarch64 guest under HVF runs at near-bare-
 metal speed, while an amd64 guest falls back to TCG (software emulation, 5–10×
 slower). The ≤ 30s time-to-login acceptance gate can only be cleared on the build
 host using an aarch64 image; the amd64 leg requires a KVM-capable x86 host for
@@ -30,17 +30,17 @@ This file defines the build contract. No build commands are run here.
 
 ## 2. Build Host and Build Mode
 
-### 2.1 Build host: `fbuild` (FreeBSD 15 aarch64 on `minim4-24`)
+### 2.1 Build host: `<aarch64-builder>` (FreeBSD 15 aarch64 on `<hypervisor-host>`)
 
-The fbuild VM is FreeBSD 15.0-RELEASE **aarch64** — the same ISA as the
+The <aarch64-builder> VM is FreeBSD 15.0-RELEASE **aarch64** — the same ISA as the
 target. This means **no cross-compile is needed**: the build system uses
 its native toolchain end-to-end.
 
-**fbuild operational notes** (see design spec §18 for full detail):
+**<aarch64-builder> operational notes** (see design spec §18 for full detail):
 
-- Skill-canonical name `fb-vm-24` is stale — actual VM name is `fbuild`.
-- SSH port: `ssh -J minim4-24 -p 2222 builder@localhost` (not the skill's stale 2225).
-- virtfs share on host side: `/Users/studio/Users/studio/share/fbuild/` (doubled-prefix wrapper bug, documented separately).
+- Skill-canonical name `fb-vm-24` is stale — actual VM name is `<aarch64-builder>`.
+- SSH port: `ssh -J <hypervisor-host> -p 2222 builder@localhost` (not the skill's stale 2225).
+- virtfs share on host side: `/Users/studio/Users/studio/share/<aarch64-builder>/` (doubled-prefix wrapper bug, documented separately).
 - Screen-socket-lost hazard: `pgrep qemu` and `screen -ls` may diverge; see spec §18.4 for recovery.
 
 ### 2.2 Build mode: native arm64 — no cross-compile
@@ -59,7 +59,7 @@ make -j4 -C /usr/src buildworld buildkernel \
     TARGET_ARCH=aarch64
 ```
 
-Contrast with the amd64 leg, which must cross-compile from the arm64 fbuild host
+Contrast with the amd64 leg, which must cross-compile from the arm64 <aarch64-builder> host
 using `TARGET=amd64 TARGET_ARCH=amd64`. The native path removes the cross-
 toolchain step, reducing build time and failure modes.
 
@@ -275,10 +275,10 @@ EOF
 }
 ```
 
-### 7.2 Build invocation sequence (inside fbuild — native arm64 build)
+### 7.2 Build invocation sequence (inside <aarch64-builder> — native arm64 build)
 
 ```sh
-# Inside fbuild (FreeBSD 15 aarch64 — ssh -J minim4-24 -p 2222 builder@localhost):
+# Inside <aarch64-builder> (FreeBSD 15 aarch64 — ssh -J <hypervisor-host> -p 2222 builder@localhost):
 
 # Step 1: Ensure source tree is present at /usr/src (releng/15.0)
 # gitup or: git clone -b releng/15.0 https://git.freebsd.org/src.git /usr/src
@@ -355,7 +355,7 @@ test -f FreeBSD-15-arm64-smolbsd.qcow2 && \
 # Acceptance: exit 0 + both lines present
 ```
 
-### 8.2 Time to Ready State — EXPECTED TO PASS on minim4-24 (HVF)
+### 8.2 Time to Ready State — EXPECTED TO PASS on <hypervisor-host> (HVF)
 
 ```sh
 # tests/time-to-ready-aarch64.exp
@@ -375,8 +375,8 @@ expect {
   timeout  { puts "TIMEOUT"; exit 1 }
 }
 # Acceptance: TIME_TO_LOGIN <= 30s
-# Expected: PASS on minim4-24 (Apple Silicon, HVF = native-ISA acceleration)
-# Contrast: amd64 leg expected to FAIL this gate on minim4-24 (TCG = ~5-10x slower)
+# Expected: PASS on <hypervisor-host> (Apple Silicon, HVF = native-ISA acceleration)
+# Contrast: amd64 leg expected to FAIL this gate on <hypervisor-host> (TCG = ~5-10x slower)
 ```
 
 ### 8.3 Peak and Idle Memory
@@ -431,14 +431,14 @@ echo "CRASH_RECOVERY_TIME=$(($(date +%s) - T0))s"
 
 ## 10. Build Host Requirements
 
-- **OS**: FreeBSD 15.0-RELEASE arm64 (the `fbuild` VM on `minim4-24`)
-- **RAM**: 8 GiB minimum (buildworld requires ~4 GiB; fbuild has 8 GiB — sufficient)
+- **OS**: FreeBSD 15.0-RELEASE arm64 (the `<aarch64-builder>` VM on `<hypervisor-host>`)
+- **RAM**: 8 GiB minimum (buildworld requires ~4 GiB; <aarch64-builder> has 8 GiB — sufficient)
 - **Disk**: 40 GiB free (src tree ~2 GiB, /usr/obj ~18 GiB native, image artifacts ~1 GiB)
 - **Tools**: `git` (fetch src), `pkg` (verify package set), `qemu-img` (validate output)
 - **No cross-compile toolchain needed**: native arm64 build uses the host's own tools.
   This reduces build time vs the amd64 cross-build leg by approximately 20–30%
   (no cross-toolchain bootstrap step).
-- **QEMU test host**: `minim4-24` (Apple Silicon, HVF available).
+- **QEMU test host**: `<hypervisor-host>` (Apple Silicon, HVF available).
   `/opt/homebrew/bin/qemu-system-aarch64` verified present (QEMU 10.2.1).
   `/opt/homebrew/share/qemu/edk2-aarch64-code.fd` (AAVMF) — verify present before first test run.
 
@@ -457,7 +457,7 @@ echo "CRASH_RECOVERY_TIME=$(($(date +%s) - T0))s"
 | `loader.conf console=` | `comconsole,vidconsole` | `uart0` |
 | FDT in kernel | Not needed | `options FDT` required |
 | kvm_clock device | Kept | Not applicable (arm64 arch-timer) |
-| Time-to-login gate | Likely FAIL on minim4-24 (TCG) | Expected PASS on minim4-24 (HVF) |
+| Time-to-login gate | Likely FAIL on <hypervisor-host> (TCG) | Expected PASS on <hypervisor-host> (HVF) |
 | Hostfwd test port | 2230 | 2231 (avoids collision) |
 | Kernel config path | `sys/amd64/conf/SMOLBSD` | `sys/arm64/conf/SMOLBSD` |
 | obj path | `/usr/obj/amd64.amd64/...` | `/usr/obj/arm64.aarch64/...` |
@@ -476,7 +476,7 @@ echo "CRASH_RECOVERY_TIME=$(($(date +%s) - T0))s"
    the correct physical-board DTB.
 4. **Swap size**: 512 MiB may be reducible for memory-constrained Pi targets.
 5. **AAVMF binary path**: `/opt/homebrew/share/qemu/edk2-aarch64-code.fd` —
-   verify this path on minim4-24 before first test run (Homebrew QEMU install
+   verify this path on <hypervisor-host> before first test run (Homebrew QEMU install
    path; could differ across QEMU versions).
 
 ---

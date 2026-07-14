@@ -44,7 +44,7 @@ TPM 2.0 measured boot and local attestation via QEMU + swtpm on amd64.
 
 **Scope:** build smolBSD image with `device tpm` compiled in, install
 `tpm2-tools`, and validate the full T1–T6 acceptance suite inside a QEMU VM
-backed by swtpm on pop4090 (Ryzen 9 7950X, KVM) before any hardware dependency.
+backed by swtpm on <kvm-host> (Ryzen 9 7950X, KVM) before any hardware dependency.
 
 **Acceptance gates (T1–T6):**
 - T1: swtpm socket appears within 3 s (CI green)
@@ -57,18 +57,18 @@ backed by swtpm on pop4090 (Ryzen 9 7950X, KVM) before any hardware dependency.
 **Already done:**
 - kernel configs (`device tpm` in all SMOLBSD configs)
 - swtpm setup scripts, bhyve harness, test scripts
-- CI smoke test on pop4090 (self-hosted runner, `/dev/tpm0 present` = green)
+- CI smoke test on <kvm-host> (self-hosted runner, `/dev/tpm0 present` = green)
 
 **Plans:** 7/7 plans complete
 
 Plans:
-- [x] 03-01-PLAN.md — Add VM_EXTRA_PACKAGES=tpm2-tools to smolbsd-qemu.conf; copy SMOLBSD configs to pop4090 freebsd-src
-- [x] 03-02-PLAN.md — Create tpm-vm-test.yml skeleton; install Nushell v0.112.2 on pop4090
-- [x] 03-03-PLAN.md — Build smolBSD amd64 image on pop4090 (make vm-image KERNCONF=SMOLBSD); write SHA256 manifest
+- [x] 03-01-PLAN.md — Add VM_EXTRA_PACKAGES=tpm2-tools to smolbsd-qemu.conf; copy SMOLBSD configs to <kvm-host> freebsd-src
+- [x] 03-02-PLAN.md — Create tpm-vm-test.yml skeleton; install Nushell v0.112.2 on <kvm-host>
+- [x] 03-03-PLAN.md — Build smolBSD amd64 image on <kvm-host> (make vm-image KERNCONF=SMOLBSD); write SHA256 manifest
 - [x] 03-04-PLAN.md — Run bhyve-tpm-pcr-verify.nu T1/T2/T3/T4/T6 against live smolBSD guest
 - [x] 03-05-PLAN.md — Run tpm-seal-test.nu live T5 seal/unseal via /dev/tpm0 in guest
 - [x] 03-06-PLAN.md — Wire full T1-T6 test sequence into tpm-vm-test.yml; remove fix-freebsd-vm.py
-- [x] 03-07-PLAN.md — Create build-image.yml CI workflow for smolBSD TPM image rebuild on pop4090
+- [x] 03-07-PLAN.md — Create build-image.yml CI workflow for smolBSD TPM image rebuild on <kvm-host>
 
 **Key files:** `bin/swtpm-setup.nu`, `bin/bhyve-smolbsd.nu`, `bin/qemu-smolbsd.nu`,
 `tests/tpm-attest.exp`, `tests/tpm-seal-test.nu`, `tests/bhyve-tpm-pcr-verify.nu`,
@@ -87,7 +87,7 @@ stack proven in Phase 3 — no physical hardware required.
 - A2: Quote includes a fresh nonce (anti-replay) and is signed by an Attestation Key
 - A3: Host-side verifier (`bin/attest-verify.nu`) validates the quote signature + PCR digest + nonce
 - A4: Verifier emits a structured TOML attestation envelope (verdict + evidence) per the AX-first convention
-- A5: CI gate: attestation round-trip passes on pop4090 QEMU+swtpm
+- A5: CI gate: attestation round-trip passes on <kvm-host> QEMU+swtpm
 
 **Prerequisites:** Phase 3 T1–T6 all pass ✅. License audit complete ✅ (all
 components BSD-2/BSD-2-Patent/BSD-3 — see License Compliance below).

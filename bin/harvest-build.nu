@@ -1,7 +1,7 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# harvest-build.nu — poll fbuild for smolBSD build completion and harvest
-# the resulting qcow2 artifact to minim4-24.
+# harvest-build.nu — poll <aarch64-builder> for smolBSD build completion and harvest
+# the resulting qcow2 artifact to <hypervisor-host>.
 #
 # Usage:
 #   nu bin/harvest-build.nu                          # poll until done (default 2 h)
@@ -10,16 +10,16 @@
 #   nu bin/harvest-build.nu --poll-interval 60       # check every 60 s
 #
 # The build is launched by bin/smolbuild-amd64.sh inside a screen session on
-# fbuild (fb-vm-24, reached via ssh -J minim4-24 -p 2222 builder@localhost).
+# <aarch64-builder> (fb-vm-24, reached via ssh -J <hypervisor-host> -p 2222 builder@localhost).
 # This script monitors that session, waits for the artifact, then SCPs it to
-# minim4-24:~/smolbsd-artifacts/ and appends a task-0038 result to
+# <hypervisor-host>:~/smolbsd-artifacts/ and appends a task-0038 result to
 # var/mail/spool.
 #
 # Artifact search order (both paths checked each poll):
 #   1. /tmp/smolbsd-amd64-out/*.qcow2                    (copied there by build script on finish)
 #   2. /usr/obj/amd64.amd64/usr/src/release/**/*.qcow2   (make release OBJDIR output)
 #
-# See: bin/smolbuild-amd64.sh (build script on fbuild)
+# See: bin/smolbuild-amd64.sh (build script on <aarch64-builder>)
 #      var/mail/spool task-0037 (build launch record)
 
 # ── Logging ────────────────────────────────────────────────────────────────────
@@ -34,9 +34,9 @@ def log-step [step: string, msg: string, extra: record = {}] {
 
 # ── SSH helper ─────────────────────────────────────────────────────────────────
 
-# Run a command on fbuild via ssh -J <jump> -p <port> <target>.
+# Run a command on the aarch64 build host via ssh -J <jump> -p <port> <target>.
 # Returns {exit_code, stdout, stderr}.
-def ssh-fbuild [
+def ssh-builder [
     jump:    string
     port:    int
     target:  string
@@ -59,7 +59,7 @@ def check-screen [
     jump: string, port: int, target: string,
     session: string, dry_run: bool
 ] {
-    let r = ssh-fbuild $jump $port $target $"screen -ls | grep ($session)" $dry_run
+    let r = ssh-builder $jump $port $target $"screen -ls | grep ($session)" $dry_run
     if $dry_run { return "unknown" }
     if $r.exit_code == 0 and ($r.stdout | str length) > 0 { "running" } else { "dead" }
 }
@@ -69,12 +69,12 @@ def tail-log [
     jump: string, port: int, target: string,
     log_file: string, lines: int, dry_run: bool
 ] {
-    let r = ssh-fbuild $jump $port $target $"tail -($lines) ($log_file) 2>/dev/null || echo 'log-not-found'" $dry_run
+    let r = ssh-builder $jump $port $target $"tail -($lines) ($log_file) 2>/dev/null || echo 'log-not-found'" $dry_run
     if $dry_run { return "" }
     $r.stdout | str trim
 }
 
-# Check whether a build artifact (qcow2) is present on fbuild.
+# Check whether a build artifact (qcow2) is present on <aarch64-builder>.
 # Returns the remote path if found, or "" if not yet present.
 def find-artifact [
     jump: string, port: int, target: string, dry_run: bool
@@ -85,7 +85,7 @@ def find-artifact [
     # vm-image subdir: /usr/obj/amd64.amd64/usr/src/release/vm/
     # Use a single semicolon-separated sh -c string to avoid Nushell escape issues.
     let search_cmd = "sh -c 'f=$(ls /tmp/smolbsd-amd64-out/*.qcow2 2>/dev/null | head -1); [ -n \"$f\" ] && echo \"$f\" && exit 0; f=$(find /usr/obj/amd64.amd64/usr/src/release -name *.qcow2 2>/dev/null | head -1); [ -n \"$f\" ] && echo \"$f\" && exit 0; echo'"
-    let r = ssh-fbuild $jump $port $target $search_cmd $dry_run
+    let r = ssh-builder $jump $port $target $search_cmd $dry_run
     if $dry_run { return "" }
     $r.stdout | str trim
 }
@@ -103,7 +103,7 @@ def infer-build-status [log_tail: string] {
 
 # ── Harvest ────────────────────────────────────────────────────────────────────
 
-# SCP artifact from fbuild to minim4-24 dest_dir.
+# SCP artifact from <aarch64-builder> to <hypervisor-host> dest_dir.
 # Returns {exit_code, local_path}.
 def harvest-artifact [
     jump:         string
@@ -222,16 +222,16 @@ def do-poll [
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-# Poll fbuild for smolBSD amd64 build completion and harvest the artifact.
+# Poll <aarch64-builder> for smolBSD amd64 build completion and harvest the artifact.
 #
 # --screen-session  Screen session name to monitor (default: smolbuild-amd64)
-# --log-file        Build log path on fbuild (default: /tmp/smolbuild-amd64.log)
+# --log-file        Build log path on <aarch64-builder> (default: /tmp/smolbuild-amd64.log)
 # --poll-interval   Seconds between polls (default: 120)
 # --max-polls       Maximum number of polls before giving up (default: 60 = 2 h)
 # --dest-dir        Local destination for harvested artifact (default: ~/smolbsd-artifacts)
-# --ssh-target      SSH login for fbuild (default: builder@localhost)
-# --ssh-jump        SSH jump host (default: minim4-24)
-# --ssh-port        SSH port for fbuild (default: 2222)
+# --ssh-target      SSH login for <aarch64-builder> (default: builder@localhost)
+# --ssh-jump        SSH jump host (default: <hypervisor-host>)
+# --ssh-port        SSH port for <aarch64-builder> (default: 2222)
 # --dry-run         Print SSH/SCP commands without executing
 # --check-now       Do a single poll and exit immediately (no waiting)
 def main [
@@ -241,11 +241,16 @@ def main [
     --max-polls:      int    = 60
     --dest-dir:       string = "~/smolbsd-artifacts"
     --ssh-target:     string = "builder@localhost"
-    --ssh-jump:       string = "minim4-24"
+    --ssh-jump:       string = ""        # jump host; falls back to $SMOLBSD_SSH_JUMP
     --ssh-port:       int    = 2222
     --dry-run
     --check-now
 ] {
+    # Jump host is deliberately not defaulted in-repo (internal hostname).
+    let ssh_jump = if $ssh_jump != "" { $ssh_jump } else { $env.SMOLBSD_SSH_JUMP? | default "" }
+    if $ssh_jump == "" {
+        error make {msg: "No jump host: pass --ssh-jump or set SMOLBSD_SSH_JUMP"}
+    }
     log-step "harvest-build" "starting" {
         session:  $screen_session
         log:      $log_file

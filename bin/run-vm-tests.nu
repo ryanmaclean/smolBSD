@@ -4,7 +4,7 @@
 # Launches a smolBSD image under qemu or bhyve, runs the full acceptance test
 # suite, and writes a structured TOML result file.
 #
-# Usage (QEMU — default, works on minim4-24 with HVF today):
+# Usage (QEMU — default, works on <hypervisor-host> with HVF today):
 #   nu bin/run-vm-tests.nu --image smolbsd.qcow2
 #   nu bin/run-vm-tests.nu --image smolbsd.qcow2 --tpm
 #   nu bin/run-vm-tests.nu --image smolbsd.qcow2 --arch arm64

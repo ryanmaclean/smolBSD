@@ -14,11 +14,11 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| FreeBSD QEMU VM on pop4090 | Boot a FreeBSD VM on pop4090, clone smolBSD repo, run `make release` inside | ✓ |
-| fbuild via SSH | SSH to the existing fbuild host (was saturated/unavailable in prior sessions) | |
+| FreeBSD QEMU VM on <kvm-host> | Boot a FreeBSD VM on <kvm-host>, clone smolBSD repo, run `make release` inside | ✓ |
+| <aarch64-builder> via SSH | SSH to the existing <aarch64-builder> host (was saturated/unavailable in prior sessions) | |
 | Hetzner ccx23 | Cloud AMD-V instance provisioned by `bin/smolbsd.nu provision hetzner` (needs HCLOUD_TOKEN) | |
 
-**Auto-selected:** FreeBSD QEMU VM on pop4090 — pop4090 has `/home/studio/bsd-build/src/freebsd-src` with postworld artifacts, KVM, and all tooling in place. No external dependencies.
+**Auto-selected:** FreeBSD QEMU VM on <kvm-host> — <kvm-host> has `/home/studio/bsd-build/src/freebsd-src` with postworld artifacts, KVM, and all tooling in place. No external dependencies.
 
 ---
 
@@ -40,11 +40,11 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| pop4090 local path | Store built image at stable local path; CI references it directly | ✓ |
+| <kvm-host> local path | Store built image at stable local path; CI references it directly | ✓ |
 | GitHub Releases artifact | Upload to GH releases; download in CI | |
 | Rebuild in every CI run | `build-image.yml` triggers on every push; slow (1-2h per build) | |
 
-**Auto-selected:** pop4090 local path — runner has direct filesystem access, avoids multi-gigabyte downloads on every run. SHA256 manifest tracks freshness.
+**Auto-selected:** <kvm-host> local path — runner has direct filesystem access, avoids multi-gigabyte downloads on every run. SHA256 manifest tracks freshness.
 
 ---
 
@@ -74,7 +74,7 @@
 ## Claude's Discretion
 
 - Exact QEMU flags for smolBSD image run (memory, CPU count, accel)
-- swtpm state directory path on pop4090 for CI runs
+- swtpm state directory path on <kvm-host> for CI runs
 - T3 fallback: if `tpmctl(8)` is absent, use `tpm2_getcap properties-fixed`
 - bhyve vs QEMU choice for T2–T6 suite (QEMU preferred: already validated)
 

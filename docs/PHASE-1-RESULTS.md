@@ -1,21 +1,21 @@
 # Phase I Results
 
 ## aarch64 (primary leg)
-- Build host: fbuild (FreeBSD 15.0-RELEASE-p5 arm64, QEMU on minim4-24)
+- Build host: <aarch64-builder> (FreeBSD 15.0-RELEASE-p5 arm64, QEMU on <hypervisor-host>)
 - Kernel: VIRT-MINIMAL (SMOLBSD config), exit=0, 12MB staged
 - Buildworld + release: exit=0 (dist stage complete 2026-05-07)
 - qcow2 sha256 (pre-boot/canonical): 709fbab6c327e6026b0aa4fd197965ccfcaa0c6f0c2c377f7afbd6ff8a0b292f
 - qcow2 sha256 (post-boot local): 82d7870e2e83d20b24a8cce7150dce39e1c4eb26b297559aec5e15834a25ac3c
 - qcow2 size: 1.41 GiB (1509359616 bytes), virtual 4 GiB sparse
-- qcow2 path (fbuild): /tmp/smolbsd-out/FreeBSD-15-aarch64-smolbsd.qcow2
+- qcow2 path (<aarch64-builder>): /tmp/smolbsd-out/FreeBSD-15-aarch64-smolbsd.qcow2
 - qcow2 path (local): build/FreeBSD-15-aarch64-smolbsd.qcow2
 - Time-to-login: 11s (gate: <=30s) — PASS
-- EDK2 firmware: edk2-aarch64-code.fd (64MB, sourced from minim4-24)
+- EDK2 firmware: edk2-aarch64-code.fd (64MB, sourced from <hypervisor-host>)
 - Date: 2026-05-07
 
 ### Build notes
 - `make release` ran buildworld + dist stage successfully (exit=0)
-- vm-image created manually: makefs (UFS) + mkimg (GPT/qcow2) on fbuild
+- vm-image created manually: makefs (UFS) + mkimg (GPT/qcow2) on <aarch64-builder>
 - Disk layout: EFI/efiboot0 (32MB FAT32) + swap/swapfs (512MB) + ufs/rootfs (3551MB)
 - Known issues: /etc/login.conf ownership warning (world/group write); sshd
   precmd fails due to /var/empty ownership — cosmetic, login prompt unaffected
@@ -35,8 +35,8 @@
   [pass] e2e-aarch64: TIME_TO_LOGIN=11s — gate: <=30s PASS
 ```
 
-## Fleet Deploy — fbrpi403 (Raspberry Pi 4, FreeBSD 15.0)
-- Host: fbrpi403 (10.0.2.151), FreeBSD 15.0-RELEASE arm64
+## Fleet Deploy — <pi-node> (Raspberry Pi 4, FreeBSD 15.0)
+- Host: <pi-node> (<internal-ip>), FreeBSD 15.0-RELEASE arm64
 - QEMU version: 10.2.2 (pkg install qemu, FreeBSD-ports)
 - QEMU mode: TCG (no KVM on FreeBSD/arm64)
 - EDK2 firmware: /usr/local/share/qemu/edk2-aarch64-code.fd (present in pkg)
@@ -61,8 +61,8 @@ for this 256MB/2-vCPU config. The boot completes correctly — the gate should b
 revised to <=200s for TCG on Pi 4 hardware. HVF (Apple Silicon) remains <=30s.
 The image is functionally correct and boots to login on real arm64 hardware.
 
-## amd64 (secondary leg) — KVM gate attempt on fbryz3070
-- Host: fbryz3070 (10.0.2.44, x86_64, FreeBSD 15.0-RELEASE-p6)
+## amd64 (secondary leg) — KVM gate attempt on <bhyve-host>
+- Host: <bhyve-host> (<bhyve-host-ip>, x86_64, FreeBSD 15.0-RELEASE-p6)
 - Image: FreeBSD-15-amd64-smolbsd.qcow2 (custom smolBSD build, 2.4 GiB)
 - Accelerator: TCG (KVM absent — FreeBSD host; QEMU pkg ships tcg-only binary; bhyve vmm.ko loaded but QEMU does not use it)
 - QEMU version: 10.2.2
@@ -74,15 +74,15 @@ The image is functionally correct and boots to login on real arm64 hardware.
 - Verdict: CONDITIONAL_PASS — image is valid (boots through BIOS → loader → kernel load); TCG on FreeBSD x86 is too slow for the 30s gate; KVM gate requires Linux/KVM host
 - Date: 2026-05-08
 
-### Accelerator notes — fbryz3070
+### Accelerator notes — <bhyve-host>
 - `/dev/kvm`: absent (FreeBSD does not have a KVM device)
 - `kldload vmm`: success (bhyve vmm.ko loaded, `/dev/vmmctl` present)
 - `qemu-system-x86_64 -accel help`: only `tcg` listed (FreeBSD pkg QEMU is not compiled with bhyve backend)
 - HVF: macOS only; KVM: Linux only
 - To use bhyve acceleration on FreeBSD, use `bhyve(8)` directly or a QEMU build with `-accel hvf` (not available in ports)
 
-### What was verified on fbryz3070
-- Image transferred successfully via scp jump chain (macOS → home → studio → fbryz3070)
+### What was verified on <bhyve-host>
+- Image transferred successfully via scp jump chain (macOS → home → studio → <bhyve-host>)
 - SeaBIOS → FreeBSD bootloader → kernel load all proceed correctly
 - Boot is architecturally correct; blocked only by TCG throughput on large kernel binary
 - Cleanup: image and test scripts removed post-test
@@ -103,7 +103,7 @@ qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M -smp 2 \
   -drive file=FreeBSD-15-amd64-smolbsd.qcow2,format=qcow2,if=virtio \
   -nic user,model=virtio-net-pci -nographic
 ```
-Expected: login: in <=30s (KVM). fbryz3070 is FreeBSD — needs Linux host for `/dev/kvm`.
+Expected: login: in <=30s (KVM). <bhyve-host> is FreeBSD — needs Linux host for `/dev/kvm`.
 
 ## Size Reduction — Phase I Gap
 

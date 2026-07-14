@@ -24,7 +24,7 @@ aarch64（優先ブランチ）と amd64（後続ブランチ）の 2 つのア�
 
 決定の根拠は `PHASE-1-ARCH-DECISION.md`（選択肢 C）に記載されています。
 
-**主な理由 — HVF の非対称性。** ビルドホスト `minim4-24`（Apple Silicon）では、
+**主な理由 — HVF の非対称性。** ビルドホスト `<hypervisor-host>`（Apple Silicon）では、
 ハードウェアアクセラレータ HVF はネイティブ ISA（aarch64）のみを高速化します。
 aarch64 ゲストは HVF 下で 10〜30 秒で起動し、≤ 30 秒という合格基準を容易に
 クリアします。amd64 ゲストは同じホスト上で TCG（ソフトウェアエミュレーション）
@@ -32,11 +32,11 @@ aarch64 ゲストは HVF 下で 10〜30 秒で起動し、≤ 30 秒という合
 合格基準を通過できないイメージを構築することは許容できません。
 
 **補足理由。** 既存のフリート全体が aarch64 です（fbrpi ノード、Pi 5、RK3588、
-fbuild VM）。各種ツールチェーン（`freebsd-build-vm`、`zig-cc`、`freebsd-pi`）も
+<aarch64-builder> VM）。各種ツールチェーン（`freebsd-build-vm`、`zig-cc`、`freebsd-pi`）も
 すべて aarch64 向けです。amd64 イメージをこのフリートに単独で置くと、デバッグ
 コストを共有する他の消費者がいない「孤立アーキテクチャ」になります。
 
-**amd64 ブランチは廃棄しません。** fbuild 内で `TARGET=amd64 TARGET_ARCH=amd64`
+**amd64 ブランチは廃棄しません。** <aarch64-builder> 内で `TARGET=amd64 TARGET_ARCH=amd64`
 を用いたクロスコンパイルで構築し、KVM 対応の x86 ホスト（Vultr インスタンスまたは
 フリートの Linux x86 機）でテストします。既存の計画をそのまま再利用します。
 
@@ -100,10 +100,10 @@ ISA に依存しません）。
 **フェーズ I：両アーキテクチャとも完了。**
 
 - **フェーズ I aarch64**：5 つの計測遺物ゲートをすべて通過（task-0020 監査）。
-  `minim4-24` 上で HVF を用いてネイティブビルド。生成されたアーティファクト：
+  `<hypervisor-host>` 上で HVF を用いてネイティブビルド。生成されたアーティファクト：
   128 MiB の qcow2（目標値を達成）。
-- **フェーズ I amd64**：TCG 緩和ゲートをすべて通過。fbuild からクロスコンパイルし、
-  Vultr（x86 KVM インスタンス）でテスト。`minim4-24` は Apple Silicon であるため
+- **フェーズ I amd64**：TCG 緩和ゲートをすべて通過。<aarch64-builder> からクロスコンパイルし、
+  Vultr（x86 KVM インスタンス）でテスト。`<hypervisor-host>` は Apple Silicon であるため
   x86 向け KVM が使用できず、時間系のゲートは TCG 向けに調整されています。
 
 **フェーズ II のスコープ策定中**：Pi 5（BCM2712）および RK3588 の物理ブート —
@@ -160,7 +160,7 @@ RPi UEFI（Pi 5 ブランチ）は執筆時点（2026-05）でベータ版です
 
 ### 6.3 変換パイプライン — `bin/qcow2-to-physical.nu`
 
-`bin/qcow2-to-physical.nu` は FreeBSD ビルドホスト（fbuild）上で以下の 6 ステップを
+`bin/qcow2-to-physical.nu` は FreeBSD ビルドホスト（<aarch64-builder>）上で以下の 6 ステップを
 自動実行します。
 
 1. **raw 変換** — `qemu-img convert -f qcow2 -O raw` で
@@ -209,7 +209,7 @@ USB-UART アダプターを接続する必要があります。
 
 **インフラ調査の結果（task-0028〜task-0030）：**
 
-- **HVF はネストされた仮想化を許可しません。** `minim4-24`（Apple Silicon）では
+- **HVF はネストされた仮想化を許可しません。** `<hypervisor-host>`（Apple Silicon）では
   HVF がゲストに EL2 を公開しないため、QEMU/HVF 上で bhyve を起動できず
   `/dev/vmm` が作成されません。
 - **Vultr vc2 は VT-x を公開しません。** `vmx_modinit: processor does not
@@ -240,7 +240,7 @@ USB-UART アダプターを接続する必要があります。
 
 ### 7.1 CI ゲート：オープン（TPM サブゲートは保留中）
 
-`minim4-24`（FreeBSD 15.0-RELEASE-p5 aarch64、QEMU 10.2.1 HVF、fbuild VM）で
+`<hypervisor-host>`（FreeBSD 15.0-RELEASE-p5 aarch64、QEMU 10.2.1 HVF、<aarch64-builder> VM）で
 非 TPM の 3 連続パスが記録されました：
 
 | パス | タイムスタンプ | VM 内空きメモリ | 結果 |
@@ -262,7 +262,7 @@ expect スクリプト配線が完了次第行います。
 
 ### 7.2 smolBSD amd64 イメージのビルド
 
-fbuild 上でクロスコンパイル（`TARGET=amd64 TARGET_ARCH=amd64`）によって
+<aarch64-builder> 上でクロスコンパイル（`TARGET=amd64 TARGET_ARCH=amd64`）によって
 amd64 イメージが生成されており、以下に配置されています：
 `smolbsd-buildworld @ 108.61.206.203:/root/genoa/out/smolbsd-linode-amd64-v0.1.0.raw`
 （2.0 GiB、GPT：128 MiB ESP に `BOOTX64.EFI` + 1.9 GiB UFS ルート、

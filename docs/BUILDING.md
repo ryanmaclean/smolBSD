@@ -4,7 +4,7 @@ One command builds the complete smolBSD qcow2 image from a clean FreeBSD source 
 
 ## Prerequisites
 
-- FreeBSD 15 aarch64 host (the `fbuild` VM on `minim4-24`, or any FreeBSD aarch64 box)
+- FreeBSD 15 aarch64 host (the `<aarch64-builder>` VM on `<hypervisor-host>`, or any FreeBSD aarch64 box)
 - At least 50 GiB free in `/usr/obj` (buildworld fills ~18–40 GiB; allow headroom)
 - At least 10 GiB free after buildworld completes (cloudware-release also builds the full pkgbase repo under /usr/obj)
 - Root access — `make release` and `make cloudware-release` both require a chroot
@@ -68,8 +68,8 @@ Two CI paths exist; neither needs a human at an SSH prompt:
 
 | Workflow | Runner | What it does |
 |---|---|---|
-| `.github/workflows/build-image-hosted.yml` | **GitHub-hosted** `ubuntu-latest` (x64 runners expose `/dev/kvm`) | Boots a stock FreeBSD 15.0 BASIC-CLOUDINIT VM under KVM, shallow-clones `releng/15.0`, runs `bin/build-smolbsd.nu` inside, then runs the **size gate** and (amd64) the **KVM boot gate** on the runner and uploads the qcow2 as a workflow artifact. Dispatch with `arch: amd64` or `arch: aarch64` (aarch64 is cross-built; its boot gate needs ARM hardware — see `docs/BHYVE-GATE-FBRYZ3070.md`). |
-| `.github/workflows/build-image.yml` | self-hosted `pop4090` (Linux/KVM) | The original PATH-B TPM-image pipeline with a pre-staged src tree. |
+| `.github/workflows/build-image-hosted.yml` | **GitHub-hosted** `ubuntu-latest` (x64 runners expose `/dev/kvm`) | Boots a stock FreeBSD 15.0 BASIC-CLOUDINIT VM under KVM, shallow-clones `releng/15.0`, runs `bin/build-smolbsd.nu` inside, then runs the **size gate** and (amd64) the **KVM boot gate** on the runner and uploads the qcow2 as a workflow artifact. Dispatch with `arch: amd64` or `arch: aarch64` (aarch64 is cross-built; its boot gate needs ARM hardware — see `docs/BHYVE-GATE-AMD64.md`). |
+| `.github/workflows/build-image.yml` | self-hosted Linux/KVM runner | The original PATH-B TPM-image pipeline with a pre-staged src tree. |
 
 Hosted-runner caveats: buildworld at `-j4` inside the nested VM takes ~2.5–4 h
 (job timeout is set just under the 6 h ceiling); first runs of the cloud-init

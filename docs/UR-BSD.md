@@ -67,7 +67,7 @@ Notes on safety:
 
 ## What's next (in descending value)
 
-1. **Rebuild on fbuild and run `bin/analyze-image.sh`** against the new
+1. **Rebuild on <aarch64-builder> and run `bin/analyze-image.sh`** against the new
    artifact; the report's top-30 lists will show what's still heavy.
 2. **Direct kernel boot** (QEMU `-kernel`, skip EFI/loader): removes the
    32 MB EFI partition and most of the 11 s boot time. The NetBSD smolBSD

@@ -20,16 +20,16 @@ LAN servers is forbidden per CLAUDE.md).
 
 | Fact | Verified by | Source |
 |------|-------------|--------|
-| `qemu-system-aarch64` present on minim4-24 | absolute-path probe | `/opt/homebrew/bin/qemu-system-aarch64` (QEMU 10.2.1) |
-| `qemu-system-x86_64` present on minim4-24 | absolute-path probe | `/opt/homebrew/bin/qemu-system-x86_64` (QEMU 10.2.1) |
-| fbuild VM is FreeBSD 15 aarch64 | freebsd-build-vm SKILL.md L28 | "FreeBSD 15.0-RELEASE aarch64 (cloud-init qcow2)" |
+| `qemu-system-aarch64` present on <hypervisor-host> | absolute-path probe | `/opt/homebrew/bin/qemu-system-aarch64` (QEMU 10.2.1) |
+| `qemu-system-x86_64` present on <hypervisor-host> | absolute-path probe | `/opt/homebrew/bin/qemu-system-x86_64` (QEMU 10.2.1) |
+| <aarch64-builder> VM is FreeBSD 15 aarch64 | freebsd-build-vm SKILL.md L28 | "FreeBSD 15.0-RELEASE aarch64 (cloud-init qcow2)" |
 | HVF accel works only for matching ISA on Apple Silicon | Apple Hypervisor.framework docs | aarch64-on-aarch64 = native HVF; amd64-on-aarch64 = TCG (software) |
 | FreeBSD `make TARGET=amd64 TARGET_ARCH=amd64` cross-builds from aarch64 | PHASE-1-FORGE-TINY-BASELINE §10 | already in the existing plan |
-| mbp-m1 reaches minim4-24 over Tailscale | task-0003a brief | Tailscale path live; LAN 10.0.3.x not reachable from current network |
+| mbp-m1 reaches <hypervisor-host> over Tailscale | task-0003a brief | Tailscale path live; LAN 10.0.3.x not reachable from current network |
 | Vultr offers both amd64 and aarch64 instances | MEMORY.md user_cloud_vultr.md + Vultr public catalog | native FreeBSD on both |
 | Pi 5 SoC is BCM2712 (Cortex-A76) — aarch64 | raspberry-pi SKILL.md "Pis are ARM64" | aarch64 only |
 | RK3588 SoC is Cortex-A76 + A55 — aarch64 | Rockchip public datasheet | aarch64 only |
-| Existing Phase-I plan commits to amd64 cross-build inside fbuild | PHASE-1-FORGE-TINY-BASELINE §2.1 / §7.2 | "Preferred build host: fb-vm-24 ... TARGET=amd64" |
+| Existing Phase-I plan commits to amd64 cross-build inside <aarch64-builder> | PHASE-1-FORGE-TINY-BASELINE §2.1 / §7.2 | "Preferred build host: fb-vm-24 ... TARGET=amd64" |
 
 Soft signal (NOT verified, weighted appropriately): the overwritten jj
 commit description "phase 1 = both RK3588 + Pi 5". Treated below as
@@ -50,11 +50,11 @@ Score scale per criterion: ✓ favored, ~ neutral, ✗ disfavored.
 
 | # | Criterion | A (amd64 only) | B (aarch64 only) | C (both) | Notes |
 |---|-----------|----------------|------------------|----------|-------|
-| 1 | **Build complexity** (cross-compile vs native) | ~ cross-build inside aarch64 fbuild — `TARGET=amd64 TARGET_ARCH=amd64`; works but slower than native and more failure modes for kernel/world | ✓ native build; aarch64-on-aarch64 inside fbuild; no TARGET swizzling | ~ adds a parallel cross step on top of B; same fbuild substrate; two artifact paths but same Makefile.vm machinery | FreeBSD's release/ supports both; aarch64-native is the simpler path |
-| 2 | **Test complexity** (HVF, qemu binary, accel) | ✗ amd64 guest on Apple Silicon = TCG only (no HVF); boot-to-login measured in TCG seconds will be 5–10× slower than the §8.2 budget assumes | ✓ aarch64 guest on Apple Silicon = HVF native — same path fbuild already uses; `-accel hvf -cpu host` works | ~ needs both qemu binaries, both code paths; but both qemu binaries are present (verified absolute-path) | §8.2 of existing plan implicitly assumes KVM (`-accel kvm`); on minim4-24 only HVF exists, and HVF accelerates aarch64 only |
+| 1 | **Build complexity** (cross-compile vs native) | ~ cross-build inside aarch64 <aarch64-builder> — `TARGET=amd64 TARGET_ARCH=amd64`; works but slower than native and more failure modes for kernel/world | ✓ native build; aarch64-on-aarch64 inside <aarch64-builder>; no TARGET swizzling | ~ adds a parallel cross step on top of B; same <aarch64-builder> substrate; two artifact paths but same Makefile.vm machinery | FreeBSD's release/ supports both; aarch64-native is the simpler path |
+| 2 | **Test complexity** (HVF, qemu binary, accel) | ✗ amd64 guest on Apple Silicon = TCG only (no HVF); boot-to-login measured in TCG seconds will be 5–10× slower than the §8.2 budget assumes | ✓ aarch64 guest on Apple Silicon = HVF native — same path <aarch64-builder> already uses; `-accel hvf -cpu host` works | ~ needs both qemu binaries, both code paths; but both qemu binaries are present (verified absolute-path) | §8.2 of existing plan implicitly assumes KVM (`-accel kvm`); on <hypervisor-host> only HVF exists, and HVF accelerates aarch64 only |
 | 3 | **Deploy fit** | ✓ Vultr amd64, generic x86 cloud, x86 laptops, x86 NUCs — broadest current x86 install base | ✓ Pi 5 (aarch64), RK3588 (aarch64), Vultr aarch64, Apple Silicon dev/test, fbrpi nodes, all existing fleet workers | ✓ covers everything; deploy fit is strictly the union | A misses Pi 5/RK3588; B misses x86 cloud + x86 laptops; only C covers everything |
 | 4 | **Fleet alignment** (substrate + ansible patterns) | ~ adds an arch the fleet does not currently consume natively (every fbrpi/fbpi target is aarch64); ansible patterns (zig-cc, freebsd-pi, raspberry-pi) all assume aarch64 | ✓ aligns with every existing FreeBSD aarch64 build path: `freebsd-build-vm`, `zig-cc → aarch64-freebsd`, `gitea-release ...freebsd-aarch64` artifact naming, `fbrpi*` Pi inventory | ✓ A's gap closed; B's coverage retained | The fleet substrate is aarch64-native today; A introduces a "lonely arch" that no other tool consumes |
-| 5 | **Time-to-first-boot** (TCG vs HVF on minim4-24) | ✗ amd64 under TCG: rough estimate 60–180s to login (vs §8.2's 30s budget); will likely fail acceptance §8.2 on the build/test host | ✓ aarch64 under HVF: 10–30s to login; clears §8.2 trivially; matches fb-vm-24's known boot times | ~ aarch64 leg passes §8.2 fast; amd64 leg either retests on a real x86 host (Vultr instance, Linux dev box) or accepts a TCG-relaxed §8.2 budget | This is the criterion that flips A's stated gates: the §8.2 budget was written assuming KVM, not TCG |
+| 5 | **Time-to-first-boot** (TCG vs HVF on <hypervisor-host>) | ✗ amd64 under TCG: rough estimate 60–180s to login (vs §8.2's 30s budget); will likely fail acceptance §8.2 on the build/test host | ✓ aarch64 under HVF: 10–30s to login; clears §8.2 trivially; matches fb-vm-24's known boot times | ~ aarch64 leg passes §8.2 fast; amd64 leg either retests on a real x86 host (Vultr instance, Linux dev box) or accepts a TCG-relaxed §8.2 budget | This is the criterion that flips A's stated gates: the §8.2 budget was written assuming KVM, not TCG |
 | 6 | **Spec footprint / churn** (changes vs current plan) | ✓ no churn; existing plan stays as-is | ✗ existing plan needs to be re-pointed (`amd64`→`aarch64`) in §1, §3.4, §4 path, §5 firmware, §7.2, §8.x QEMU lines, §10 — pervasive | ~ split-and-extend: extract a common §§1-3 base, add per-arch §§4-8 tails; the amd64 work is reused, not thrown away | C preserves the amd64 design effort already paid for |
 | 7 | **License floor risk** | ✓ no new deps either way | ✓ no new deps either way | ✓ no new deps either way | All three options use the same FreeBSD release/ tooling, edk2 EFI firmware (BSD-2/MIT), QEMU (GPL-2 — but only as a tool, not linked into the artifact); no impact |
 | 8 | **Risk of "lonely arch"** (the artifact is the only of its kind in the fleet) | ✗ amd64 smolBSD VM has no other amd64 consumer in the fleet today; debugging is a one-off | ~ aarch64 smolBSD VM rides the aarch64 fleet substrate; bugs caught here transfer to fbrpi/Pi work | ✓ both arches gain a baseline; future amd64 work (Vultr x86) has a path | This is criterion #4 sharpened — does the artifact compose with the rest of the fleet? |
@@ -78,7 +78,7 @@ leg ships first**, with amd64 as an explicit follow-on within Phase I
 
 1. **HVF asymmetry is the deciding constraint.** The existing plan's §8
    acceptance gates (especially §8.2 time-to-login ≤ 30s) were written
-   against KVM-class accel. On minim4-24, the only available accelerator
+   against KVM-class accel. On <hypervisor-host>, the only available accelerator
    is HVF, and HVF only accelerates the host's native ISA — aarch64.
    amd64 under TCG on Apple Silicon will not clear §8.2 reliably. So
    amd64-only (Option A) is at risk of failing its own gates **on its
@@ -86,7 +86,7 @@ leg ships first**, with amd64 as an explicit follow-on within Phase I
    §8.2 trivially on the same host. Building a baseline whose own test
    gates fail in the build environment is muri.
 2. **The fleet substrate is aarch64.** Every fbrpi node, every Pi 5 and
-   RK3588 deploy target, the fbuild VM itself, the `freebsd-pi` /
+   RK3588 deploy target, the <aarch64-builder> VM itself, the `freebsd-pi` /
    `raspberry-pi` / `freebsd-build-vm` skills, and the artifact-naming
    convention (`...-freebsd-aarch64`) are all aarch64. An amd64 smolBSD
    image dropped into this substrate is a "lonely arch" with no
@@ -102,10 +102,10 @@ leg ships first**, with amd64 as an explicit follow-on within Phase I
 
 **What "C — aarch64-first" looks like concretely:**
 
-- Phase-I-A (ships first): smolBSD aarch64 VM, native build in fbuild,
-  HVF test on minim4-24, Pi 5 + RK3588 fit verified.
+- Phase-I-A (ships first): smolBSD aarch64 VM, native build in <aarch64-builder>,
+  HVF test on <hypervisor-host>, Pi 5 + RK3588 fit verified.
 - Phase-I-B (same phase, ships second): smolBSD amd64 VM, cross-build
-  in fbuild with `TARGET=amd64`, test on a KVM-capable x86 host (Vultr
+  in <aarch64-builder> with `TARGET=amd64`, test on a KVM-capable x86 host (Vultr
   instance or fleet x86 box), Vultr deploy verified.
 - Both legs share §§1-3 (mission, package set, kernel-config strategy)
   and divulge into per-arch §§4-8 tails.
@@ -160,7 +160,7 @@ both. No Linux-rescue trampoline needed (per
   §8.2 budget on each arch): **30 min**.
 - Total design-only delta: **~3 hours**, single subagent.
 
-Build-time delta (not part of design): aarch64 native build on fbuild
+Build-time delta (not part of design): aarch64 native build on <aarch64-builder>
 should be **faster** than amd64 cross-build (no cross-toolchain step).
 Net build-time impact of going to "both" instead of just amd64:
 roughly +60% wall clock on the build host, parallelizable.

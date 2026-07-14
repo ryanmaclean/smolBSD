@@ -17,11 +17,11 @@
 |------|------|--------|-------|
 | `buildkernel` exit 0 | aarch64 | DONE | exit=0, 224s, 13.3 MiB kernel |
 | `buildkernel` exit 0 | amd64 | DONE | exit=0, 239s, 13 MiB kernel |
-| `buildworld` + `release` qcow2 | aarch64 | IN FLIGHT | screen `smolbsd-world` on fbuild, started 2026-05-04 21:01 UTC |
+| `buildworld` + `release` qcow2 | aarch64 | IN FLIGHT | screen `smolbsd-world` on <aarch64-builder>, started 2026-05-04 21:01 UTC |
 | `buildworld` qcow2 | amd64 | IN FLIGHT | screen `smolbsd-bw` on Vultr REDACTED-VULTR-IP, LLVM bootstrap stage |
 | Build success rate (qemu-img info) | aarch64 | BLOCKED on qcow2 | will self-unblock when buildworld finishes |
 | Build success rate (qemu-img info) | amd64 | BLOCKED on qcow2 | will self-unblock when buildworld finishes |
-| Time-to-ready (`time-to-ready-arm64.exp`) | aarch64 | BLOCKED on qcow2 | script at `tests/time-to-ready-arm64.exp`; expect <=30s via HVF on minim4-24 |
+| Time-to-ready (`time-to-ready-arm64.exp`) | aarch64 | BLOCKED on qcow2 | script at `tests/time-to-ready-arm64.exp`; expect <=30s via HVF on <hypervisor-host> |
 | Time-to-ready (`time-to-ready.exp`) | amd64 | BLOCKED on qcow2 | script at `tests/time-to-ready.exp`; requires KVM-capable x86 host (Vultr) |
 | Peak + idle memory (host RSS < 300 MiB, in-VM free >= 150 MiB) | aarch64 | BLOCKED on qcow2 | |
 | Peak + idle memory | amd64 | BLOCKED on qcow2 | |
@@ -37,14 +37,14 @@
 
 When `buildworld` + `release` finish on both hosts:
 
-1. Copy qcow2 to `minim4-24` (aarch64) and to the Vultr amd64 instance.
+1. Copy qcow2 to `<hypervisor-host>` (aarch64) and to the Vultr amd64 instance.
 2. Run `tests/time-to-ready-arm64.exp` — expected PASS (HVF, <=30s).
 3. Run `tests/time-to-ready.exp` on Vultr x86 with KVM — expected PASS (<=30s on native ISA).
 4. Run memory and artifact-size checks per plan §8.3 and §8.4.
 5. Run crash-recovery test per plan §8.5.
 6. Record all five measured relics per arch; both arches must pass for Phase I exit.
 
-Note: the amd64 time-to-ready gate cannot be cleared on `minim4-24` (TCG, not HVF). Run it on the Vultr instance where the build is already in flight.
+Note: the amd64 time-to-ready gate cannot be cleared on `<hypervisor-host>` (TCG, not HVF). Run it on the Vultr instance where the build is already in flight.
 
 ---
 
@@ -54,7 +54,7 @@ Phase II proves the original thesis: **project state transfers between Claude ag
 
 ### P1 — End-to-end coord→agent dispatch cycle (the thesis demo)
 
-**Goal**: close the loop — the coordinator writes a task to the spool; a subagent boots the smolBSD aarch64 qcow2 on `minim4-24`, runs a command inside it, and writes the result back to the spool. The two halves of the experiment converge on a live BSD `/var/mail` path.
+**Goal**: close the loop — the coordinator writes a task to the spool; a subagent boots the smolBSD aarch64 qcow2 on `<hypervisor-host>`, runs a command inside it, and writes the result back to the spool. The two halves of the experiment converge on a live BSD `/var/mail` path.
 
 **Concretely**:
 1. Coordinator appends a task-0017 request to `var/mail/spool` addressed to `builder@smolbsd.local`.
@@ -102,7 +102,7 @@ The subagent runs synchronously or is backgrounded; the coordinator transitions 
 **Goal**: the mailbox spec (§5) declares `X-JEC-Compression: rtk-v1` for 70–92% context reduction, but RTK is not yet installed on this host (`which rtk` → not found, per spec §14 caveat 6). Phase II installs RTK and wires it into the coordinator's outbound message construction.
 
 **Concretely**:
-- `brew install rtk && rtk init -g` on `minim4-24`.
+- `brew install rtk && rtk init -g` on `<hypervisor-host>`.
 - Add a `compress-jec` step to `coord-tick.nu`'s `state-dispatching` that pipes the `[brief]` and `context_pointers` content through `rtk read -l aggressive` before embedding in the envelope.
 - Verify that a dispatched envelope is measurably smaller (token count or byte count) than the uncompressed equivalent.
 

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-# tpm-vm-test.yml — TPM 2.0 T1-T6 acceptance suite on pop4090 QEMU+swtpm.
+# tpm-vm-test.yml — TPM 2.0 T1-T6 acceptance suite on <kvm-host> QEMU+swtpm.
 # Runs against the smolBSD amd64 image built with 'device tpm' + tpm2-tools.
 # Image path: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
-# Runner: pop4090-amd64 (self-hosted, linux, amd64, kvm)
+# Runner: <kvm-host>-amd64 (self-hosted, linux, amd64, kvm)
 #
 # Phase-3 acceptance gates:
 #   T1: swtpm socket appears within 3s
