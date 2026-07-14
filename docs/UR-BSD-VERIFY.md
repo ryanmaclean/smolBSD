@@ -76,25 +76,47 @@ env-overridable), the four conf headers, README/BUILDING docs.
 ### Finding 4 — the pkgbase grep filter was structurally a no-op (FIX-10 applied)
 Verified against `releng/15.0` `vmimage.subr` and the official
 `pkg.freebsd.org FreeBSD:15 base_release_0` catalogs (496 pkgs): the stock flow
-passes only the seven `FreeBSD-set-*` meta names through
-`vm_extra_filter_base_packages()`, then `pkg install` pulls each surviving
-set's full dependency closure. `grep -v` of individual names can never exclude
-a set dependency — the old filter silently shipped clang (~220M), zfs, dtrace,
-rescue, wpa/ppp/wifi-firmware, and ~186M of tests (`^FreeBSD-tests` does not
-match `FreeBSD-set-tests`). ZFS userland is fully confined to `FreeBSD-zfs*`
-packages, but `FreeBSD-set-minimal` hard-depends on them, so only an explicit
+passes only the `FreeBSD-set-*` meta names through
+`vm_extra_filter_base_packages()` — on releng/15.0 for amd64/aarch64 that is
+six: base, kernels, lib32, each with a `-dbg` twin (`vm_base_packages_list`,
+vmimage.subr:73–87) — then `pkg install -r FreeBSD-base $selected` pulls each
+surviving set's full dependency closure. `grep -v` of individual names can
+never exclude a set dependency — the old filter silently shipped clang
+(~220M), zfs, dtrace, rescue, wpa/ppp/wifi-firmware, and the tests packages
+via set dependencies. ZFS userland is fully confined to `FreeBSD-zfs*`
+packages, but the surviving sets hard-depend on them, so only an explicit
 package list excludes it.
 
 **FIX-10 (applied on this branch):** both QEMU confs now emit an explicit
 leaf-package list (kernel set, bootloader, clibs/runtime/rc/utilities, ufs,
 geom, ssh, dhclient, resolvconf, syslogd/newsyslog/cron/devd,
 caroot/certctl/pkg-bootstrap, vi); pkg resolves required libraries as
-dependencies. Watch items on first build: sshd links against
-`FreeBSD-kerberos-lib` (comes in as a dependency of `FreeBSD-ssh` — verify),
-and a custom `KERNCONF=SMOLBSD` build must produce a `FreeBSD-set-kernels`
-that depends on the SMOLBSD kernel package (verify the local pkgbase repo).
-The pi5/rk3588 confs were left on the old filter deliberately (boards need
-`FreeBSD-dtb`; fix separately once the VM path is proven).
+dependencies. The custom-KERNCONF risk is RETIRED: `release/packages/
+create-sets.sh` builds set membership dynamically from the `set` annotations
+of the packages actually present in the repo, so a `KERNCONF=SMOLBSD` build
+yields a `FreeBSD-set-kernels` depending on the SMOLBSD kernel package.
+Remaining watch item on first build: confirm sshd's kerberos/GSSAPI libs
+arrive as declared dependencies of `FreeBSD-ssh` (expected; check
+`ldd /usr/sbin/sshd` in the image). The pi5/rk3588 confs were left on the old
+filter deliberately (boards need `FreeBSD-dtb`; fix separately once the VM
+path is proven).
+
+## Assumptions retired (verification pass against releng/15.0 sources)
+
+Every FIX-9/FIX-10 assumption was checked directly against
+`raw.githubusercontent.com/freebsd/freebsd-src/releng/15.0`:
+
+| Assumption | Verdict | Action taken |
+|---|---|---|
+| `cloudware-release` exists and needs `WITH_CLOUDWARE` + non-empty `CLOUDWARE` | TRUE (Makefile.vm:112, 307–311; empty target otherwise) | We pass both; also added `WITH_CLOUDWARE=yes` to build-image.yml |
+| Per-type conf var is `SMOLBSDCONF`; must be passed explicitly | TRUE (`${_CW:tu}CONF`; auto-default only if `tools/smolbsd.conf` exists — it doesn't) | Passed explicitly everywhere |
+| `-s ${VMSIZE}` / `SWAPSIZE` reach mk-vmimage on the cw path | TRUE (Makefile.vm:141, 156) | Conf `${VMSIZE:-2g}` pattern correct as-is |
+| Artifact basename | `smolbsd.ufs.qcow2` in release objdir root (`${_CW:tl}.${_FS}.${_FMT}`, Makefile.vm:124) — `vm.ufs.qcow2` seen on pop4090 is that host's stable/15 naming | harvest.sh default updated; workflow ls/scp made glob-tolerant; find_qcow2 already globs |
+| `WITH_PKGBASE=yes` selects pkgbase | FALSE — no such release variable; pkgbase is the DEFAULT, `NOPKGBASE=yes` opts out (vmimage.subr:98) | Removed from all invocations and headers |
+| cw target self-builds the pkgbase repo | TRUE — depends on `pkgbase-repo-dir` → `make -C /usr/src packages` (release/Makefile:218–229), which requires buildworld | Added the missing buildworld step to `bin/build-smolbsd-image.nu` |
+| `FreeBSD-set-kernels` works with custom KERNCONF | TRUE — sets are generated from package `set` annotations at repo-build time (create-sets.sh) | Watch item removed |
+| Workflow header "NOPKGBASE skips tpm2-tools" | FALSE — `vm_extra_install_packages` chroot-installs `VM_EXTRA_PACKAGES` regardless of NOPKGBASE (only `WITHOUT_QEMU` skips it, vmimage.subr:205–247) | Header corrected; `NOPKGBASE=yes` kept in the proven pipeline |
+| Conf-provided builds get DHCP/growfs defaults | N/A — `vm_extra_enable_services` adds `ifconfig_DEFAULT`/`growfs_enable` only when NO conf is passed (vmimage.subr:195–201); our conf sets `ifconfig_vtnet0="DHCP"` itself | No change needed (noted so nobody "fixes" it) |
 
 ## Ordered plan for the build host
 

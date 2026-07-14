@@ -440,9 +440,12 @@ def build_vm_image [
     # real per-type variable ${TYPE}CONF (SMOLBSDCONF for CLOUDWARE=smolbsd).
     # Proven on pop4090 (.planning/phases/03-*, .github/workflows/build-image.yml):
     # cloudware-release generates the cw-smolbsd-ufs-qcow2 target.
+    # NOTE: pkgbase is the DEFAULT on releng/15.0 (NOPKGBASE=yes opts out into
+    # installworld); WITH_PKGBASE was never a release Makefile variable. The
+    # cw target depends on pkgbase-repo, which runs `make -C /usr/src packages`
+    # — so buildworld must have completed before this stage.
     let make_args = (base_make_args $arch_freebsd $arch_target) ++ [
         $"KERNCONF=($kernconf)"
-        "WITH_PKGBASE=yes"
         "WITH_CLOUDWARE=yes"
         "CLOUDWARE=smolbsd"
         $"SMOLBSDCONF=($release_conf)"

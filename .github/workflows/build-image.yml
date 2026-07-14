@@ -18,9 +18,11 @@
 # a separate scp.  A 20 GB scratch qcow2 is attached as a second drive so that
 # build objects (13 GB+) do not fill the VM rootfs (4.8 GB).
 #
-# CRITICAL: Do NOT add WITHOUT_QEMU, NOPKG, or NOPKGBASE to the make
-# invocation — those flags skip pkg install and would silently omit tpm2-tools
-# from the image (see 03-RESEARCH.md Pitfall 3).
+# CRITICAL: Do NOT add WITHOUT_QEMU or NOPKG to the make invocation — those
+# skip pkg install and would silently omit tpm2-tools (03-RESEARCH.md Pitfall 3).
+# NOPKGBASE=yes is fine and intentional here: verified against releng/15.0
+# vmimage.subr, it only switches the BASE install to installworld;
+# vm_extra_install_packages still chroot-installs VM_EXTRA_PACKAGES.
 
 name: Build smolBSD TPM Image
 
@@ -253,6 +255,7 @@ jobs:
           echo "Running cloudware-release ..."
           make -C /usr/src/release cloudware-release \
             KERNCONF=SMOLBSD \
+            WITH_CLOUDWARE=yes \
             CLOUDWARE=smolbsd \
             SMOLBSDCONF=/usr/src/release/tools/smolbsd-qemu.conf \
             SMOLBSD_FORMAT=qcow2 \
@@ -264,7 +267,7 @@ jobs:
             2>&1 | tee /tmp/smolbsd-cloudware.log
 
           echo "Build complete"
-          ls -lh /usr/obj/amd64.amd64/usr/src/release/vm.ufs.qcow2
+          ls -lh /usr/obj/amd64.amd64/usr/src/release/*.ufs.qcow2
           ' 2>&1 | tee /tmp/smolbsd-build.log
 
           # --- scp the qcow2 artifact from the VM back to the host ---
@@ -274,7 +277,7 @@ jobs:
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             -P "$BUILD_SSH_PORT" \
-            "root@127.0.0.1:/usr/obj/amd64.amd64/usr/src/release/vm.ufs.qcow2" \
+            "root@127.0.0.1:/usr/obj/amd64.amd64/usr/src/release/*.ufs.qcow2" \
             "$OUTPUT_IMAGE"
           echo "Artifact copied to: $OUTPUT_IMAGE"
 

@@ -388,7 +388,13 @@ def main [
     # 5d. Copy cloudware release conf
     vm-step "copy-conf" "cp /root/smolBSD/release/tools/smolbsd-qemu.conf /usr/src/release/tools/smolbsd-qemu.conf" $ssh_port $dry_run
 
-    # 5e. Build kernel (long — ~20 min on 8 vCPU KVM)
+    # 5e. Build world + kernel (long — world ~2-3 h, kernel ~20 min on 8 vCPU KVM)
+    # buildworld is REQUIRED: cloudware-release depends on pkgbase-repo, which
+    # runs `make -C /usr/src packages` and stages packages from the built world.
+    # (The old vm-image path skipped buildworld — but that target was a no-op
+    # touch anyway; see FIX-9.)
+    log-step "vm-buildworld" "starting world build (this takes ~2-3 h)" {}
+    vm-step "buildworld" "make -C /usr/src buildworld -j8" $ssh_port $dry_run
     log-step "vm-buildkernel" "starting kernel build (this takes ~20 min)" {}
     vm-step "buildkernel" "make -C /usr/src buildkernel KERNCONF=SMOLBSD -j8" $ssh_port $dry_run
 
@@ -399,7 +405,7 @@ def main [
     # is a WITH_VMIMAGES-gated target that passes no -c to mk-vmimage.sh.
     log-step "vm-cloudware-release" "starting make cloudware-release (this takes ~30 min)" {}
     vm-step "cloudware-release" (
-        "make -C /usr/src/release cloudware-release KERNCONF=SMOLBSD WITH_PKGBASE=yes " +
+        "make -C /usr/src/release cloudware-release KERNCONF=SMOLBSD " +
         "WITH_CLOUDWARE=yes CLOUDWARE=smolbsd SMOLBSD_FORMAT=qcow2 SMOLBSD_FSLIST=ufs " +
         "SMOLBSDCONF=/root/smolBSD/release/tools/smolbsd-qemu.conf VMSIZE=2g"
     ) $ssh_port $dry_run
