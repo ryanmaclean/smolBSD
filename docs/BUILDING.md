@@ -6,8 +6,8 @@ One command builds the complete smolBSD qcow2 image from a clean FreeBSD source 
 
 - FreeBSD 15 aarch64 host (the `fbuild` VM on `minim4-24`, or any FreeBSD aarch64 box)
 - At least 50 GiB free in `/usr/obj` (buildworld fills ~18–40 GiB; allow headroom)
-- At least 3 GiB free after buildworld completes (vm-image needs room for artifacts)
-- Root access — `make release` and `make vm-image` both require a chroot
+- At least 3 GiB free after buildworld completes (the release image step needs room for artifacts)
+- Root access — `make release` and `make cloudware-release` both require a chroot
 - `/usr/src` checked out at `releng/15.0`:
   ```sh
   git clone -b releng/15.0 https://git.freebsd.org/src.git /usr/src
@@ -38,8 +38,12 @@ This runs the complete pipeline in order:
    configs and release conf into `/usr/src` if missing
 2. `buildworld` (the long step — 1–3 h depending on hardware)
 3. `buildkernel KERNCONF=SMOLBSD`
-4. Kernel obj cleanup — frees 4–6 GiB before vm-image
-5. `make vm-image` — produces the qcow2 artifact
+4. Kernel obj cleanup — frees 4–6 GiB before the release image step
+5. `make cloudware-release` (CLOUDWARE=smolbsd, SMOLBSDCONF=<conf>) — produces
+   the qcow2 artifact. FIX-9: the old `make vm-image ... CLOUDWARE_CONF=` form
+   never sourced the release conf (CLOUDWARE_CONF is not a real Makefile
+   variable and vm-image is WITH_VMIMAGES-gated), so the pkgbase filter,
+   size-trim, and sshd enablement were silently skipped.
 
 Build output streams to `/var/tmp/smolbsd-build.log`. Watch progress with:
 
@@ -50,7 +54,9 @@ tail -f /var/tmp/smolbsd-build.log
 ## Step 2 — Where the qcow2 ends up
 
 ```
-/usr/obj/usr/src/arm64.aarch64/release/vm/FreeBSD-15*SMOLBSD*.qcow2
+# cloudware-release writes to the release objdir root, e.g.:
+/usr/obj/usr/src/arm64.aarch64/release/*.ufs.qcow2
+# (legacy vm-image path was .../release/vm/FreeBSD-15*SMOLBSD*.qcow2)
 ```
 
 The script prints the exact path, size, sha256, and elapsed time on completion.
@@ -111,9 +117,10 @@ These are the Phase I lessons that silently break a naive build:
 |-----|------------------------|
 | `/etc/src.conf` with `WITHOUT_SENDMAIL=yes` | `freebsd.cf` install fails, cascades through 8 make levels |
 | `WITHOUT_DEPEND_FILES=yes` | Bad substitution from `bsd.dep.mk` in LLVM builds |
-| Run `vm-image` as root | Empty pkgbase produced silently |
+| Run the release image step as root | Empty pkgbase produced silently |
 | `VMSIZE=2g` | 4g default needs 4+ GiB of free disk |
-| Kernel obj cleanup before `vm-image` | May exhaust disk mid-release |
+| Kernel obj cleanup before the release image step | May exhaust disk mid-release |
+| `cloudware-release` + `SMOLBSDCONF=` (FIX-9) | `vm-image ... CLOUDWARE_CONF=` never sources the conf — filter/trim/sshd silently skipped |
 | `git config safe.directory /usr/src` | Release make fails on git version check |
 | Disk check before starting | Late failure after hours of build time |
 | Gated pipeline (abort on any stage failure) | Release starts after failed buildworld |

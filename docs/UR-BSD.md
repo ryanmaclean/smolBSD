@@ -49,7 +49,7 @@ Analysis of the build inputs (not yet a mounted-image audit — run
 |---|---|
 | `sys/arm64/conf/SMOLBSD`, `sys/amd64/conf/SMOLBSD` | `MODULES_OVERRIDE="tmpfs nullfs fdescfs procfs"` — only modules the VM can load; everything else is compiled in |
 | `release/tools/smolbsd-qemu-aarch64.conf`, `smolbsd-qemu.conf` | `VMSIZE`/`SWAPSIZE` now respect the caller (`${VMSIZE:-2g}`, `${SWAPSIZE:-128m}`); pkgbase filter extended (lld, dtrace, zfs, rescue, games, sendmail, telnet); size-trim extended (firmware, rescue, clang runtime, share/* leftovers, etcupdate db) |
-| `bin/build-smolbsd-image.nu` | in-VM `make vm-image` now passes `VMSIZE=2g` (was 4g) |
+| `bin/build-smolbsd-image.nu` | in-VM release step now `cloudware-release` + `SMOLBSDCONF=` with `VMSIZE=2g` (was `vm-image ... CLOUDWARE_CONF=` at 4g — see FIX-9 in UR-BSD-VERIFY.md) |
 
 Notes on safety:
 

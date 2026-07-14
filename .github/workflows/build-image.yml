@@ -254,7 +254,7 @@ jobs:
           make -C /usr/src/release cloudware-release \
             KERNCONF=SMOLBSD \
             CLOUDWARE=smolbsd \
-            CLOUDWARE_CONF=/usr/src/release/tools/smolbsd-qemu.conf \
+            SMOLBSDCONF=/usr/src/release/tools/smolbsd-qemu.conf \
             SMOLBSD_FORMAT=qcow2 \
             SMOLBSD_FSLIST=ufs \
             VMSIZE=4g \

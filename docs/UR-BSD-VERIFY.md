@@ -17,7 +17,7 @@ in cannot build a FreeBSD image.
 | `MODULES_OVERRIDE="tmpfs nullfs fdescfs procfs"` | `sys/{arm64,amd64}/conf/SMOLBSD` | Logic reviewed against `releng/15.0` |
 | `options FFS` added (amd64 only) | `sys/amd64/conf/SMOLBSD` | **Required fix — see Finding 2** |
 | `VMSIZE`/`SWAPSIZE` respect caller (`${VMSIZE:-2g}`) | `release/tools/smolbsd-qemu*.conf` | Mechanism verified TRUE |
-| pkgbase filter widened (lld, dtrace, zfs, rescue, games, sendmail, telnet) | `release/tools/smolbsd-qemu*.conf` | `grep -v` — safe no-op if absent |
+| pkgbase filter: grep replaced by explicit leaf-package list (FIX-10) | `release/tools/smolbsd-qemu*.conf` | Names verified vs pkg.freebsd.org 15 catalogs; see Finding 4 |
 | size-trim widened (firmware, rescue, clang, share/*, etcupdate) | `release/tools/smolbsd-qemu*.conf` | Safe `rm -rf` with DESTDIR guard |
 | in-VM make `VMSIZE=2g` (was 4g) | `bin/build-smolbsd-image.nu` | — |
 
@@ -44,45 +44,68 @@ the device side is fine; only the filesystem driver was the gap.)
 The four override modules (tmpfs/nullfs/fdescfs/procfs) are not actually needed
 to reach login (no fstab mounts them), but are cheap, conservative insurance.
 
-### Finding 3 — the build scripts likely never source the conf (UNCONFIRMED — verify first)
-A source review concluded that `make -C /usr/src/release vm-image ...
-CLOUDWARE_CONF=<conf>` — the invocation in `bin/build-smolbsd.nu` and
-`bin/build-smolbsd-image.nu` — does **not** source the conf:
+### Finding 3 — the build scripts never sourced the conf (CONFIRMED — FIX-9 applied)
+`make -C /usr/src/release vm-image ... CLOUDWARE_CONF=<conf>` — the old
+invocation in `bin/build-smolbsd.nu` and `bin/build-smolbsd-image.nu` — did
+**not** source the conf:
 - `CLOUDWARE_CONF` is not a real variable in `release/Makefile.vm`; the
-  per-provider variable is `${TYPE}CONF` (e.g. `EC2CONF`).
+  per-type variable is `${TYPE}CONF` (`SMOLBSDCONF` for `CLOUDWARE=smolbsd`).
 - Only `cw-*` cloudware targets pass `-c <conf>` to `mk-vmimage.sh`. The plain
   `vm-image` target passes no `-c`, and its recipe is gated behind
-  `WITH_VMIMAGES`.
+  `WITH_VMIMAGES` (without it the recipe is a no-op `touch`).
 - Consequence: `vm_extra_pre_umount()` (SSH keygen + size-trim) and
-  `vm_extra_filter_base_packages()` would stay as no-op prototypes — so the
-  trim/filter changes in the confs would have **no effect** via this path.
+  `vm_extra_filter_base_packages()` stayed as no-op prototypes via this path.
 
-This is consistent with `PHASE-1-RESULTS.md`, which states the Phase-1 image was
-created **manually** (`makefs` + `mkimg`), not via the scripted target. So the
-scripts may never have been validated end-to-end.
+Confirmation came from the repo's own history, not just the mirror review: the
+`.planning/phases/03-*` records and `.github/workflows/build-image.yml` show the
+pop4090 builds succeeded with `cloudware-release` + `CLOUDWARE=smolbsd` +
+`SMOLBSD_FORMAT=qcow2 SMOLBSD_FSLIST=ufs` (generating `cw-smolbsd-ufs-qcow2`,
+artifact at `<objdir>/usr/src/release/vm.ufs.qcow2`) — while still passing the
+fake `CLOUDWARE_CONF`, meaning even those builds never sourced the conf. And
+`PHASE-1-RESULTS.md` records the Phase-1 aarch64 image was created **manually**
+(`makefs` + `mkimg`), so the scripted path was never validated end-to-end.
 
-**Caveat on confidence:** this review used the GitHub source mirror (canonical
-cgit was bot-gated), so confirm against the real `/usr/src` tree on the build
-host before acting. Candidate correct invocation to test:
-```sh
-make -C /usr/src/release cw-basic-cloudinit-ufs-qcow2 \
-    WITH_CLOUDWARE=yes CLOUDWARE=BASIC-CLOUDINIT \
-    BASIC-CLOUDINITCONF=$PWD/release/tools/smolbsd-qemu-aarch64.conf \
-    KERNCONF=SMOLBSD WITH_PKGBASE=yes VMSIZE=2g VMFORMATS=qcow2
-```
-(exact target/variable names must be read from this host's
-`release/Makefile.vm`).
+**FIX-9 (applied on this branch):** all build invocations now use
+`cloudware-release` with `WITH_CLOUDWARE=yes CLOUDWARE=smolbsd
+SMOLBSDCONF=<conf> SMOLBSD_FORMAT=<fmt> SMOLBSD_FSLIST=ufs`, in:
+`bin/build-smolbsd.nu` (+ `find_qcow2` objdir-root candidates),
+`bin/build-smolbsd-image.nu`, `.github/workflows/build-image.yml`
+(`CLOUDWARE_CONF` → `SMOLBSDCONF`), `bin/harvest.sh` (remote paths, now
+env-overridable), the four conf headers, README/BUILDING docs.
+
+### Finding 4 — the pkgbase grep filter was structurally a no-op (FIX-10 applied)
+Verified against `releng/15.0` `vmimage.subr` and the official
+`pkg.freebsd.org FreeBSD:15 base_release_0` catalogs (496 pkgs): the stock flow
+passes only the seven `FreeBSD-set-*` meta names through
+`vm_extra_filter_base_packages()`, then `pkg install` pulls each surviving
+set's full dependency closure. `grep -v` of individual names can never exclude
+a set dependency — the old filter silently shipped clang (~220M), zfs, dtrace,
+rescue, wpa/ppp/wifi-firmware, and ~186M of tests (`^FreeBSD-tests` does not
+match `FreeBSD-set-tests`). ZFS userland is fully confined to `FreeBSD-zfs*`
+packages, but `FreeBSD-set-minimal` hard-depends on them, so only an explicit
+package list excludes it.
+
+**FIX-10 (applied on this branch):** both QEMU confs now emit an explicit
+leaf-package list (kernel set, bootloader, clibs/runtime/rc/utilities, ufs,
+geom, ssh, dhclient, resolvconf, syslogd/newsyslog/cron/devd,
+caroot/certctl/pkg-bootstrap, vi); pkg resolves required libraries as
+dependencies. Watch items on first build: sshd links against
+`FreeBSD-kerberos-lib` (comes in as a dependency of `FreeBSD-ssh` — verify),
+and a custom `KERNCONF=SMOLBSD` build must produce a `FreeBSD-set-kernels`
+that depends on the SMOLBSD kernel package (verify the local pkgbase repo).
+The pi5/rk3588 confs were left on the old filter deliberately (boards need
+`FreeBSD-dtb`; fix separately once the VM path is proven).
 
 ## Ordered plan for the build host
 
-1. **Confirm Finding 3 against the real tree.** On the host:
-   `grep -n CLOUDWARE_CONF /usr/src/release/Makefile.vm` (expect: no match) and
-   `grep -n 'mk-vmimage.sh' /usr/src/release/Makefile.vm` to see which targets
-   pass `-c`. Read the `cw-*` target list and the `${TYPE}CONF` variable name.
-   Decide: either (a) switch `bin/build-smolbsd.nu` to the correct `cw-*` target,
-   or (b) set `WITH_VMIMAGES=yes` and patch the conf-sourcing in, or (c) keep the
-   manual makefs+mkimg path Phase 1 used and stop pretending the scripted target
-   works. Update the build scripts to match reality.
+1. **Spot-check FIX-9 spelling against the host's tree** (5 minutes, read-only):
+   `grep -n 'CONF\b\|cw-\|CLOUDWARE' /usr/src/release/Makefile.vm | head -40` —
+   confirm `cloudware-release` exists, the per-type variable is `${TYPE}CONF`
+   (→ `SMOLBSDCONF`), and whether the type list variable is `CLOUDWARE` or
+   `CLOUDWARE_TYPES` on this tree. Then dry-check the target:
+   `make -C /usr/src/release -V CLOUDWARE_TYPES -V VMSIZE CLOUDWARE=smolbsd` .
+   FIX-9 is already applied to the scripts with the pop4090-proven spelling;
+   this step only guards against releng-branch drift.
 2. **Build aarch64 on fbuild** with the corrected invocation:
    `sudo nu bin/build-smolbsd.nu --arch aarch64` (after step 1's fix).
    Stream `/var/tmp/smolbsd-build.log`.

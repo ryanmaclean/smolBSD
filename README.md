@@ -31,7 +31,8 @@ sudo nu bin/build-smolbsd.nu
 ```
 
 This runs setup, `buildworld`, `buildkernel KERNCONF=SMOLBSD`, kernel obj
-cleanup, and `make vm-image`. Output streams to `/var/tmp/smolbsd-build.log`.
+cleanup, and `make cloudware-release` (the release image step). Output streams
+to `/var/tmp/smolbsd-build.log`.
 Use `--check` for a read-only preflight, `--skip-buildworld` to resume after
 a long build, or `--arch amd64` to cross-compile.
 

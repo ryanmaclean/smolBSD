@@ -432,14 +432,25 @@ def build_vm_image [
     }
     print $"  Disk: ($free_gb) GiB free in ($obj)"
 
+    # FIX-9: CLOUDWARE_CONF is not a variable the release Makefiles read, and
+    # the plain vm-image target never sources a conf (it is also gated behind
+    # WITH_VMIMAGES — without it the recipe is a no-op touch). The only path
+    # that sources smolbsd-qemu*.conf — and thus runs the pkgbase filter, the
+    # size-trim, and sshd enablement — is the cloudware machinery with the
+    # real per-type variable ${TYPE}CONF (SMOLBSDCONF for CLOUDWARE=smolbsd).
+    # Proven on pop4090 (.planning/phases/03-*, .github/workflows/build-image.yml):
+    # cloudware-release generates the cw-smolbsd-ufs-qcow2 target.
     let make_args = (base_make_args $arch_freebsd $arch_target) ++ [
         $"KERNCONF=($kernconf)"
         "WITH_PKGBASE=yes"
-        "VMFORMATS=qcow2"
-        $"VMSIZE=($vmsize)"          # FIX-3: 2g not 4g
-        $"CLOUDWARE_CONF=($release_conf)"
+        "WITH_CLOUDWARE=yes"
+        "CLOUDWARE=smolbsd"
+        $"SMOLBSDCONF=($release_conf)"
+        "SMOLBSD_FORMAT=qcow2"
+        "SMOLBSD_FSLIST=ufs"
+        $"VMSIZE=($vmsize)"          # FIX-3: 2g not 4g (conf respects caller)
     ]
-    let cmd_args = ["make" "-C" $"($src)/release" "vm-image"] ++ $make_args
+    let cmd_args = ["make" "-C" $"($src)/release" "cloudware-release"] ++ $make_args
 
     print $"  Command: ($cmd_args | str join ' ')"
     print $"  Release conf: ($release_conf)"
@@ -508,8 +519,12 @@ def run_or_fail [label: string cmd_args: list<string> _log: string] {
 
 # Find the built qcow2 image
 def find_qcow2 [obj: string arch_freebsd: string arch_target: string] {
-    # Standard FreeBSD release output paths
+    # Standard FreeBSD release output paths.
+    # cloudware-release (FIX-9) writes to the release objdir root (e.g.
+    # vm.ufs.qcow2 / smolbsd.ufs.qcow2); legacy vm-image wrote under release/vm/.
     let candidates = [
+        $"($obj)/($arch_freebsd).($arch_target)/usr/src/release"
+        $"($obj)/usr/src/($arch_freebsd).($arch_target)/release"
         $"($obj)/usr/src/($arch_freebsd).($arch_target)/release/vm"
         $"($obj)/($arch_target).($arch_freebsd)/usr/src/release/vm"
         $"($obj)/usr/src/release/vm"

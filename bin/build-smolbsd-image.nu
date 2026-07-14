@@ -393,11 +393,15 @@ def main [
     vm-step "buildkernel" "make -C /usr/src buildkernel KERNCONF=SMOLBSD -j8" $ssh_port $dry_run
 
     # 5f. Build release VM image (long — ~30 min)
-    log-step "vm-vm-image" "starting make vm-image (this takes ~30 min)" {}
-    vm-step "vm-image" (
-        "make -C /usr/src/release KERNCONF=SMOLBSD WITH_PKGBASE=yes " +
-        "VMFORMATS=qcow2 VMSIZE=2g " +
-        "CLOUDWARE_CONF=/root/smolBSD/release/tools/smolbsd-qemu.conf vm-image"
+    # FIX-9: use cloudware-release with the real ${TYPE}CONF variable
+    # (SMOLBSDCONF). The old `vm-image ... CLOUDWARE_CONF=` form never sourced
+    # the conf: CLOUDWARE_CONF is not a release Makefile variable and vm-image
+    # is a WITH_VMIMAGES-gated target that passes no -c to mk-vmimage.sh.
+    log-step "vm-cloudware-release" "starting make cloudware-release (this takes ~30 min)" {}
+    vm-step "cloudware-release" (
+        "make -C /usr/src/release cloudware-release KERNCONF=SMOLBSD WITH_PKGBASE=yes " +
+        "WITH_CLOUDWARE=yes CLOUDWARE=smolbsd SMOLBSD_FORMAT=qcow2 SMOLBSD_FSLIST=ufs " +
+        "SMOLBSDCONF=/root/smolBSD/release/tools/smolbsd-qemu.conf VMSIZE=2g"
     ) $ssh_port $dry_run
 
     # ── 6. Collect artifact ─────────────────────────────────────────────────
