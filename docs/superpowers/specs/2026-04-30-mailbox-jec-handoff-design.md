@@ -312,7 +312,7 @@ Seven states: `DISPATCHED`, `AWAITING_REPLY`, `HARVEST`, `VERIFY`, `RETRY_QUEUED
 
 **Primary**: in-spool message to `user@smolbsd.local` + `var/mail/HALT` marker file. The spool *is* the substrate — reusing it costs zero new tooling, threads correctly, survives a fresh clone, and the user already has standard mbox tools (`mailx`, `less`, `grep`).
 
-**Fallback**: one-shot Ergo IRC DM to `ryan` on `10.0.3.203:6697` (TLS) via `openssl s_client`. Push-only signal, NOT the canonical reply path. Honors CLAUDE.md "no probe loops on LAN servers" and Ergo auto-block protections — exactly one TLS attempt, optional one plain on 6667 if TLS handshake fails, then record outcome in HALT marker and move on.
+**Fallback**: one-shot Ergo IRC DM to `ryan` on `<irc-host-ip>:6697` (TLS) via `openssl s_client`. Push-only signal, NOT the canonical reply path. Honors CLAUDE.md "no probe loops on LAN servers" and Ergo auto-block protections — exactly one TLS attempt, optional one plain on 6667 if TLS handshake fails, then record outcome in HALT marker and move on.
 
 **Pause marker**: `var/mail/HALT` — one `stat()` per coordinator tick is the entire pause check. Spool is only re-parsed once HALT presence is confirmed, to find the resume reply.
 
@@ -418,7 +418,7 @@ on <hypervisor-host> (verified 2026-04-30T21:33:39Z via `lsof` against qemu pid
 
 ```
 ssh -J <hypervisor-host> -p 2222 builder@localhost      # correct (current reality)
-ssh -J studio@10.0.3.1 -p 2225 builder@localhost  # stale skill prose; do not use
+ssh -J studio@<lan-gw-ip> -p 2225 builder@localhost  # stale skill prose; do not use
 ```
 
 ### 18.3 virtfs share path (doubled-prefix wrapper bug)
@@ -482,7 +482,7 @@ The fleet's `.local` hostnames (`qnas.local`, `ergo.local`,
 `searxng.local`, `gitea.local`, etc., per ansible-managed `/etc/hosts`
 entries with `10.0.3.x` IPs — see CLAUDE.md "Search" section) **resolve
 only when the agent is LAN-attached** (host is on the QNAS LAN
-10.0.3.0/23). From a non-LAN-attached coordinator (e.g. a Mac on a
+<lan-subnet>). From a non-LAN-attached coordinator (e.g. a Mac on a
 different network using Tailscale to reach <hypervisor-host>), they fail to
 resolve / route.
 
@@ -492,8 +492,8 @@ nested QEMU guest (`<aarch64-builder>` reaches the LAN via SLIRP NAT only; the L
 does not see <aarch64-builder> as a tailnet peer).
 
 **Implication for D3 escalation fallback** (§13): the fallback IRC DM
-`openssl s_client 10.0.3.203:6697` is **inert from a non-LAN-attached
-coordinator** — there is no route to `10.0.3.203` from a Mac that only
+`openssl s_client <irc-host-ip>:6697` is **inert from a non-LAN-attached
+coordinator** — there is no route to `<irc-host-ip>` from a Mac that only
 sees <hypervisor-host> over Tailscale. The HALT marker + spool-message primary
 path (§13) still works (it is filesystem-local), so the design is not
 broken. The fallback is best-effort and degrades to "logged in HALT
@@ -506,7 +506,7 @@ recognize before debugging "why did the IRC fallback silently no-op".
 
 ### 18.6 Gitea host is i9-zfs-pop:3001, not gitea.local:3000
 
-`gitea.local` (per CLAUDE.md fleet DNS) resolves to `10.0.3.210` (QNAS) but
+`gitea.local` (per CLAUDE.md fleet DNS) resolves to `<nas-ip>` (QNAS) but
 Gitea actually runs on `i9-zfs-pop` at `<internal-ip>:3001`. Port 3000 on that
 host is TensorZero. The CLAUDE.md fleet hostname table is stale for this entry.
 
@@ -533,7 +533,7 @@ ssh -fN -L 3001:<internal-ip>:3001 home@<tailscale-ip>   # minim4-16 jump
 11. **`.gitignore` not yet written** — D1 secrets design requires `var/run/` to be jj/git-ignored before first credential dispatch. ops follow-up.
 12. **`pass(1)` is GPL-2.0** — disallowed under the user's licensing rule. The secrets design uses `gopass` (MIT) instead. Don't accidentally drop `pass` into a future dependency.
 13. **freebsd-build-vm skill is stale on VM-name and SSH-port** (v1.2). The global skill at `/Users/studio/.claude/skills/freebsd-build-vm/SKILL.md` calls the VM `fb-vm-24` (actual: `<aarch64-builder>`) and lists hostfwd port `2225` (actual: `2222`). Skill update is a separate PR outside this repo; §18 is the authoritative reconciliation for now. Mentally substitute when reading the skill.
-14. **`.local` hostnames are LAN-only** (v1.2 — see §18.5). From a coordinator reaching <hypervisor-host> only over Tailscale, the D3 IRC fallback to `10.0.3.203:6697` is inert — design degrades gracefully (HALT marker + spool path are filesystem-local), but agents should expect `fallback_status = 'no-route'` when off-LAN.
+14. **`.local` hostnames are LAN-only** (v1.2 — see §18.5). From a coordinator reaching <hypervisor-host> only over Tailscale, the D3 IRC fallback to `<irc-host-ip>:6697` is inert — design degrades gracefully (HALT marker + spool path are filesystem-local), but agents should expect `fallback_status = 'no-route'` when off-LAN.
 15. **Screen-socket-lost is a known <aarch64-builder> hazard** (v1.2 — see §18.4). qemu can outlive its launching screen session; `screen -r <aarch64-builder>` then fails even though the VM is reachable on ssh:2222. Recovery is `pkill qemu` + relaunch via `~/vms/run-fb-vm-24.sh`. Verify no in-VM build is in flight first.
 
 ## 15. Future work

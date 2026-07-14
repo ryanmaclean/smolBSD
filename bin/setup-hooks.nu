@@ -6,7 +6,9 @@
 #   nu bin/setup-hooks.nu
 #
 # Installs:
-#   .git/hooks/pre-push  — blocks pushing spool data with public IPs / UUIDs
+#   .git/hooks/pre-push  — blocks pushing spool data (public IPs / UUIDs) and
+#                          private/CGNAT IPs or denylisted internal hostnames
+#                          anywhere in the tracked tree
 
 def main [] {
     let repo_root = (git rev-parse --show-toplevel | str trim)
@@ -19,7 +21,7 @@ def main [] {
         exit 1
     }
 
-    let hook_content = $"#!/bin/sh\n# Auto-installed pre-push guard: blocks pushing var/mail/spool data\nexec nu ($check_script)\n"
+    let hook_content = $"#!/bin/sh\n# Auto-installed pre-push guard: spool data + private IPs + internal hostnames\nexec nu ($check_script)\n"
     $hook_content | save --force $hook_path
     chmod 0755 $hook_path
     print $"Installed pre-push hook at ($hook_path)"

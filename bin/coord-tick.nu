@@ -161,10 +161,14 @@ def request-thread-attestation-required [messages: list, in_reply_to_id: string]
 # Result is logged but never fatal — HALT proceeds regardless.
 def try-irc-dm [task_id: string, reason: string, root: string] {
     let msg = $"HALT ($task_id): ($reason)"
-    let irc_host = "10.0.3.203"
+    # IRC host is internal infrastructure — never hardcoded in the repo.
+    # Unset => fallback is inert ("no-route"), which the design tolerates.
+    let irc_host = $env.SMOLBSD_IRC_HOST? | default ""
     let halt_path = [$root, "var", "mail", $"HALT.($task_id)"] | path join
 
-    let result = try {
+    let result = if $irc_host == "" {
+        "no-route"
+    } else { try {
         # TLS attempt on 6697 — pipe IRC NICK/USER/PRIVMSG/QUIT sequence
         let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
         # out+err> /dev/null: suppress both stdout (s_client banner) and stderr (error msgs)
@@ -179,7 +183,7 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
         } catch {
             "no-route"
         }
-    }
+    } }
 
     # Record outcome in the HALT marker file
     try {
