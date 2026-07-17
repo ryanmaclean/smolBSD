@@ -178,7 +178,7 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
         # Plain fallback on 6667
         try {
             let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
-            let out = $irc_cmds | ^nc -w 5 $irc_host 6667 2>/dev/null
+            let out = $irc_cmds | ^nc -w 5 $irc_host 6667 err> /dev/null
             "plain-ok"
         } catch {
             "no-route"

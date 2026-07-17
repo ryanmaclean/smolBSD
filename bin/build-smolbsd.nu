@@ -301,8 +301,10 @@ def setup [src: string] {
         "git" "--no-pager" "config" "--global" "--add" "safe.directory" $src
     ] ""
 
-    # Install kernel configs and release conf from repo if missing
-    let repo_root = (^git -C $src rev-parse --show-toplevel 2>/dev/null | str trim)
+    # Install kernel configs and release conf from repo if missing.
+    # (NB: '2>/dev/null' is bash, not nu — a literal arg to the external
+    # command. It made git exit 128 here on every scripted run; see run #2
+    # of the hosted pipeline. Dead repo_root binding removed with it.)
     # We're in the smolBSD repo — kernel configs are checked in here
     let script_dir = ($env.CURRENT_FILE? | default "" | path dirname)
     # Resolve relative to the script location
@@ -564,7 +566,7 @@ def find_qcow2 [obj: string arch_freebsd: string arch_target: string] {
 
     # Broader fallback search
     let fallback = (
-        do { ^find $obj -name '*.qcow2' -type f 2>/dev/null } |
+        do { ^find $obj -name '*.qcow2' -type f } |
         complete | get stdout | lines | where { |l| ($l | str trim) != "" } | first?
     )
     $fallback | default "<qcow2 not found — check /usr/obj manually>"

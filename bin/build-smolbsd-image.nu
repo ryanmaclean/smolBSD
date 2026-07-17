@@ -253,7 +253,7 @@ def stop-vm [pid: int, dry_run: bool] {
     let sh_r = (^/usr/bin/env sh -c $"sshpass -p smolbsd ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -p 2242 root@127.0.0.1 'poweroff' 2>/dev/null" | complete)
     ^sleep 5
     # Kill the QEMU process if still running
-    let kill_r = (^kill $pid 2>/dev/null | complete)
+    let kill_r = (^kill $pid | complete)
     log-step "vm-stop" "build VM stopped" {pid: $pid}
 }
 

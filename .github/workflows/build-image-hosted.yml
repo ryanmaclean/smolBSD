@@ -42,7 +42,12 @@ on:
   # the branch's own workflow file. Remove after the first green run.
   push:
     branches: ['claude/ur-bsd-26-qnmjho']
-    paths: ['.github/workflows/build-image-hosted.yml']
+    paths:
+      - '.github/workflows/build-image-hosted.yml'
+      - 'bin/build-smolbsd.nu'
+      - 'release/tools/smolbsd-qemu*.conf'
+      - 'sys/amd64/conf/SMOLBSD'
+      - 'sys/arm64/conf/SMOLBSD'
 
 env:
   WORK: /mnt/smolbsd-ci
