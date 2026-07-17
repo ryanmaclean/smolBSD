@@ -71,6 +71,11 @@ jobs:
             echo "Hosted x64 Linux runners expose KVM; arm64 runners do not."
             exit 1
           }
+          # Hosted runners ship /dev/kvm as root:kvm 0660 and the runner user
+          # is not in the kvm group — qemu fails with EPERM without this
+          # (first run proved it). Same reason build-image.yml uses sudo qemu.
+          sudo chmod 666 /dev/kvm
+          test -w /dev/kvm && echo "/dev/kvm writable"
           # /mnt has the large free space on hosted runners (~60 GB); the
           # in-VM scratch disk and base image live there.
           sudo mkdir -p "$WORK" && sudo chown "$(id -u)" "$WORK"
