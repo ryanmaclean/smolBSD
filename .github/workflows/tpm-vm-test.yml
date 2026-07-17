@@ -20,8 +20,15 @@
 
 name: TPM VM Test
 
+# Dispatch-only: this job needs the self-hosted KVM runner, which is
+# currently offline. With `on: push` every push to any branch queued a run
+# that could never start (60 lifetime runs; 8 zombies queued at the time of
+# this change), leaving PR checks perpetually pending. Re-add a push trigger
+# when the runner returns — or better, port T1-T6 to the hosted runner:
+# ubuntu-latest now has working KVM (see build-image-hosted.yml preflight)
+# and swtpm is an apt install away; the image can come from the hosted
+# build's artifact instead of the runner-local path below.
 on:
-  push:
   workflow_dispatch:
 
 env:
