@@ -252,6 +252,7 @@ jobs:
           #    SMOLBSD_FORMAT and SMOLBSD_FSLIST must be set explicitly.
           #    NOPKGBASE=yes uses installworld rather than pkgbase repos.
           #    Do NOT add WITHOUT_QEMU/NOPKG — those skip tpm2-tools pkg install.
+          set -o pipefail
           echo "Running cloudware-release ..."
           make -C /usr/src/release cloudware-release \
             KERNCONF=SMOLBSD \
