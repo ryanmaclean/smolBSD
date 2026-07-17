@@ -79,6 +79,16 @@ export def main [
         print "tpm-seal-test: SKIP — tpm2-tools not installed"
         exit 0
     }
+    # ... or when the TCTI points at a device node that doesn't exist
+    # (fresh clone on a machine without a TPM: tools may be installed but
+    # there is nothing to talk to — that's a skip, not a failure).
+    if not $dry_run and ($tcti | str starts-with "device:") {
+        let dev = $tcti | str replace "device:" ""
+        if not ($dev | path exists) {
+            print $"tpm-seal-test: SKIP — no TPM device at ($dev)"
+            exit 0
+        }
+    }
 
     let secret_text = "smolbsd-seal-test"
 

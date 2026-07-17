@@ -83,10 +83,12 @@ def find-swtpm []: nothing -> string {
 def preflight [image: string, arch: string, dry_run: bool]: nothing -> record {
     log-step "preflight" "running preflight checks" {image: $image, arch: $arch}
 
-    # Image existence.
+    # Image existence. No image on a fresh clone is the normal case — skip,
+    # don't fail (run-all.sh counts the SKIP marker; pass --image to run).
     if not $dry_run {
-        if not ($image | path exists) {
-            error make {msg: $"disk image not found: ($image)"}
+        if $image == "" or not ($image | path exists) {
+            print $"tpm-smoke-test: SKIP — no disk image \(pass --image; got '($image)'\)"
+            exit 0
         }
     }
     log-step "preflight" "image ok" {image: $image, dry_run: $dry_run}

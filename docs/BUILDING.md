@@ -12,7 +12,8 @@ One command builds the complete smolBSD qcow2 image from a clean FreeBSD source 
   ```sh
   git clone -b releng/15.0 https://git.freebsd.org/src.git /usr/src
   ```
-- Nushell 0.111.0 or later: `pkg install nushell`
+- Nushell **0.112.2 or later**: `pkg install nushell` (0.111 fails — the
+  scripts use `get -o`, added in 0.112; CI pins 0.112.2)
 
 ## Step 0 — Preflight check (no writes, no builds)
 

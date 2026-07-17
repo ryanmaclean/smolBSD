@@ -1,5 +1,7 @@
 # smolBSD
 
+[![CI](https://github.com/ryanmaclean/smolBSD/actions/workflows/ci.yml/badge.svg)](https://github.com/ryanmaclean/smolBSD/actions/workflows/ci.yml)
+
 ## What it is
 
 smolBSD is a minimal FreeBSD 15 VM (aarch64 primary, amd64 secondary) paired
@@ -20,6 +22,44 @@ As of 2026-05-08:
 
 See `docs/PHASE-1-RESULTS.md` for the full report (sha256s, fleet deploy on
 <pi-node>, amd64 BIOS-boot verification).
+
+## Quickstart
+
+**Prerequisite everywhere:** [Nushell](https://www.nushell.sh) **0.112.2+**
+(`pkg install nushell` / `brew install nushell` / a GitHub release binary —
+0.111 and older fail on `get -o`).
+
+Three ways in, depending on what you have:
+
+1. **No FreeBSD host?** Dispatch the
+   [hosted build pipeline](.github/workflows/build-image-hosted.yml) from the
+   Actions tab — it builds the qcow2 on a stock GitHub runner and uploads it
+   as a workflow artifact (see `docs/BUILDING.md`, "Building in a pipeline").
+   There are no prebuilt release images yet.
+2. **Have a FreeBSD 15 host?** Build natively — see **Build** below.
+3. **Already have a qcow2?** Boot it:
+
+   ```sh
+   qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M \
+     -drive file=smolbsd.qcow2,format=qcow2,if=virtio \
+     -nic user,model=virtio-net-pci -nographic
+   # (-accel hvf on macOS; drop -accel/-cpu for slow TCG anywhere else)
+   ```
+
+   Log in as `root` / password `smolbsd`. **Dev images only**: they ship
+   `PermitRootLogin yes` + password auth — change the password on first
+   login and never expose one beyond QEMU user-mode networking.
+
+## Repo map
+
+| Path | What lives there |
+|---|---|
+| `bin/` | Coordinator FSM (`coord-*.nu`, run via `sh bin/coord-run.sh`), image build (`build-smolbsd.nu`), ops (`harvest.sh`, `qemu-smolbsd.nu`, bhyve tooling) |
+| `sys/`, `release/tools/` | SMOLBSD kernel configs and release image confs |
+| `tests/` | Nu unit/integration suites + `expect` boot gates (`sh tests/run-all.sh`) |
+| `docs/` | `BUILDING.md` (start here), `UR-BSD.md`/`UR-BSD-VERIFY.md` (size work), `BHYVE-GATE-AMD64.md` |
+| `plans/`, `.planning/` | Phase planning records (historical) |
+| `var/` | Runtime spool/state — never committed (see `CLAUDE.md` §9) |
 
 ## Build
 
@@ -96,11 +136,12 @@ stop: `touch var/mail/HALT`; per-task halt: `var/mail/HALT.<task_id>`.
 sh tests/run-all.sh
 ```
 
-Runs three Nu suites: `mbox-parse-test.nu`, `coord-tick-test.nu`, and
-`spawn-subagent-test.nu`. Individual suites can be invoked directly with
-`nu tests/<file>.nu`.
+Runs every `tests/*-test.nu` suite. Hardware-dependent suites (TPM) report
+`SKIP` instead of failing when the hardware or image is absent, so a fresh
+clone is green out of the box. Individual suites can be invoked directly
+with `nu tests/<file>.nu`.
 
 ## License
 
-Apache-2.0 for project code. FreeBSD base components retain their original
+Apache-2.0 for project code (see [LICENSE](LICENSE)). FreeBSD base components retain their original
 BSD-2-Clause / BSD-3-Clause licenses. No GPL/LGPL/AGPL dependencies.
