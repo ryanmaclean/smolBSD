@@ -4,7 +4,7 @@
 - Per-task resume handling should run even when global `var/mail/HALT` is absent.
 
 ## 2026-05-11T06:48:15Z - S-002
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+Thread: (prior tooling; id not recorded)
 - Implemented tick-level per-task resume handling so retry/edit can clear task halts without requiring global HALT.
 - Added integration test coverage for retry resume with only `HALT.<task_id>` present.
 - Quality checks attempted but blocked by missing Nushell runtime in sandbox.
@@ -19,7 +19,7 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Useful context: dispatch skip logic relies on `halted_tasks`, so stale entries cause silent non-dispatch.
 ---
 ## 2026-05-11T06:55:31Z - S-002
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+Thread: (prior tooling; id not recorded)
 - Re-ran required quality checks after applying S-002 changes and restoring tracker files.
 - Validation results:
   - `python -m json.tool prd.json` => pass
@@ -36,7 +36,7 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 - For coordinator-dispatched flows, attestation checks must follow the full `In-Reply-To` chain (reply -> dispatched message -> original request), not just one hop.
 
 ## 2026-05-11T00:00:00Z - INIT
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+Thread: (prior tooling; id not recorded)
 - Initialized project tracking files for Ralph iterations (`prd.json`, `progress.txt`).
 - Seeded prioritized user stories with `passes: false` so the next iteration can select the highest-priority unpassed story deterministically.
 - Added reusable codebase patterns observed from repository docs and coordinator layout.
@@ -49,7 +49,7 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
   - Useful context: project-level acceptance checks are Nushell-first (`tests/*.nu`) with `tests/run-all.sh` as aggregate.
 ---
 ## 2026-05-11T06:26:21Z - S-001
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+Thread: (prior tooling; id not recorded)
 - Implemented request-linked attestation enforcement for pass replies in coordinator harvesting.
 - Added integration coverage for request-level attestation requirement (missing claims retries; present claims passes).
 - Files changed:
@@ -62,7 +62,7 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 ---
 
 ## 2026-05-11T06:34:17Z - S-001
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+Thread: (prior tooling; id not recorded)
 - Extended attestation enforcement to traverse `In-Reply-To` chains so pass replies to coordinator-dispatched messages still honor original request `attestation_required=true`.
 - Added regression test for dispatch-chain attestation bypass scenario to ensure pass-without-claims is retried.
 - Files changed:
@@ -76,7 +76,7 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 ---
 
 ## 2026-05-11T06:35:58Z - S-001
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+Thread: (prior tooling; id not recorded)
 - Re-ran the Ralph loop gate for the highest-priority failing story (`S-001`) to verify completion eligibility.
 - Confirmed branch remains `main` (matches `prd.json` branchName) and that Nushell runtime is still unavailable in this sandbox.
 - Files changed:
@@ -88,7 +88,7 @@ Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
 ---
 
 ## 2026-05-13T04:29:48Z - S-002
-Thread: https://ampcode.com/threads/$AMP_CURRENT_THREAD_ID
+Thread: (prior tooling; id not recorded)
 - Extended resume handling to support `X-Resume-Action: retry-as-<role>` in addition to `retry|edit|abort`.
 - Added idempotency guard for resume processing by skipping already-seen resume messages and recording consumed resume `Message-ID`s in `seen_ids`.
 - Added regression coverage for retry-as-role flow to ensure per-task HALT marker and halted task state are cleared.

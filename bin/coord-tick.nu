@@ -238,7 +238,7 @@ Do not modify any other messages in the spool. Append only.
     $prompt | save --force $prompt_file
 
     # override with SMOLBSD_CLAUDE_MODEL env var
-    let model = $env | get SMOLBSD_CLAUDE_MODEL? | default "claude-sonnet-4-6"
+    let model = $env | get SMOLBSD_CLAUDE_MODEL? | default "claude-sonnet-5"
     # Launch claude as a truly-detached process (survives coord-tick.nu exit).
     # Prompt is passed via stdin redirect to avoid shell quoting fragility.
     let sh_cmd = $"claude --print --bare --allowedTools 'Write,Bash,Read,Glob,Grep' --max-budget-usd 1.0 --model ($model) < '($prompt_file)' >'($log_file)' 2>&1 &"

@@ -2,22 +2,25 @@
 
 ## WHAT LEAKED
 
+> Note: the literal values in this report were later replaced with
+> placeholders too — an incident report should not re-publish the leak.
+
 `var/mail/spool` was committed to git history across **51 commits** spanning all branches on the public GitHub repo `github.com/ryanmaclean/smolBSD`.
 
 ### Specific exposed data (all now redacted from rewritten history):
 
 | Type | Value | Exposure |
 |---|---|---|
-| Vultr instance UUID | `0c7c4607-e05c-4d6e-864d-6b846b9703cc` | Instance with `terminate_cmd` in spool |
-| Vultr instance UUID | `171abe56-fd68-4041-9376-9f235d9b9775` | Second instance ID |
-| Vultr SSH key UUID | `5518413b-0d1c-4d16-a858-40e172586380` | `mbp-m1-ed25519` key |
-| Public IP | `107.191.39.47` | Vultr amd64 instance main IP |
-| Tailscale IP | `<tailscale-ip>` | `minim4-16` jump host |
+| Vultr instance UUID | `<vultr-instance-uuid-1>` | Instance with `terminate_cmd` in spool |
+| Vultr instance UUID | `<vultr-instance-uuid-2>` | Second instance ID |
+| Vultr SSH key UUID | `<vultr-ssh-key-uuid>` | `<ssh-key-name>` key |
+| Public IP | `<vultr-public-ip>` | Vultr amd64 instance main IP |
+| Tailscale IP | `<tailscale-ip>` | `<internal-host>` jump host |
 | Tailscale IP | `<jump-host>` | SSH jump host in harvest commands |
 | Vultr API key | `REDACTED-VULTR-API-KEY` | Found in live spool on disk — **ROTATE IMMEDIATELY** |
 
 Additional files in committed history also contained the above UUIDs/IPs:
-- `bin/vultr-bhyve-provision.nu` — hardcoded SSH key UUID `5518413b`
+- `bin/vultr-bhyve-provision.nu` — hardcoded SSH key UUID `<vultr-ssh-key-uuid>`
 - `docs/PROJECT-LOG.md` — instance UUIDs and IPs in run log entries
 - `docs/PRIVACY-CI-AUDIT.md` — security audit listing all leaked values
 - `README.md` — instance UUIDs/IPs in build log sections
@@ -47,11 +50,11 @@ git filter-repo --path var/mail/spool --invert-paths \
   --replace-text /tmp/replacements.txt --force
 ```
 Replacements applied:
-- `0c7c4607-e05c-4d6e-864d-6b846b9703cc` → `REDACTED-VULTR-UUID-1`
-- `171abe56-fd68-4041-9376-9f235d9b9775` → `REDACTED-VULTR-UUID-2`
-- `5518413b-0d1c-4d16-a858-40e172586380` → `REDACTED-VULTR-SSH-KEY-UUID`
-- `5518413b` (short prefix) → `REDACTED-VULTR-SSH-KEY-UUID-PREFIX`
-- `107.191.39.47` → `REDACTED-VULTR-IP`
+- `<vultr-instance-uuid-1>` → `REDACTED-VULTR-UUID-1`
+- `<vultr-instance-uuid-2>` → `REDACTED-VULTR-UUID-2`
+- `<vultr-ssh-key-uuid>` → `REDACTED-VULTR-SSH-KEY-UUID`
+- `<vultr-ssh-key-uuid>` (short prefix) → `REDACTED-VULTR-SSH-KEY-UUID-PREFIX`
+- `<vultr-public-ip>` → `REDACTED-VULTR-IP`
 
 **~20:38** — Verification: `git log --all --oneline -- var/mail/spool` returned 0; `git grep` for all UUIDs/IPs returned 0 matches.
 
@@ -124,8 +127,8 @@ This key was captured during a harvest command and recorded in a claims block. *
 
 | Action | Owner | Status |
 |---|---|---|
-| Rotate Vultr SSH key `5518413b` (mbp-m1-ed25519) | Ryan MacLean | Rotation confirmed out-of-band per task brief |
-| Terminate Vultr instances `171abe56`, `0c7c4607` | Ryan MacLean | Termination confirmed out-of-band per task brief |
+| Rotate Vultr SSH key `<vultr-ssh-key-uuid>` (<ssh-key-name>) | Ryan MacLean | Rotation confirmed out-of-band per task brief |
+| Terminate both Vultr instances (UUIDs redacted above) | Ryan MacLean | Termination confirmed out-of-band per task brief |
 | **Rotate Vultr API key `BTA56PEJBU6CIDUTVAAYTS64HB4SGFZ7FQ6Q`** | Ryan MacLean | **OUTSTANDING** — key found in live spool, not mentioned in original brief |
 | Contact GitHub Support to flush object cache / PR refs | Ryan MacLean | Outstanding |
 | Force-push rewritten history to Gitea (`i9-zfs-pop:3001`) | Ryan MacLean | Outstanding |

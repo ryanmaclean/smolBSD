@@ -1,4 +1,0 @@
-ARG: --print
-ARG: --model
-ARG: test-model
-ARG: foo

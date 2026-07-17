@@ -512,7 +512,7 @@ host is TensorZero. The CLAUDE.md fleet hostname table is stale for this entry.
 
 **Tunnel from Tailscale (conference / remote):**
 ```sh
-ssh -fN -L 3001:<internal-ip>:3001 home@<tailscale-ip>   # minim4-16 jump
+ssh -fN -L 3001:<internal-ip>:3001 home@<tailscale-ip>   # <internal-host> jump
 # then: jj git remote add gitea http://localhost:3001/studio/smolBSD.git
 ```
 

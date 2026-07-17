@@ -25,7 +25,7 @@ LAN servers is forbidden per CLAUDE.md).
 | <aarch64-builder> VM is FreeBSD 15 aarch64 | freebsd-build-vm SKILL.md L28 | "FreeBSD 15.0-RELEASE aarch64 (cloud-init qcow2)" |
 | HVF accel works only for matching ISA on Apple Silicon | Apple Hypervisor.framework docs | aarch64-on-aarch64 = native HVF; amd64-on-aarch64 = TCG (software) |
 | FreeBSD `make TARGET=amd64 TARGET_ARCH=amd64` cross-builds from aarch64 | PHASE-1-FORGE-TINY-BASELINE §10 | already in the existing plan |
-| mbp-m1 reaches <hypervisor-host> over Tailscale | task-0003a brief | Tailscale path live; LAN 10.0.3.x not reachable from current network |
+| <dev-mac> reaches <hypervisor-host> over Tailscale | task-0003a brief | Tailscale path live; LAN 10.0.3.x not reachable from current network |
 | Vultr offers both amd64 and aarch64 instances | MEMORY.md user_cloud_vultr.md + Vultr public catalog | native FreeBSD on both |
 | Pi 5 SoC is BCM2712 (Cortex-A76) — aarch64 | raspberry-pi SKILL.md "Pis are ARM64" | aarch64 only |
 | RK3588 SoC is Cortex-A76 + A55 — aarch64 | Rockchip public datasheet | aarch64 only |

@@ -32,7 +32,7 @@ Optional environment variables:
 | `HALT_INTERVAL` | `10` | Seconds to sleep while halted |
 | `STATE_FILE` | `var/run/coord-state.toml` | FSM state file |
 | `SPOOL` | `var/mail/spool` | mbox spool path |
-| `SMOLBSD_CLAUDE_MODEL` | `claude-sonnet-4-6` | Claude model for subagent dispatch |
+| `SMOLBSD_CLAUDE_MODEL` | `claude-sonnet-5` | Claude model for subagent dispatch |
 
 Run a single tick manually:
 
@@ -79,7 +79,7 @@ Critical sections:
 
 ## 8. Branch
 
-Active development branch: `claude/stoic-pascal-u6y3T`
+Development happens on short-lived `claude/*` feature branches merged to `main` via PR — check `git branch --show-current`; do not assume a fixed branch name.
 
 ## 9. Security — install hooks after clone
 
