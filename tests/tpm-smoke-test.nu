@@ -87,7 +87,7 @@ def preflight [image: string, arch: string, dry_run: bool]: nothing -> record {
     # don't fail (run-all.sh counts the SKIP marker; pass --image to run).
     if not $dry_run {
         if $image == "" or not ($image | path exists) {
-            print $"tpm-smoke-test: SKIP — no disk image \(pass --image; got '($image)'\)"
+            print $"tpm-smoke-test: SKIP — no disk image. Pass --image to run; got '($image)'"
             exit 0
         }
     }

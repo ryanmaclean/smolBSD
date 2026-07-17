@@ -197,6 +197,10 @@ jobs:
             -o ServerAliveCountMax=5 \
             -p "$BUILD_SSH_PORT" \
             root@127.0.0.1 'set -ex
+          # pipefail so "make ... | tee log" fails the script when make fails
+          # (FreeBSD sh supports it; without this only the later artifact
+          # check catches the failure, misattributing it)
+          set -o pipefail
 
           # 1. Partition and mount scratch disk (second virtio drive = vtbd1)
           gpart create -s gpt vtbd1

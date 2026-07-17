@@ -14,6 +14,8 @@
 | `var/mail/spool` | The mbox spool (messages between coordinator and agents) |
 | `var/run/coord-state.toml` | Persisted FSM state (survives restarts) |
 | `tests/` | Nu unit and integration tests |
+| `bin/build-smolbsd.nu` | Image build pipeline — see `docs/BUILDING.md`; release image goes via `cloudware-release` + `SMOLBSDCONF` (FIX-9), never `vm-image ... CLOUDWARE_CONF` |
+| `docs/UR-BSD-VERIFY.md` | Verified findings + assumptions ledger for the build/image work — read before changing kernconfs, release confs, or build invocations |
 
 ## 3. How to run
 

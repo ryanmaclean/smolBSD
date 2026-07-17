@@ -2,7 +2,8 @@
 
 Companion to `docs/UR-BSD.md`. This is the plan to execute **when a FreeBSD 15
 build host is available again** (<aarch64-builder> for aarch64; a Linux/KVM x86 host for
-amd64). It records what was changed on branch `claude/ur-bsd-26-qnmjho`, what was
+amd64). It records what was changed in PR #31 (branch
+`claude/ur-bsd-26-qnmjho` at the time; read this doc from main), what was
 verified without a build, and the ordered steps to validate — including one
 likely latent bug that must be confirmed before trusting the build scripts.
 

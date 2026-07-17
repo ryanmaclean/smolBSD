@@ -36,7 +36,7 @@ ifconfig tap0 create 2>/dev/null; ifconfig tap0 up
 # DHCP: ifconfig bridge0 create && ifconfig bridge0 addm tap0 addm <phys-nic> up)
 
 git clone <repo-url> ~/smolBSD && cd ~/smolBSD
-git checkout claude/ur-bsd-26-qnmjho
+git checkout <branch-or-tag-under-test>   # e.g. main, or the PR branch being validated
 nu bin/setup-hooks.nu        # pre-push spool guard (CLAUDE.md §9)
 ```
 
