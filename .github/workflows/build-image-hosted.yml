@@ -37,6 +37,12 @@ on:
       vmsize:
         description: "Image VMSIZE (sparse)"
         default: "2g"
+  # TEMPORARY pre-merge validation trigger: workflow_dispatch is unavailable
+  # until this file lands on the default branch, but push triggers fire from
+  # the branch's own workflow file. Remove after the first green run.
+  push:
+    branches: ['claude/ur-bsd-26-qnmjho']
+    paths: ['.github/workflows/build-image-hosted.yml']
 
 env:
   WORK: /mnt/smolbsd-ci
@@ -47,7 +53,7 @@ env:
 
 jobs:
   build:
-    name: Build smolBSD ${{ inputs.arch }} qcow2
+    name: Build smolBSD ${{ inputs.arch || 'amd64' }} qcow2
     runs-on: ubuntu-latest
     timeout-minutes: 350
     defaults:
@@ -155,14 +161,14 @@ jobs:
 
       - name: Build (world + kernel + cloudware-release) inside VM
         env:
-          VMSIZE_INPUT: ${{ inputs.vmsize }}
+          VMSIZE_INPUT: ${{ inputs.vmsize || '2g' }}
         run: |
           set -e
           cd "$WORK"
           SSH="ssh -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p $SSH_PORT root@127.0.0.1"
           $SSH "cd /root/smolBSD && nu bin/build-smolbsd.nu \
-                  --arch '${{ inputs.arch }}' --vmsize '$VMSIZE_INPUT'" \
+                  --arch '${{ inputs.arch || 'amd64' }}' --vmsize '$VMSIZE_INPUT'" \
             2>&1 | tee build.log
           # Locate the artifact (FIX-9: cloudware-release writes
           # <objdir>/usr/src/release/smolbsd.ufs.qcow2)
@@ -172,14 +178,14 @@ jobs:
           echo "artifact=$ART"
           scp -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -P "$SSH_PORT" "root@127.0.0.1:$ART" \
-              "$WORK/smolbsd-${{ inputs.arch }}.qcow2"
-          ls -lh "$WORK/smolbsd-${{ inputs.arch }}.qcow2"
+              "$WORK/smolbsd-${{ inputs.arch || 'amd64' }}.qcow2"
+          ls -lh "$WORK/smolbsd-${{ inputs.arch || 'amd64' }}.qcow2"
 
       - name: Size gate (<= 512 MiB)
         id: size
         continue-on-error: true   # deferred: enforced after the boot gate below
         run: |
-          BYTES=$(wc -c < "$WORK/smolbsd-${{ inputs.arch }}.qcow2")
+          BYTES=$(wc -c < "$WORK/smolbsd-${{ inputs.arch || 'amd64' }}.qcow2")
           LIMIT=536870912
           echo "artifact: $BYTES bytes; limit: $LIMIT bytes"
           if [ "$BYTES" -le "$LIMIT" ]; then
@@ -190,7 +196,7 @@ jobs:
           fi
 
       - name: Boot gate (KVM, amd64 only)
-        if: ${{ inputs.arch == 'amd64' }}
+        if: ${{ (inputs.arch || 'amd64') == 'amd64' }}
         run: |
           set -e
           cd "$WORK"
@@ -220,7 +226,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smolbsd-${{ inputs.arch }}
+          name: smolbsd-${{ inputs.arch || 'amd64' }}
           if-no-files-found: warn
           path: |
             /mnt/smolbsd-ci/smolbsd-*.qcow2
