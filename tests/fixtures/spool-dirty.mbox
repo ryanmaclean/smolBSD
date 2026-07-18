@@ -1,0 +1,7 @@
+From coordinator@smolbsd.local Thu Jul 17 00:00:00 2026
+Subject: task-0002 status
+Message-ID: <task-0002.fixture@smolbsd.local>
+
+203.0.113.7 is a documentation-range IP standing in for a public one
+instance = "0123abcd-0123-abcd-0123-0123456789ab"
+api_key = FAKE0FAKE1FAKE2FAKE3FAKE4

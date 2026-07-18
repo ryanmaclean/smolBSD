@@ -57,6 +57,18 @@ jobs:
         working-directory: .
         run: nu tests/spawn-subagent-test.nu
 
+      # Execute the pre-push guard against fixtures so hook refactors have
+      # real coverage (nothing else runs this script; a parse error here
+      # would otherwise only surface at push time on a developer machine).
+      - name: pre-push guard (absent / clean / dirty spool fixtures)
+        run: |
+          nu bin/pre-push-check.nu --spool /nonexistent-spool
+          nu bin/pre-push-check.nu --spool tests/fixtures/spool-clean.mbox
+          if nu bin/pre-push-check.nu --spool tests/fixtures/spool-dirty.mbox; then
+            echo "ERROR: dirty fixture spool passed the guard"; exit 1
+          fi
+          echo "dirty fixture correctly rejected"
+
       - name: spool-archive tests
         run: nu tests/spool-archive-test.nu
 
