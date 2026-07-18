@@ -186,9 +186,19 @@ jobs:
             2>&1 | tee build.log || BUILD_RC=$?
           # Locate the artifact (FIX-9: cloudware-release writes
           # <objdir>/usr/src/release/smolbsd.ufs.qcow2)
+          # Always pull the in-VM make log out — the real error lives there
+          # and dies with the ephemeral VM otherwise (runs #3/#4 lesson).
+          scp -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -P "$SSH_PORT" root@127.0.0.1:/var/tmp/smolbsd-build.log \
+              "$WORK/smolbsd-build-vm.log" || true
           ART=$($SSH "find /usr/obj -name smolbsd.ufs.qcow2 2>/dev/null | head -1")
           [ -n "$ART" ] || ART=$($SSH "find /usr/obj -name '*.ufs.qcow2' 2>/dev/null | head -1")
-          test -n "$ART" || { echo "ERROR: no qcow2 artifact found in /usr/obj (build rc=$BUILD_RC)"; exit 1; }
+          if [ -z "$ART" ]; then
+            echo "ERROR: no qcow2 artifact found in /usr/obj (build rc=$BUILD_RC)"
+            echo "==== tail of in-VM make log ===="
+            tail -n 150 "$WORK/smolbsd-build-vm.log" || true
+            exit 1
+          fi
           [ "$BUILD_RC" -eq 0 ] || echo "WARNING: build script exited rc=$BUILD_RC after producing the artifact - check build.log"
           echo "artifact=$ART"
           scp -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
@@ -246,6 +256,7 @@ jobs:
           path: |
             /mnt/smolbsd-ci/smolbsd-*.qcow2
             /mnt/smolbsd-ci/build.log
+            /mnt/smolbsd-ci/smolbsd-build-vm.log
             /mnt/smolbsd-ci/serial.log
 
       - name: Teardown VM

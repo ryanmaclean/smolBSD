@@ -125,16 +125,17 @@ Every FIX-9/FIX-10 assumption was checked directly against
 | Workflow header "NOPKGBASE skips tpm2-tools" | FALSE — `vm_extra_install_packages` chroot-installs `VM_EXTRA_PACKAGES` regardless of NOPKGBASE (only `WITHOUT_QEMU` skips it, vmimage.subr:205–247) | Header corrected; `NOPKGBASE=yes` kept in the proven pipeline |
 | Conf-provided builds get DHCP/growfs defaults | N/A — `vm_extra_enable_services` adds `ifconfig_DEFAULT`/`growfs_enable` only when NO conf is passed (vmimage.subr:195–201); our conf sets `ifconfig_vtnet0="DHCP"` itself | No change needed (noted so nobody "fixes" it) |
 
-## Empirical results — hosted pipeline run #3 (2026-07-18)
+## Empirical results — hosted pipeline runs #3-#4 (2026-07-18)
 
-First scripted build to complete FIX-9 end-to-end (hosted runner, amd64):
-buildworld 3h10m (-j3), buildkernel SMOLBSD **2m** (MODULES_OVERRIDE), and
-`cloudware-release` **complete in 10m** — pkgbase repo, conf sourcing,
-FIX-10 package list, size-trim, and qcow2 creation all executed. The run
-then failed *after* the build in artifact location (`first?` is not a nu
-command — fixed) and the image was lost with the ephemeral VM; the workflow
-now judges success by artifact presence, not script exit. Gates (size/boot)
-not yet reached — next run.
+buildworld 1h50-3h10m (-j3) and buildkernel SMOLBSD **~2m**
+(MODULES_OVERRIDE) both PASS. `make cloudware-release` exits 0 after ~10m —
+**but exit 0 is NOT proof of an image**: the cw recipe ends in `|| true`,
+and run #4 (with artifact-presence checking) proved no qcow2 was produced.
+Run #3's failure at `first?` (fixed) masked the same underlying image-stage
+failure. The real mk-vmimage.sh error lives in /var/tmp/smolbsd-build.log
+inside the ephemeral VM — as of run #5 that log is always fetched and its
+tail printed on failure, so the next cycle is self-diagnosing. Gates
+(size/boot) still not reached.
 
 ## Ordered plan for the build host
 

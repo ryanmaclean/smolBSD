@@ -150,9 +150,15 @@ export def main [
     if not $skip_release {
         let qcow2 = find_qcow2 $obj $arch_freebsd $arch_target
         # The cw recipe ends in '|| true', so make exits 0 even when
-        # mk-vmimage.sh failed. No artifact => the build FAILED; say so.
+        # mk-vmimage.sh failed. No artifact => the build FAILED. Dump the
+        # make log tail so the failure is diagnosable from this stdout
+        # alone (run #4 died here with the real error stranded in the VM).
         if ($qcow2 | str starts-with "<") {
-            error make {msg: $"cloudware-release produced no qcow2 under ($obj) — the image stage failed; check the log."}
+            print $"==> NO ARTIFACT — last 120 lines of ($log):"
+            ^tail -n 120 $log
+            print "==> release objdir contents:"
+            ^sh -c $"ls -la ($obj)/usr/src/*/release/ ($obj)/*/usr/src/release/ 2>/dev/null || true"
+            error make {msg: $"cloudware-release produced no qcow2 under ($obj) — see log tail above."}
         }
         print_summary $arch_target $kernconf $qcow2 $elapsed_secs
     } else {
