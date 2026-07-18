@@ -11,7 +11,7 @@ i18n review, README polish, orphan detection.
 
 No stale hostnames or port numbers were found in active document prose.
 All `fb-vm-24` and `2225` references in docs are correctly framed as
-"stale skill name" with `fbuild`/`2222` as the current truth. The design
+"stale skill name" with `<aarch64-builder>`/`2222` as the current truth. The design
 spec §18 and all plan files already document the drift accurately.
 
 The `gitea.local:3000` reference at `docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.md:223` is inside a TOML

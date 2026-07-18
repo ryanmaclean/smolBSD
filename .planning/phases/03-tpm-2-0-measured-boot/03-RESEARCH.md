@@ -2,7 +2,7 @@
 
 **Researched:** 2026-06-04
 **Domain:** FreeBSD TPM 2.0 stack, swtpm, QEMU+KVM, FreeBSD release build on Linux, CI image caching
-**Confidence:** HIGH (all key findings verified against live infrastructure on pop4090)
+**Confidence:** HIGH (all key findings verified against live infrastructure on <kvm-host>)
 
 ---
 
@@ -12,13 +12,13 @@
 ### Locked Decisions
 
 **D-01: Image Build Strategy**
-Build the smolBSD amd64 image by booting a FreeBSD QEMU VM on pop4090 and
-running `make release` inside it. pop4090 already has:
+Build the smolBSD amd64 image by booting a FreeBSD QEMU VM on <kvm-host> and
+running `make release` inside it. <kvm-host> already has:
 - `/home/studio/bsd-build/src/freebsd-src` with postworld artifacts from 2026-04-11
 - QEMU 8.2.2 + KVM
 - The full FreeBSD source tree
 
-Steps: boot FreeBSD QEMU VM on pop4090 → clone/copy smolBSD repo inside →
+Steps: boot FreeBSD QEMU VM on <kvm-host> → clone/copy smolBSD repo inside →
 `cp release/tools/smolbsd-qemu.conf` into src → run `make release KERNCONF=SMOLBSD
 WITH_PKGBASE=yes VMFORMATS=qcow2 VMSIZE=2g` → scp artifact back to host.
 
@@ -38,7 +38,7 @@ Also add to smolbsd-qemu.conf:
 - `ifconfig_vtnet0="DHCP"` for pkg bootstrap during build (not needed for test)
 
 **D-03: CI Integration — Image Storage**
-Store the built smolBSD qcow2 on pop4090 at a stable path (e.g.,
+Store the built smolBSD qcow2 on <kvm-host> at a stable path (e.g.,
 `/home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2`). Update `tpm-vm-test.yml`
 to use this local path instead of downloading a stock FreeBSD image.
 
@@ -69,7 +69,7 @@ For the smolBSD image CI path: poll SSH directly, no console fix step needed.
 
 ### Claude's Discretion
 - Exact QEMU command flags for the smolBSD image (CPU, memory, accel)
-- swtpm state directory path on pop4090
+- swtpm state directory path on <kvm-host>
 - How to handle T3 (`tpmctl -G`) if `tpmctl(8)` is not in the image (fallback: `tpm2_getcap`)
 - Whether to run bhyve or QEMU for the T2–T6 suite (QEMU preferred)
 
@@ -87,17 +87,17 @@ For the smolBSD image CI path: poll SSH directly, no console fix step needed.
 
 Phase 3 has one blocking deliverable: a smolBSD amd64 qcow2 image built with
 `device tpm` compiled into the kernel and `tpm2-tools` pre-installed in the
-image. Once that image exists on pop4090 at a stable path, the full T2–T6
+image. Once that image exists on <kvm-host> at a stable path, the full T2–T6
 acceptance suite runs against it using scripts that are already complete and
 tested. T1 (swtpm socket) is already green in CI.
 
 The core engineering work is split into two parts: (1) build pipeline —
-install smolBSD configs into the FreeBSD source tree on pop4090 and trigger
+install smolBSD configs into the FreeBSD source tree on <kvm-host> and trigger
 `make vm-image` with `CLOUDWARE_CONF=smolbsd-qemu.conf`; and (2) CI wiring —
 update `tpm-vm-test.yml` to reference the new image path and drive the
 existing T2–T6 scripts instead of the stock FreeBSD workaround.
 
-**Critical infrastructure finding:** pop4090 (10.0.2.42) is a **Linux host**
+**Critical infrastructure finding:** <kvm-host> (<kvm-host-ip>) is a **Linux host**
 (Ubuntu kernel 6.18.7), not a FreeBSD host. The FreeBSD cross-build
 environment (`bmake`, cross-tools, `postworld` stage) is all present under
 `/home/studio/bsd-build/`. The `make vm-image` (CLOUDWARE) path needs
@@ -119,19 +119,19 @@ CI workflow.
 ### Core (all already in project — no new installs needed)
 | Component | Version | Purpose | Status |
 |-----------|---------|---------|--------|
-| `swtpm` | 0.7.3 | Software TPM 2.0 emulator on pop4090 | installed on pop4090 |
-| `qemu-system-x86_64` | 8.2.2 | KVM-accelerated amd64 VM on pop4090 | installed on pop4090 |
+| `swtpm` | 0.7.3 | Software TPM 2.0 emulator on <kvm-host> | installed on <kvm-host> |
+| `qemu-system-x86_64` | 8.2.2 | KVM-accelerated amd64 VM on <kvm-host> | installed on <kvm-host> |
 | `tpm2-tools` (FreeBSD pkg) | security/tpm2-tools | PCR read/seal/unseal in guest | must be baked into image |
-| OVMF / UEFI firmware | present at `/usr/share/qemu/OVMF.fd` | UEFI firmware for QEMU amd64 | present on pop4090 |
-| FreeBSD source tree | 15.1-STABLE (freebsd-src) | Base for `make vm-image` | present on pop4090 |
-| `bmake` cross-tools | installed | Build toolchain | present on pop4090 |
+| OVMF / UEFI firmware | present at `/usr/share/qemu/OVMF.fd` | UEFI firmware for QEMU amd64 | present on <kvm-host> |
+| FreeBSD source tree | 15.1-STABLE (freebsd-src) | Base for `make vm-image` | present on <kvm-host> |
+| `bmake` cross-tools | installed | Build toolchain | present on <kvm-host> |
 
 ### Supporting
 | Component | Version | Purpose | When to Use |
 |-----------|---------|---------|-------------|
 | `sshpass` | system | Password-auth SSH in tests | bhyve-tpm-pcr-verify.nu |
 | `qemu-user-static` (Linux) | system | binfmt_misc for pkg chroot in release build | CLOUDWARE path only |
-| Nushell | must be installed on pop4090 (currently absent) | Run Nu scripts in CI | all wave steps |
+| Nushell | must be installed on <kvm-host> (currently absent) | Run Nu scripts in CI | all wave steps |
 
 ### Alternatives Considered
 | Instead of | Could Use | Tradeoff |
@@ -139,7 +139,7 @@ CI workflow.
 | CLOUDWARE vm-image build | Boot a FreeBSD QEMU VM and build inside it (D-01 option) | Cross-build directly on Linux is faster and already proven; avoids nested VM overhead |
 | Pre-baking tpm2-tools in image | `pkg install` at test time | SLIRP has no outbound internet at test time; pre-bake is required |
 
-**Version verification:** swtpm 0.7.3 confirmed on pop4090 (live). QEMU 8.2.2 confirmed on pop4090 (live). OVMF.fd confirmed at `/usr/share/qemu/OVMF.fd` on pop4090 (live).
+**Version verification:** swtpm 0.7.3 confirmed on <kvm-host> (live). QEMU 8.2.2 confirmed on <kvm-host> (live). OVMF.fd confirmed at `/usr/share/qemu/OVMF.fd` on <kvm-host> (live).
 
 ---
 
@@ -181,7 +181,7 @@ The smolBSD build will need `WITHOUT_QEMU` unset and pkg repos available.
 
 **Alternative (simpler, confirmed working):** Use the chroot pkg path by
 setting `QEMUSTATIC=/usr/bin/qemu-x86_64-static` in the build environment.
-pop4090 has KVM which means `qemu-x86_64-static` (user-mode emulation for
+<kvm-host> has KVM which means `qemu-x86_64-static` (user-mode emulation for
 chroot) is a separate binary from `qemu-system-x86_64`. Verify it is present:
 ```bash
 ls /usr/bin/qemu-x86_64-static
@@ -222,7 +222,7 @@ sha256sum /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2 \
 - **Installing tpm2-tools at test time via `pkg install`:** Network not available in QEMU SLIRP during test; must be pre-baked.
 - **Using `WITHOUT_QEMU=true NOPKG=yes` for smolBSD build:** Inherited from `run-freebsd-mini-pipeline.sh` but incompatible with pkg baking. The smolBSD pipeline must remove these flags.
 - **Referencing `/dev/nmdm0B` for QEMU console on Linux:** nmdm is FreeBSD-only; QEMU console on Linux is stdio or a PTY. `tpm-attest.exp` uses nmdm; for the QEMU backend the T2+T3 checks must be done via SSH (which `bhyve-tpm-pcr-verify.nu` already supports).
-- **Running `tpm-vm-test.yml` without Nushell installed on runner:** Nushell is absent from pop4090 (confirmed via SSH); must be installed by the CI job setup step.
+- **Running `tpm-vm-test.yml` without Nushell installed on runner:** Nushell is absent from <kvm-host> (confirmed via SSH); must be installed by the CI job setup step.
 
 ---
 
@@ -230,14 +230,14 @@ sha256sum /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2 \
 
 | Problem | Don't Build | Use Instead | Why |
 |---------|-------------|-------------|-----|
-| TPM 2.0 emulation | custom TPM socket server | `swtpm` 0.7.3 (already on pop4090) | Complete TPM 2.0 spec compliance, CRB support, state serialization |
+| TPM 2.0 emulation | custom TPM socket server | `swtpm` 0.7.3 (already on <kvm-host>) | Complete TPM 2.0 spec compliance, CRB support, state serialization |
 | PCR seal/unseal | custom crypto | `tpm2-tools` (`tpm2_createprimary`, `tpm2_create`, `tpm2_load`, `tpm2_unseal`) | TCTI abstraction, correct TPM object hierarchy handling |
 | Guest boot detection | polling sleep loop | `tests/time-to-ready-qemu.exp` (already exists) | Handles timeout, hard failure, reports TIME_TO_LOGIN |
 | Image build pipeline | new bash script | `bin/build-smolbsd.nu` + adapt `run-release-once.sh` pattern | FIX-1 through FIX-8 already encoded; avoids repeating hard-won bugs |
 | Test orchestration | new CI shell script | `bin/run-vm-tests.nu --tpm` | 10-step orchestrator already wired for --tpm flag |
 
 **Key insight:** Nearly all the infrastructure exists. The gap is (1) configs not
-copied into freebsd-src, (2) Nushell not on pop4090, (3) QEMU console path in
+copied into freebsd-src, (2) Nushell not on <kvm-host>, (3) QEMU console path in
 `step-tpm-device` needs SSH override for Linux/QEMU path, and (4) `tpm-vm-test.yml`
 references stock FreeBSD image and `fix-freebsd-vm.py`.
 
@@ -248,12 +248,12 @@ references stock FreeBSD image and `fix-freebsd-vm.py`.
 | Category | Items Found | Action Required |
 |----------|-------------|-----------------|
 | Stored data | None — no database stores image path or config names | None |
-| Live service config | pop4090 GitHub Actions runner `pop4090-amd64` (online, labels: self-hosted,linux,amd64,kvm); swtpm state dir `/var/run/smolbsd-tpm` may have stale state from prior T1 tests | Runner: no change needed. swtpm: reset before test run (`--action reset`) |
+| Live service config | <kvm-host> GitHub Actions runner `<kvm-host>-amd64` (online, labels: self-hosted,linux,amd64,kvm); swtpm state dir `/var/run/smolbsd-tpm` may have stale state from prior T1 tests | Runner: no change needed. swtpm: reset before test run (`--action reset`) |
 | OS-registered state | `/home/studio/bsd-build/stage/amd64-postworld-20260411T130830/` — installworld stage from 2026-04-11; GENERIC kernel (not SMOLBSD), no tpm compiled in | New build required with KERNCONF=SMOLBSD |
 | Secrets/env vars | `tpm-vm-test.yml` currently uses `SSH_PRIVATE_KEY` / runner auth; no new secrets needed for local image path | No change required |
 | Build artifacts | `/home/studio/bsd-build/obj/` contains GENERIC kernel artifacts; SMOLBSD kernel obj will be separate subtree (amd64.amd64/sys/SMOLBSD) | No cleanup required; SMOLBSD builds to different path |
 
-**smolBSD configs not yet in freebsd-src (verified on pop4090 live):**
+**smolBSD configs not yet in freebsd-src (verified on <kvm-host> live):**
 - `sys/amd64/conf/SMOLBSD` — absent from `/home/studio/bsd-build/src/freebsd-src/`
 - `release/tools/smolbsd-qemu.conf` — absent from `/home/studio/bsd-build/src/freebsd-src/`
 
@@ -269,13 +269,13 @@ Both must be copied in as Wave 1 tasks before any build can proceed.
 | `swtpm` | T1–T6 (swtpm socket) | ✓ | 0.7.3 | — |
 | OVMF.fd firmware | QEMU UEFI boot | ✓ | at `/usr/share/qemu/OVMF.fd` | — |
 | `sshpass` | bhyve-tpm-pcr-verify.nu | ✓ | system | key auth (--password "") |
-| Nushell (`nu`) | All .nu scripts in CI | ✗ | absent from pop4090 | Install in CI job setup step |
+| Nushell (`nu`) | All .nu scripts in CI | ✗ | absent from <kvm-host> | Install in CI job setup step |
 | `smolbsd-ci/` directory | Image storage | ✗ | does not exist | `mkdir -p /home/studio/smolbsd-ci` in build step |
 | SMOLBSD configs in freebsd-src | `make vm-image KERNCONF=SMOLBSD` | ✗ | not copied yet | Copy from repo in Wave 1 |
 | `qemu-x86_64-static` | pkg chroot in release build | ? | not verified | QEMU KVM can be used for chroot if binfmt_misc is configured |
 
 **Missing dependencies with no fallback:**
-- Nushell on pop4090 — required by all `nu bin/*.nu` CI steps; install in job setup
+- Nushell on <kvm-host> — required by all `nu bin/*.nu` CI steps; install in job setup
 
 **Missing dependencies with fallback:**
 - `qemu-x86_64-static` for chroot pkg install — if absent, use a QEMU VM to run
@@ -299,10 +299,10 @@ via SSH instead of `tpm-attest.exp` via serial console. The `--host 127.0.0.1 --
 --password smolbsd` flags match the QEMU hostfwd setup in `qemu-smolbsd.nu`.
 **Warning signs:** CI step shows `open /dev/nmdm0B: No such file or directory`.
 
-### Pitfall 2: Nushell Absent from pop4090
+### Pitfall 2: Nushell Absent from <kvm-host>
 **What goes wrong:** All CI steps that call `nu bin/*.nu` fail immediately with
 `nu: command not found`.
-**Why it happens:** pop4090 is a fresh Linux KVM host; Nushell is not in the
+**Why it happens:** <kvm-host> is a fresh Linux KVM host; Nushell is not in the
 default Ubuntu package set and is currently absent (confirmed via SSH).
 **How to avoid:** Add a Nushell install step to `tpm-vm-test.yml` and
 `build-image.yml`. Use the same pattern as `ci.yml` (download tarball from
@@ -329,7 +329,7 @@ is restarted without `--overwrite` the state continues accumulating measurements
 to wipe and reinitialize the swtpm state directory. Record the fresh PCR 0 value
 after boot for regression comparison against the known baseline:
 `B6A903D197F7F1DFDAD0C3D74244009C9AA407F55AE5F753D7F8B3F0C10F5727` (documented
-in docs/VM-TESTING.md, valid for OVMF.fd at `/usr/share/qemu/OVMF.fd` on pop4090).
+in docs/VM-TESTING.md, valid for OVMF.fd at `/usr/share/qemu/OVMF.fd` on <kvm-host>).
 
 ### Pitfall 5: tpmctl(8) Absent in smolBSD Image
 **What goes wrong:** `tpm-attest.exp` check 2 runs `tpmctl -G`. The smolBSD
@@ -385,8 +385,8 @@ qemu-system-x86_64 -M q35 -accel kvm -cpu host \
   -device tpm-tis,tpmdev=tpm0
 ```
 Note: `bin/qemu-smolbsd.nu --arch amd64 --tpm` generates exactly these flags.
-On pop4090 (Linux, KVM available): use `--accel kvm` for fast boot.
-OVMF.fd path on pop4090: `/usr/share/qemu/OVMF.fd` (confirmed on pop4090).
+On <kvm-host> (Linux, KVM available): use `--accel kvm` for fast boot.
+OVMF.fd path on <kvm-host>: `/usr/share/qemu/OVMF.fd` (confirmed on <kvm-host>).
 
 ### T1–T6 Quick Verification (manual)
 ```sh
@@ -399,9 +399,9 @@ nu tests/bhyve-tpm-pcr-verify.nu \
   --host 127.0.0.1 --port 2241 --password smolbsd
 ```
 
-### Nushell install in CI (pop4090 runner)
+### Nushell install in CI (<kvm-host> runner)
 ```yaml
-# Source: .github/workflows/ci.yml — same pattern for pop4090 runner
+# Source: .github/workflows/ci.yml — same pattern for <kvm-host> runner
 - name: Install Nushell
   run: |
     NU_VERSION="0.112.2"
@@ -438,20 +438,20 @@ tpm2_unseal -T device:/dev/tpm0 -c /tmp/seal.ctx --auth pcr:sha256:0,7
 | Old Approach | Current Approach | When Changed | Impact |
 |--------------|------------------|--------------|--------|
 | Stock FreeBSD image + kldload tpm at test time | smolBSD image with `device tpm` compiled in + tpm2-tools pre-baked | Phase 3 (this phase) | Eliminates pkg network dependency at test time |
-| bhyve virtio-tpm (FreeBSD host only) | QEMU tpm-tis (Linux KVM host) | Confirmed 2026-05-16 in docs/VM-TESTING.md | Enables CI on pop4090 Linux host |
+| bhyve virtio-tpm (FreeBSD host only) | QEMU tpm-tis (Linux KVM host) | Confirmed 2026-05-16 in docs/VM-TESTING.md | Enables CI on <kvm-host> Linux host |
 | tpm-attest.exp via nmdm console | bhyve-tpm-pcr-verify.nu via SSH | Already implemented | More robust; works on both Linux and FreeBSD test runners |
 
 **Deprecated/outdated:**
 - `fix-freebsd-vm.py` for smolBSD image path: not needed; baked into `smolbsd-qemu.conf`
-- bhyve backend for T2–T6 on pop4090: pop4090 is Linux; bhyve requires FreeBSD; QEMU is the correct backend here
+- bhyve backend for T2–T6 on <kvm-host>: <kvm-host> is Linux; bhyve requires FreeBSD; QEMU is the correct backend here
 
 ---
 
 ## Open Questions
 
-1. **`qemu-x86_64-static` availability on pop4090 for chroot pkg install**
+1. **`qemu-x86_64-static` availability on <kvm-host> for chroot pkg install**
    - What we know: `vm_extra_install_packages` in `vmimage.subr` uses `chroot ${DESTDIR} ${EMULATOR}` for pkg when `QEMUSTATIC` is set
-   - What's unclear: whether `/usr/bin/qemu-x86_64-static` (user-mode, separate from `qemu-system-x86_64`) is installed on pop4090; this was not verified in the SSH probe
+   - What's unclear: whether `/usr/bin/qemu-x86_64-static` (user-mode, separate from `qemu-system-x86_64`) is installed on <kvm-host>; this was not verified in the SSH probe
    - Recommendation: Wave 1 task should verify `ls /usr/bin/qemu-x86_64-static`. If absent, fall back to D-01 approach (boot a FreeBSD QEMU VM → pkg install inside → scp artifact back)
 
 2. **`step-tpm-device` console path for QEMU backend on Linux**
@@ -465,8 +465,8 @@ tpm2_unseal -T device:/dev/tpm0 -c /tmp/seal.ctx --auth pcr:sha256:0,7
    - Recommendation: Add `tpm-vm-test.yml` as a new workflow (the roadmap references it by name); `build-image.yml` can be a separate manual/scheduled trigger for image rebuilds
 
 4. **PCR 0 baseline value stability across OVMF versions**
-   - What we know: PCR 0 was `B6A903D197F7F1DFDAD0C3D74244009C9AA407F55AE5F753D7F8B3F0C10F5727` on 2026-05-16 with OVMF.fd at `/usr/share/qemu/OVMF.fd` on pop4090
-   - What's unclear: whether OVMF updates on pop4090 would change this value; T6 only checks that PCR changes after extend (not a specific value) so this is primarily a T4 stability concern
+   - What we know: PCR 0 was `B6A903D197F7F1DFDAD0C3D74244009C9AA407F55AE5F753D7F8B3F0C10F5727` on 2026-05-16 with OVMF.fd at `/usr/share/qemu/OVMF.fd` on <kvm-host>
+   - What's unclear: whether OVMF updates on <kvm-host> would change this value; T6 only checks that PCR changes after extend (not a specific value) so this is primarily a T4 stability concern
    - Recommendation: T4 checks "non-zero and stable across two reads" (not a specific value); this design is intentionally robust to firmware updates
 
 ---
@@ -500,7 +500,7 @@ No `.planning/config.json` found — treating `nyquist_validation` as enabled.
 
 ### Wave 0 Gaps
 - [ ] `tpm-vm-test.yml` does not exist yet — needs to be created with Nushell install + image restore + T1-T6 run steps
-- [ ] `build-image.yml` does not exist yet — needs to be created with pop4090 runner + smolBSD build steps
+- [ ] `build-image.yml` does not exist yet — needs to be created with <kvm-host> runner + smolBSD build steps
 - Existing test files (`bhyve-tpm-pcr-verify.nu`, `tpm-seal-test.nu`, `tpm-attest.exp`) cover all T1–T6 acceptance criteria
 
 ---
@@ -508,7 +508,7 @@ No `.planning/config.json` found — treating `nyquist_validation` as enabled.
 ## Sources
 
 ### Primary (HIGH confidence)
-- Live SSH probe of pop4090 (10.0.2.42) — confirmed: QEMU 8.2.2, swtpm 0.7.3, OVMF.fd at `/usr/share/qemu/OVMF.fd`, sshpass present, Nushell absent, smolbsd-ci dir absent, SMOLBSD configs not in freebsd-src, installworld stage present with GENERIC kernel
+- Live SSH probe of <kvm-host> (<kvm-host-ip>) — confirmed: QEMU 8.2.2, swtpm 0.7.3, OVMF.fd at `/usr/share/qemu/OVMF.fd`, sshpass present, Nushell absent, smolbsd-ci dir absent, SMOLBSD configs not in freebsd-src, installworld stage present with GENERIC kernel
 - `plans/tinyos/PHASE-3-TPM.md` — full T1–T6 acceptance contract, platform matrix, aarch64 QEMU limitation root cause
 - `docs/VM-TESTING.md` — validated QEMU+swtpm command lines, PCR0 baseline value `B6A903D197F7F1DFDAD0C3D74244009C9AA407F55AE5F753D7F8B3F0C10F5727`
 - `bin/run-vm-tests.nu` — confirmed step-tpm-device uses nmdm path (structural gap for QEMU on Linux)
@@ -529,7 +529,7 @@ No `.planning/config.json` found — treating `nyquist_validation` as enabled.
 ## Metadata
 
 **Confidence breakdown:**
-- Standard stack: HIGH — all components probed live on pop4090
+- Standard stack: HIGH — all components probed live on <kvm-host>
 - Architecture: HIGH — existing scripts read and understood; gaps identified with specific line references
 - Pitfalls: HIGH — most from direct code inspection + live environment probe; swtpm PCR determinism from plans/PHASE-3-TPM.md §10
 

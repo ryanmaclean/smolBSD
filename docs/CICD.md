@@ -16,13 +16,13 @@ known-good value established during manual validation.
 | Workflow  | `.github/workflows/tpm-vm-test.yml` |
 | Test driver | `tests/tpm-smoke-test.py` |
 | Runner setup | `bin/setup-runner.sh` |
-| Runner host | pop4090 (10.0.2.42) |
+| Runner host | <kvm-host> (<kvm-host-ip>) |
 | FreeBSD image | `FreeBSD-15.1-STABLE-amd64-ufs.qcow2.xz` (UFS, amd64) |
 | Expected PCR0 | `B6A903D197F7F1DFDAD0C3D74244009C9AA407F55AE5F753D7F8B3F0C10F5727` |
 
 ---
 
-## Registering pop4090 as a runner
+## Registering <kvm-host> as a runner
 
 ### 1. Get a registration token
 
@@ -31,10 +31,10 @@ Go to:
 
 Copy the token shown in the "Configure" step (it is valid for ~1 hour).
 
-### 2. SSH into pop4090
+### 2. SSH into <kvm-host>
 
 ```sh
-ssh studio@10.0.2.42
+ssh studio@<kvm-host-ip>
 ```
 
 ### 3. Run the setup script
@@ -48,7 +48,7 @@ Optional overrides:
 
 ```sh
 GITHUB_RUNNER_TOKEN=<token> \
-RUNNER_NAME=pop4090-amd64 \
+RUNNER_NAME=<kvm-host>-amd64 \
 RUNNER_LABELS=self-hosted,linux,amd64,kvm \
 sh bin/setup-runner.sh
 ```
@@ -154,7 +154,7 @@ producing a new cache key and forcing a fresh download.
 To manually clear it on the runner:
 
 ```sh
-ssh studio@10.0.2.42
+ssh studio@<kvm-host-ip>
 rm -rf /tmp/smolbsd-ci
 ```
 
@@ -191,14 +191,14 @@ available matching runner — no workflow changes needed.
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| `swtpm socket did not appear` | swtpm not installed or permission issue | `sudo apt install swtpm` on pop4090; ensure runner user can `sudo swtpm` |
+| `swtpm socket did not appear` | swtpm not installed or permission issue | `sudo apt install swtpm` on <kvm-host>; ensure runner user can `sudo swtpm` |
 | QEMU exits immediately | `/dev/kvm` not accessible | `sudo chmod 666 /dev/kvm` or add runner user to `kvm` group |
 | `Login prompt not seen within 240s` | QEMU too slow / image corrupt | Check QEMU output; re-download image by clearing `/tmp/smolbsd-ci` |
 | SSH timeout | XMSS fix did not apply | Check console log for errors; XMSS removal step may have failed |
 | PCR0 mismatch | Firmware or image changed | Re-run manual validation, update `EXPECTED_PCR0` in workflow |
-| Runner shows offline | systemd service stopped | `ssh studio@10.0.2.42 'sudo systemctl start actions.runner.*'` |
+| Runner shows offline | systemd service stopped | `ssh studio@<kvm-host-ip> 'sudo systemctl start actions.runner.*'` |
 
-To view runner logs on pop4090:
+To view runner logs on <kvm-host>:
 
 ```sh
 journalctl -u 'actions.runner.ryanmaclean-smolBSD.*' -f

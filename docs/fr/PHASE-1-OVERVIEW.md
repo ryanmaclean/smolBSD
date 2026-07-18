@@ -25,7 +25,7 @@ toutes deux construites à partir du même outillage FreeBSD officiel
 
 La décision est consignée dans `PHASE-1-ARCH-DECISION.md` (option C).
 
-**Raison principale — asymétrie HVF.** Sur l'hôte de build `minim4-24`
+**Raison principale — asymétrie HVF.** Sur l'hôte de build `<hypervisor-host>`
 (Apple Silicon), l'accélérateur matériel HVF ne fonctionne qu'avec l'ISA
 native — aarch64. Une VM aarch64 sous HVF démarre en 10–30 s et passe
 aisément la porte d'acceptation ≤ 30 s. Une VM amd64 sous TCG (émulation
@@ -34,13 +34,13 @@ hôte. Construire une image dont les portes d'acceptation échouent sur
 l'hôte de build lui-même est inacceptable.
 
 **Raisons complémentaires.** La totalité du parc matériel existant est en
-aarch64 (nœuds fbrpi, Pi 5, RK3588, VM fbuild). Les chaînes d'outils
+aarch64 (nœuds fbrpi, Pi 5, RK3588, VM <aarch64-builder>). Les chaînes d'outils
 (`freebsd-build-vm`, `zig-cc`, `freebsd-pi`) visent toutes aarch64. Une
 image amd64 isolée dans ce parc n'a pas d'autre consommateur pour partager
 le coût de débogage.
 
 **La branche amd64 n'est pas abandonnée.** Elle se construit par
-compilation croisée depuis fbuild (`TARGET=amd64 TARGET_ARCH=amd64`) et
+compilation croisée depuis <aarch64-builder> (`TARGET=amd64 TARGET_ARCH=amd64`) et
 est testée sur un hôte x86 KVM (instance Vultr ou machine Linux x86 de la
 flotte). Le plan de base existant est réutilisé tel quel.
 
@@ -106,11 +106,11 @@ Chaque variante doit passer cinq mesures avant validation de Phase I :
 **Phase I : COMPLÈTE sur les deux architectures.**
 
 - **Phase I aarch64** : toutes les cinq portes des reliques mesurées franchies
-  (audit task-0020). Build natif sur `minim4-24` via HVF. Artefact produit :
+  (audit task-0020). Build natif sur `<hypervisor-host>` via HVF. Artefact produit :
   qcow2 de 128 Mio (cible aspirationnelle atteinte).
 - **Phase I amd64** : toutes les portes franchies avec seuils TCG assouplis.
-  Compilation croisée depuis fbuild, testé sur Vultr (instance x86 KVM).
-  L'hôte `minim4-24` étant Apple Silicon, il ne dispose pas de KVM pour x86 ;
+  Compilation croisée depuis <aarch64-builder>, testé sur Vultr (instance x86 KVM).
+  L'hôte `<hypervisor-host>` étant Apple Silicon, il ne dispose pas de KVM pour x86 ;
   les portes de temps sont donc ajustées pour TCG.
 
 **Phase II en cours de cadrage** : démarrage physique sur Pi 5 (BCM2712) et
@@ -171,7 +171,7 @@ repli pour les cartes sans build edk2-rk35xx disponible.
 ### 6.3 Pipeline de conversion — `bin/qcow2-to-physical.nu`
 
 Le script `bin/qcow2-to-physical.nu` automatise les six étapes de conversion
-sur l'hôte de build FreeBSD (fbuild) :
+sur l'hôte de build FreeBSD (<aarch64-builder>) :
 
 1. **Conversion en raw** — `qemu-img convert -f qcow2 -O raw` produit
    `smolbsd-aarch64-<board>.raw`.
@@ -221,7 +221,7 @@ nécessitent un hôte amd64 bare-metal ou équivalent.
 
 **Résultats des enquêtes d'infrastructure (task-0028 à task-0030) :**
 
-- **HVF ne permet pas la virtualisation imbriquée.** `minim4-24` (Apple Silicon)
+- **HVF ne permet pas la virtualisation imbriquée.** `<hypervisor-host>` (Apple Silicon)
   n'expose pas EL2 aux invités QEMU/HVF : bhyve ne peut pas démarrer, `/dev/vmm`
   n'est jamais créé.
 - **Vultr vc2 n'expose pas VT-x.** Le message `vmx_modinit: processor does not
@@ -252,8 +252,8 @@ spécifique à l'émulation aarch64 ; la solution est **amd64 QEMU avec `tpm-tis
 
 ### 7.1 Porte CI : OUVERTE (sous-portes TPM en attente)
 
-Trois passes consécutives sans TPM ont été enregistrées sur `minim4-24`
-(FreeBSD 15.0-RELEASE-p5 aarch64, QEMU 10.2.1 HVF, fbuild VM) :
+Trois passes consécutives sans TPM ont été enregistrées sur `<hypervisor-host>`
+(FreeBSD 15.0-RELEASE-p5 aarch64, QEMU 10.2.1 HVF, <aarch64-builder> VM) :
 
 | Passe | Horodatage | Mémoire libre VM | Résultat |
 |-------|-----------|-----------------|---------|
@@ -265,7 +265,7 @@ Trois passes consécutives sans TPM ont été enregistrées sur `minim4-24`
 `{consecutive_passes: 3, required: 3, gate: open}` — code de sortie 0.
 
 La **porte boot-gate** (temps jusqu'à `login:` ≤ 30 s) a été validée
-séparément à **7 s** sur minim4-24 (task-0031). Le câblage du script expect
+séparément à **7 s** sur <hypervisor-host> (task-0031). Le câblage du script expect
 nmdm/stdio reste à finaliser pour l'intégrer dans la suite automatisée.
 
 Sous-portes **en attente** : boot-gate automatisé, artifact-size (image
@@ -275,7 +275,7 @@ release), crash-recovery (harnais QEMU monitor à implémenter), TPM complet
 
 ### 7.2 Construction de l'image amd64 smolBSD
 
-Une image amd64 a été construite par compilation croisée sur fbuild
+Une image amd64 a été construite par compilation croisée sur <aarch64-builder>
 (`TARGET=amd64 TARGET_ARCH=amd64`) et est disponible sous :
 `smolbsd-buildworld @ 108.61.206.203:/root/genoa/out/smolbsd-linode-amd64-v0.1.0.raw`
 (2,0 Gio, GPT : 128 Mio ESP avec `BOOTX64.EFI` + racine UFS 1,9 Gio,

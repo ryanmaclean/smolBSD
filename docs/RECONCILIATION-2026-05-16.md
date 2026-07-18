@@ -16,7 +16,7 @@ Concrete behavioral assertions from `docs/superpowers/specs/2026-04-30-mailbox-j
 - **§7** Every `verdict="pass"` + `attestation_required=true` reply MUST carry at least one `[[claims]]` block; coordinator cross-checks with `fleet-eval verify`.
 - **§11** Secrets never in spool; `var/run/secrets/` mode 0600; coordinator materializes via `bin/secret-materialize.nu` and wipes via `bin/secret-wipe.nu` after harvest.
 - **§12** Seven-state retry machine: `DISPATCHED → AWAITING_REPLY → HARVEST → VERIFY → DONE / RETRY_QUEUED / ESCALATE`. Decision table with Fibonacci backoff `[60, 60, 120]`. Retry payload must include `prior_attempt_msgid`, `prior_attempt_count`, etc. No-double-dispatch invariant. `pass` without `[[claims]]` when required → MALFORMED.
-- **§13** Escalation: primary channel is in-spool message to `user@smolbsd.local` + `var/mail/HALT` marker. Fallback: one-shot IRC DM to `ryan` on `10.0.3.203:6697` TLS, one plain fallback on 6667, then record outcome and continue. HALT marker TOML body must include `fallback_fired` and `fallback_status` fields. Triple-failure path exits code 78 (`EX_CONFIG`).
+- **§13** Escalation: primary channel is in-spool message to `user@smolbsd.local` + `var/mail/HALT` marker. Fallback: one-shot IRC DM to `ryan` on `<irc-host-ip>:6697` TLS, one plain fallback on 6667, then record outcome and continue. HALT marker TOML body must include `fallback_fired` and `fallback_status` fields. Triple-failure path exits code 78 (`EX_CONFIG`).
 - **§17** Every request must include `tools_required`. Coordinator refuses dispatch if subagent type's capability set does not cover `tools_required`. Capability mismatch is a routing rejection, not a retry.
 
 ---

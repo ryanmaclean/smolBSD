@@ -6,7 +6,7 @@
 # Derived from arm64/conf/VIRT (QEMU-optimized baseline).
 #
 # DO NOT add physical device support here. This kernel is for QEMU/HVF only.
-# Build host: fbuild (FreeBSD 15 aarch64); native arm64 build — no cross-compile.
+# Build host: the aarch64 builder (FreeBSD 15 aarch64); native arm64 build — no cross-compile.
 # QEMU target: qemu-system-aarch64 -machine virt,accel=hvf -cpu host
 #
 # Maintainer: planner@smolbsd.local

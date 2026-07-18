@@ -63,7 +63,7 @@
 #    5B).  loader.conf uses: console="uart,io,0xff1a0000"
 #    FreeBSD arm64 uart driver binds via FDT 'rockchip,rk3588-uart' compat.
 #
-# Build host: fbuild (FreeBSD 15 aarch64); native arm64 build.
+# Build host: the aarch64 builder (FreeBSD 15 aarch64); native arm64 build.
 # See: release/tools/smolbsd-rk3588.conf, plans/tinyos/PHASE-2-PHYSICAL-BOOT.md
 #
 # Maintainer: planner@smolbsd.local

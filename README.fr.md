@@ -24,9 +24,9 @@ tout l'état nécessaire entre les agents.
 
 Deux branches s'exécutent en parallèle ; aarch64 est la branche principale.
 
-### aarch64 — natif HVF sur Apple Silicon (`minim4-24`)
+### aarch64 — natif HVF sur Apple Silicon (`<hypervisor-host>`)
 
-FreeBSD 15.0-RELEASE arm64, compilé nativement sur `fbuild` (une VM FreeBSD 15
+FreeBSD 15.0-RELEASE arm64, compilé nativement sur `<aarch64-builder>` (une VM FreeBSD 15
 aarch64 hébergée sur un Mac Apple Silicon). HVF (Hypervisor.framework) offre
 une accélération quasi bare-metal pour l'invité aarch64. La porte d'acceptation
 de 30 secondes (temps jusqu'à l'invite de connexion) n'est atteignable qu'ici ;
@@ -34,7 +34,7 @@ l'émulation amd64 via TCG est 5 à 10 fois plus lente.
 
 ### amd64 — KVM sur Vultr
 
-FreeBSD 15.0-RELEASE amd64, compilé en croisé depuis l'hôte fbuild aarch64 et
+FreeBSD 15.0-RELEASE amd64, compilé en croisé depuis l'hôte <aarch64-builder> aarch64 et
 déployé sur une instance Vultr x86 compatible KVM pour sa porte de mesure
 temporelle.
 
@@ -80,10 +80,10 @@ Exemples de rôles :
 ### Prérequis
 
 - Mac Apple Silicon (pour le chemin aarch64/HVF) ou une instance Vultr KVM (chemin amd64)
-- VM FreeBSD 15.0-RELEASE `fbuild` accessible via saut SSH :
+- VM FreeBSD 15.0-RELEASE `<aarch64-builder>` accessible via saut SSH :
 
 ```sh
-ssh -J minim4-24 -p 2222 builder@localhost
+ssh -J <hypervisor-host> -p 2222 builder@localhost
 ```
 
 - Nushell (`nu`) disponible localement pour les scripts du coordinateur
@@ -91,7 +91,7 @@ ssh -J minim4-24 -p 2222 builder@localhost
 
 ### Compiler le noyau
 
-Se connecter en SSH sur fbuild et exécuter :
+Se connecter en SSH sur <aarch64-builder> et exécuter :
 
 ```sh
 make -j4 -C /usr/src buildworld buildkernel KERNCONF=SMOLBSD

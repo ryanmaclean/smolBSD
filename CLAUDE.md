@@ -14,6 +14,8 @@
 | `var/mail/spool` | The mbox spool (messages between coordinator and agents) |
 | `var/run/coord-state.toml` | Persisted FSM state (survives restarts) |
 | `tests/` | Nu unit and integration tests |
+| `bin/build-smolbsd.nu` | Image build pipeline — see `docs/BUILDING.md`; release image goes via `cloudware-release` + `SMOLBSDCONF` (FIX-9), never `vm-image ... CLOUDWARE_CONF` |
+| `docs/UR-BSD-VERIFY.md` | Verified findings + assumptions ledger for the build/image work — read before changing kernconfs, release confs, or build invocations |
 
 ## 3. How to run
 
@@ -32,7 +34,7 @@ Optional environment variables:
 | `HALT_INTERVAL` | `10` | Seconds to sleep while halted |
 | `STATE_FILE` | `var/run/coord-state.toml` | FSM state file |
 | `SPOOL` | `var/mail/spool` | mbox spool path |
-| `SMOLBSD_CLAUDE_MODEL` | `claude-sonnet-4-6` | Claude model for subagent dispatch |
+| `SMOLBSD_CLAUDE_MODEL` | `claude-sonnet-5` | Claude model for subagent dispatch |
 
 Run a single tick manually:
 
@@ -79,7 +81,7 @@ Critical sections:
 
 ## 8. Branch
 
-Active development branch: `claude/stoic-pascal-u6y3T`
+Development happens on short-lived `claude/*` feature branches merged to `main` via PR — check `git branch --show-current`; do not assume a fixed branch name.
 
 ## 9. Security — install hooks after clone
 
@@ -92,6 +94,8 @@ nu bin/setup-hooks.nu
 This installs `.git/hooks/pre-push` which scans the spool for public IPs and instance UUIDs before any push.
 
 **Never commit `var/mail/spool`** — it contains live IPs, instance UUIDs, and credential references. It is gitignored, but force-adds (`git add -f`) are blocked by the hook.
+
+**Never commit internal hostnames or private IPs** — use placeholders (`<kvm-host>`, `<internal-ip>`, …) in docs, and env vars (`JUMP_HOST`, `SMOLBSD_SSH_JUMP`, `SMOLBSD_IRC_HOST`, `AMD64_REMOTE`, …) for site-specific values in scripts.
 
 ## 10. License
 

@@ -3,9 +3,9 @@
 # bin/harvest.sh — Harvest qcow2 build artifacts from remote build hosts
 #                  and run acceptance tests.
 #
-# Build hosts:
-#   aarch64: fbuild  — scp -J 100.91.236.29 -P 2222 builder@localhost
-#   amd64:   Vultr   — root@REDACTED-VULTR-IP
+# Build hosts are site-specific — point the env vars at yours:
+#   aarch64: AARCH64_REMOTE=<user@host>:<path>   (optional JUMP_HOST=<jump>)
+#   amd64:   AMD64_REMOTE=<user@host>:<path>
 #
 # Acceptance gates:
 #   Artifact size: <= 512 MiB
@@ -23,8 +23,13 @@ ROOT="${ROOT:-$(dirname "$SCRIPT_DIR")}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/var/artifacts}"
 REPORT="$ARTIFACTS_DIR/harvest-report.txt"
 
-AMD64_REMOTE="root@REDACTED-VULTR-IP:/usr/obj/amd64.amd64/usr/src/release/vm/FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2"
-AARCH64_REMOTE="builder@localhost:/usr/obj/arm64.aarch64/usr/src/release/vm/FreeBSD-15.0-RELEASE-arm64-SMOLBSD.qcow2"
+# FIX-9: cloudware-release writes the artifact to the release objdir root as
+# ${CLOUDWARE:tl}.${FS}.${FMT} — smolbsd.ufs.qcow2 on releng/15.0 (verified in
+# Makefile.vm). Default paths use the unified objdir layout
+# (/usr/obj/usr/src/<arch>/release — src.sys.obj.mk MK_UNIFIED_OBJDIR=yes).
+# Defaults are overridable per-run: AMD64_REMOTE=... sh bin/harvest.sh
+AMD64_REMOTE="${AMD64_REMOTE:-root@REDACTED-VULTR-IP:/usr/obj/usr/src/amd64.amd64/release/smolbsd.ufs.qcow2}"
+AARCH64_REMOTE="${AARCH64_REMOTE:-builder@localhost:/usr/obj/usr/src/arm64.aarch64/release/smolbsd.ufs.qcow2}"
 
 AMD64_IMAGE="$ARTIFACTS_DIR/FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2"
 AARCH64_IMAGE="$ARTIFACTS_DIR/FreeBSD-15.0-RELEASE-arm64-SMOLBSD.qcow2"
@@ -107,19 +112,26 @@ report "============================================================"
 report ""
 
 # ---------------------------------------------------------------------------
-# Step 1: Harvest aarch64 from fbuild (via jump host)
+# Step 1: Harvest aarch64 from <aarch64-builder> (via jump host)
 # ---------------------------------------------------------------------------
 
-report "--- Harvesting aarch64 from fbuild ---"
+report "--- Harvesting aarch64 from the aarch64 build host ---"
 log "SCP aarch64: $AARCH64_REMOTE -> $AARCH64_IMAGE"
 
-if scp -J 100.91.236.29 -P 2222 \
+# JUMP_HOST is optional and site-specific: set it if your aarch64 builder is
+# only reachable via an SSH jump host; leave unset for a direct connection.
+if [ -n "${JUMP_HOST:-}" ]; then
+    _scp_aarch64() { scp -J "$JUMP_HOST" -P 2222 "$@"; }
+else
+    _scp_aarch64() { scp -P 2222 "$@"; }
+fi
+if _scp_aarch64 \
         "$AARCH64_REMOTE" \
         "$AARCH64_IMAGE"; then
     report "  OK    aarch64 image fetched: $AARCH64_IMAGE"
     report "  INFO  aarch64 timestamp: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 else
-    gate_fail "aarch64 SCP from fbuild failed"
+    gate_fail "aarch64 SCP from build host failed"
 fi
 
 # ---------------------------------------------------------------------------
@@ -127,14 +139,14 @@ fi
 # ---------------------------------------------------------------------------
 
 report ""
-report "--- Harvesting amd64 from Vultr ---"
+report "--- Harvesting amd64 from the amd64 build host ---"
 log "SCP amd64: $AMD64_REMOTE -> $AMD64_IMAGE"
 
 if scp "$AMD64_REMOTE" "$AMD64_IMAGE"; then
     report "  OK    amd64 image fetched: $AMD64_IMAGE"
     report "  INFO  amd64 timestamp: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 else
-    gate_fail "amd64 SCP from Vultr failed"
+    gate_fail "amd64 SCP from build host failed"
 fi
 
 # ---------------------------------------------------------------------------

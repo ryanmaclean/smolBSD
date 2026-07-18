@@ -21,16 +21,16 @@ Just-Enough-Context（JEC）ドロップが必要なすべての状態を運び�
 
 2つのブランチが並行して動作します。aarch64が主要ブランチです。
 
-### aarch64 — Apple Silicon 上での HVF ネイティブ（`minim4-24`）
+### aarch64 — Apple Silicon 上での HVF ネイティブ（`<hypervisor-host>`）
 
 FreeBSD 15.0-RELEASE arm64。Apple Silicon Mac 上でホストされるFreeBSD 15 aarch64 VM
-である `fbuild` でネイティブビルドします。HVF（Hypervisor.framework）により、
+である `<aarch64-builder>` でネイティブビルドします。HVF（Hypervisor.framework）により、
 aarch64ゲストはベアメタルに近い速度で動作します。30秒以内のログイン到達という
 受け入れ条件はここでのみ達成可能です。TCG経由のamd64エミュレーションは5〜10倍遅くなります。
 
 ### amd64 — Vultr 上での KVM
 
-FreeBSD 15.0-RELEASE amd64。aarch64のfbuildホストからクロスコンパイルし、
+FreeBSD 15.0-RELEASE amd64。aarch64の<aarch64-builder>ホストからクロスコンパイルし、
 KVM対応のx86 Vultrインスタンスにデプロイして計時ゲートを実施します。
 
 ## ビルド方針
@@ -74,10 +74,10 @@ jj new                                # 新しい変更を開く
 ### 前提条件
 
 - Apple Silicon Mac（aarch64/HVF パス用）または Vultr KVM インスタンス（amd64パス用）
-- SSH ジャンプ経由でアクセスできるFreeBSD 15.0-RELEASE `fbuild` VM：
+- SSH ジャンプ経由でアクセスできるFreeBSD 15.0-RELEASE `<aarch64-builder>` VM：
 
 ```sh
-ssh -J minim4-24 -p 2222 builder@localhost
+ssh -J <hypervisor-host> -p 2222 builder@localhost
 ```
 
 - コーディネータースクリプト用にローカルで利用可能な Nushell（`nu`）
@@ -85,7 +85,7 @@ ssh -J minim4-24 -p 2222 builder@localhost
 
 ### カーネルをビルドする
 
-fbuild に SSH 接続して実行：
+<aarch64-builder> に SSH 接続して実行：
 
 ```sh
 make -j4 -C /usr/src buildworld buildkernel KERNCONF=SMOLBSD

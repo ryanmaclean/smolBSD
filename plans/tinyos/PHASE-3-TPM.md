@@ -58,7 +58,7 @@ and may differ between firmware versions in ways that are hard to isolate.
 
 `swtpm` runs as an unprivileged process on the build host. The bhyve guest
 attaches the emulated TPM via the `virtio-tpm` device. The entire
-start-measure-attest cycle can run inside a CI job on `fbuild` without any
+start-measure-attest cycle can run inside a CI job on `<aarch64-builder>` without any
 hardware provisioning step, making gate failures immediately actionable.
 
 ### 2.4 Proves the stack before physical
@@ -109,7 +109,7 @@ introduced in Phase III.
 
 ## 4. Bhyve Host Requirements
 
-The following must be present on the bhyve host (`fbuild` or equivalent
+The following must be present on the bhyve host (`<aarch64-builder>` or equivalent
 FreeBSD 15 amd64 host) before Phase III work begins.
 
 | Requirement | Command to verify | Notes |
@@ -149,11 +149,11 @@ will refuse to open `/dev/vmm`.
 | Bare-metal amd64 (Intel/AMD) | VT-x / AMD-V | yes | Preferred; full `vmm.ko` support |
 | Vultr vc2 amd64 cloud instance | VMX exposed to guest | yes | Verified: nested virt enabled by default |
 | Bare-metal aarch64 (non-Apple) | EL2 present | yes | e.g. Ampere Altra; EL2 not blocked |
-| FreeBSD VM under QEMU/HVF (Apple Silicon) | EL2 blocked by HVF | **no** | `fbuild` on minim4-24 falls into this category |
+| FreeBSD VM under QEMU/HVF (Apple Silicon) | EL2 blocked by HVF | **no** | `<aarch64-builder>` on <hypervisor-host> falls into this category |
 | FreeBSD VM under VirtualBox / VMware | depends on host config | conditional | Nested VT-x must be enabled explicitly |
 
-**Implication for smolBSD:** `fbuild` (the project's aarch64 FreeBSD VM on
-`minim4-24`) cannot run bhyve. Phase-III TPM testing must be performed on a
+**Implication for smolBSD:** `<aarch64-builder>` (the project's aarch64 FreeBSD VM on
+`<hypervisor-host>`) cannot run bhyve. Phase-III TPM testing must be performed on a
 dedicated bare-metal amd64 host or a Vultr vc2 amd64 instance. The scripts
 `bin/bhyve-smolbsd.nu` and `bin/vultr-bhyve-provision.nu` target these hosts.
 
@@ -175,7 +175,7 @@ bhyve.
 | Test | Platform required | Reason |
 |------|------------------|--------|
 | T1 (swtpm socket) | Any host with `swtpm` installed | Host-side check only |
-| T2–T6 (guest TPM) | amd64 bhyve (bare-metal or Vultr vc2) OR amd64 QEMU with `-device tpm-tis` | `virtio-tpm` amd64-only in bhyve; amd64 QEMU via TCG on minim4-24 (tested) |
+| T2–T6 (guest TPM) | amd64 bhyve (bare-metal or Vultr vc2) OR amd64 QEMU with `-device tpm-tis` | `virtio-tpm` amd64-only in bhyve; amd64 QEMU via TCG on <hypervisor-host> (tested) |
 | Physical Pi 5 fTPM | Pi 5 physical board (Phase IV) | RP1 TrustZone fTPM |
 | Physical RK3588 fTPM | RK3588 + OP-TEE build (Phase IV) | ARM TrustZone + OP-TEE |
 
@@ -299,10 +299,10 @@ bhyve -c 2 -m 512M \
 # Verified via expect script (tests/tpm-attest.exp)
 ```
 
-**Path B — amd64 QEMU with TCG (works on any host including macOS minim4-24):**
+**Path B — amd64 QEMU with TCG (works on any host including macOS <hypervisor-host>):**
 
 ```sh
-# Tested on minim4-24 via bin/qemu-smolbsd.nu
+# Tested on <hypervisor-host> via bin/qemu-smolbsd.nu
 qemu-system-x86_64 -M q35 -accel tcg -cpu qemu64 \
   -bios /opt/homebrew/share/qemu/edk2-x86_64-code.fd \
   -m 512M -smp 2 \

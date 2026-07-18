@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
-# setup-runner.sh — Register pop4090 as a GitHub Actions self-hosted runner
+# setup-runner.sh — Register <kvm-host> as a GitHub Actions self-hosted runner
 #                   for ryanmaclean/smolBSD.
 #
 # Usage (env vars):
@@ -14,7 +14,7 @@
 #                          GitHub → repo → Settings → Actions → Runners → New runner
 #
 # Optional:
-#   RUNNER_NAME    — default: pop4090-amd64
+#   RUNNER_NAME    — default: <kvm-host>-amd64
 #   RUNNER_LABELS  — default: self-hosted,linux,amd64,kvm
 #
 # Runner version pinned to a known-good release (Apache-2.0 / MIT licensed).
@@ -33,7 +33,7 @@ REPO_URL="https://github.com/ryanmaclean/smolBSD"
 # ── Parse arguments ────────────────────────────────────────────────────────────
 
 TOKEN="${1:-${GITHUB_RUNNER_TOKEN:-}}"
-NAME="${2:-${RUNNER_NAME:-pop4090-amd64}}"
+NAME="${2:-${RUNNER_NAME:-smolbsd-kvm-amd64}}"
 LABELS="${3:-${RUNNER_LABELS:-self-hosted,linux,amd64,kvm}}"
 
 if [ -z "$TOKEN" ]; then

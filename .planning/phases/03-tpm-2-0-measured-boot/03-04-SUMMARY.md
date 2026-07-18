@@ -6,7 +6,7 @@ tags: [freebsd, tpm2, swtpm, qemu, bhyve, pcr, measured-boot, testing]
 
 requires:
   - phase: 03-tpm-2-0-measured-boot
-    provides: "03-03: smolbsd-amd64-tpm.qcow2 at /home/studio/smolbsd-ci/ on pop4090"
+    provides: "03-03: smolbsd-amd64-tpm.qcow2 at /home/studio/smolbsd-ci/ on <kvm-host>"
 
 provides:
   - "T1-T6 TPM acceptance test results at .planning/phases/03-tpm-2-0-measured-boot/03-T1T6-RESULTS.toml"
@@ -40,7 +40,7 @@ key-files:
     - "bin/qemu-smolbsd.nu — run-external spread instead of ^...$list for Nu 0.112.2"
     - "sys/amd64/conf/SMOLBSD — options FFS + GEOM_PART_GPT (both missing from MINIMAL)"
     - "tests/bhyve-tpm-pcr-verify.nu — T3 tpm2_getcap fallback; T5 use nu.current-exe"
-    - "/home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2 (pop4090) — GENERIC kernel injected"
+    - "/home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2 (<kvm-host>) — GENERIC kernel injected"
 
 key-decisions:
   - "Used FreeBSD 15.1-STABLE GENERIC kernel in smolbsd-amd64-tpm.qcow2 instead of rebuilding SMOLBSD kernel: SMOLBSD kernel was missing options FFS (inherited from MINIMAL which omits it), causing all root mount attempts to fail with 'unknown file system'. GENERIC kernel has FFS compiled in and supports TPM via tpm.ko module."
@@ -61,7 +61,7 @@ completed: 2026-06-05
 
 # Phase 3 Plan 04: TPM Acceptance Tests (T1-T6) Summary
 
-**All six T1-T6 TPM acceptance tests pass on pop4090: swtpm socket present, /dev/tpm0 accessible, tpm2_getcap responds, PCR0 readable and non-zero (UEFI measured boot confirmed)**
+**All six T1-T6 TPM acceptance tests pass on <kvm-host>: swtpm socket present, /dev/tpm0 accessible, tpm2_getcap responds, PCR0 readable and non-zero (UEFI measured boot confirmed)**
 
 ## Performance
 
@@ -69,11 +69,11 @@ completed: 2026-06-05
 - **Started:** 2026-06-05T00:15:00Z
 - **Completed:** 2026-06-05T08:33:00Z
 - **Tasks:** 2 (Task 1: boot smolBSD+swtpm; Task 2: run T1-T6 verifier)
-- **Files modified:** 4 scripts + 1 qcow2 image (pop4090)
+- **Files modified:** 4 scripts + 1 qcow2 image (<kvm-host>)
 
 ## Accomplishments
 
-- smolBSD guest booted on pop4090 with QEMU+KVM+swtpm 0.7.3 and /dev/tpm0 present
+- smolBSD guest booted on <kvm-host> with QEMU+KVM+swtpm 0.7.3 and /dev/tpm0 present
 - All 6 T1-T6 TPM acceptance tests verified to pass against live guest
 - PCR0 = B6A903D...5727 (non-zero — live UEFI measured boot by swtpm confirmed)
 - T5 dry-run (tpm-seal-test.nu --dry-run) passes — seal/unseal script is syntactically valid
@@ -125,7 +125,7 @@ completed: 2026-06-05
 - **Found during:** Task 1 (smolBSD guest boot)
 - **Issue:** MINIMAL kernel config omits `options FFS`; all SMOLBSD builds therefore lack the FFS filesystem driver. Every root mount attempt (via gpt/rootfs, ufs/rootfs, vtbd0p4) failed with "error 2: unknown file system" — kernel has no UFS driver
 - **Fix:** Added `options FFS` and `options GEOM_PART_GPT` to sys/amd64/conf/SMOLBSD. For the immediate test run, injected FreeBSD 15.1-STABLE GENERIC kernel into qcow2 using dual-disk QEMU technique (boot GENERIC VM, mount smolBSD qcow2 as vtbd1, copy kernel, set tpm_load="YES" in loader.conf)
-- **Files modified:** sys/amd64/conf/SMOLBSD; /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2 (pop4090)
+- **Files modified:** sys/amd64/conf/SMOLBSD; /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2 (<kvm-host>)
 - **Committed in:** d49693d
 
 **4. [Rule 2 - Missing Linux compat] swtpm --pid-file flag differs on Ubuntu**
@@ -138,8 +138,8 @@ completed: 2026-06-05
 **5. [Rule 3 - Blocking] AppArmor profile blocks swtpm socket creation in /var/run/**
 - **Found during:** Task 1 (swtpm socket startup)
 - **Issue:** Ubuntu AppArmor profile for /usr/bin/swtpm only allows /tmp/**; swtpm cannot create socket at /var/run/smolbsd-tpm/swtpm.sock (audit log: "mknod denied")
-- **Fix:** Added `/run/smolbsd-tpm/** rwk,` and unix stream socket rule to /etc/apparmor.d/local/usr.bin.swtpm; reloaded with apparmor_parser -r (runtime fix on pop4090, not committed to repo)
-- **Files modified:** /etc/apparmor.d/local/usr.bin.swtpm (pop4090, runtime only)
+- **Fix:** Added `/run/smolbsd-tpm/** rwk,` and unix stream socket rule to /etc/apparmor.d/local/usr.bin.swtpm; reloaded with apparmor_parser -r (runtime fix on <kvm-host>, not committed to repo)
+- **Files modified:** /etc/apparmor.d/local/usr.bin.swtpm (<kvm-host>, runtime only)
 
 **6. [Rule 1 - Bug] bhyve-tpm-pcr-verify.nu T5 uses `nu` binary name without PATH**
 - **Found during:** Task 2 (T1-T6 verifier run)

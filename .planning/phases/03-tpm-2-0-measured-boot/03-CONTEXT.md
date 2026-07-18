@@ -9,7 +9,7 @@
 
 Deliver the full T1–T6 TPM 2.0 acceptance suite against a real smolBSD amd64
 image (built with `device tpm` compiled in and `tpm2-tools` in the package set)
-running inside QEMU + swtpm on pop4090.
+running inside QEMU + swtpm on <kvm-host>.
 
 **In scope:**
 - Build a smolBSD amd64 qcow2 image with `device tpm` + `tpm2-tools`
@@ -27,13 +27,13 @@ running inside QEMU + swtpm on pop4090.
 ## Implementation Decisions
 
 ### D-01: Image Build Strategy
-Build the smolBSD amd64 image by booting a FreeBSD QEMU VM on pop4090 and
-running `make release` inside it. pop4090 already has:
+Build the smolBSD amd64 image by booting a FreeBSD QEMU VM on <kvm-host> and
+running `make release` inside it. <kvm-host> already has:
 - `/home/studio/bsd-build/src/freebsd-src` with postworld artifacts from 2026-04-11
 - QEMU 8.2.2 + KVM
 - The full FreeBSD source tree
 
-Steps: boot FreeBSD QEMU VM on pop4090 → clone/copy smolBSD repo inside →
+Steps: boot FreeBSD QEMU VM on <kvm-host> → clone/copy smolBSD repo inside →
 `cp release/tools/smolbsd-qemu.conf` into src → run `make release KERNCONF=SMOLBSD
 WITH_PKGBASE=yes VMFORMATS=qcow2 VMSIZE=2g` → scp artifact back to host.
 
@@ -55,7 +55,7 @@ Also add to smolbsd-qemu.conf:
 - `ifconfig_vtnet0="DHCP"` for pkg bootstrap during build (not needed for test)
 
 ### D-03: CI Integration — Image Storage
-Store the built smolBSD qcow2 on pop4090 at a stable path (e.g.,
+Store the built smolBSD qcow2 on <kvm-host> at a stable path (e.g.,
 `/home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2`). Update `tpm-vm-test.yml`
 to use this local path instead of downloading a stock FreeBSD image.
 
@@ -87,7 +87,7 @@ For the smolBSD image CI path: poll SSH directly, no console fix step needed.
 
 ### Claude's Discretion
 - Exact QEMU command flags for the smolBSD image (CPU, memory, accel)
-- swtpm state directory path on pop4090
+- swtpm state directory path on <kvm-host>
 - How to handle T3 (`tpmctl -G`) if `tpmctl(8)` is not in the image (fallback: `tpm2_getcap`)
 - Whether to run bhyve or QEMU for the T2–T6 suite (QEMU preferred: CI already validates QEMU path)
 
@@ -112,7 +112,7 @@ For the smolBSD image CI path: poll SSH directly, no console fix step needed.
 
 ### Existing CI/scripts
 - `.github/workflows/tpm-vm-test.yml` — Current TPM CI (uses stock FreeBSD image; to be updated)
-- `.github/workflows/build-image.yml` — Image build workflow (trigger for pop4090 builds)
+- `.github/workflows/build-image.yml` — Image build workflow (trigger for <kvm-host> builds)
 - `bin/qemu-smolbsd.nu` — QEMU launcher with --tpm flag
 - `bin/swtpm-setup.nu` — swtpm lifecycle manager
 - `bin/run-vm-tests.nu` — VM test orchestrator with --tpm --arch --backend
@@ -127,7 +127,7 @@ For the smolBSD image CI path: poll SSH directly, no console fix step needed.
 
 ### Infrastructure
 - `docs/VM-TESTING.md` — Validated QEMU+swtpm command lines, PCR0 proof (2026-05-16)
-- `docs/CICD.md` — CI/CD operator guide, runner registration, pop4090 setup
+- `docs/CICD.md` — CI/CD operator guide, runner registration, <kvm-host> setup
 
 </canonical_refs>
 
@@ -150,7 +150,7 @@ For the smolBSD image CI path: poll SSH directly, no console fix step needed.
 
 ### Integration Points
 - `tpm-vm-test.yml` needs: (1) image path env var, (2) remove fix-freebsd-vm.py step, (3) call run-vm-tests.nu
-- `build-image.yml` needs: pop4090 runner + FreeBSD build VM + scp artifact back
+- `build-image.yml` needs: <kvm-host> runner + FreeBSD build VM + scp artifact back
 - smolbsd-qemu.conf needs: `vm_extra_install_packages` hook for tpm2-tools package
 
 ### Known Constraint
@@ -163,9 +163,9 @@ For the smolBSD image CI path: poll SSH directly, no console fix step needed.
 <specifics>
 ## Specific Ideas
 
-- pop4090 already ran `pkg install -y tpm2-tools` in a manual FreeBSD QEMU session and it worked (DHCP via SLIRP worked because the session image had `ifconfig_vtnet0="DHCP"` set). This confirms smolBSD images (which have DHCP in rc.conf) CAN bootstrap pkg during build.
+- <kvm-host> already ran `pkg install -y tpm2-tools` in a manual FreeBSD QEMU session and it worked (DHCP via SLIRP worked because the session image had `ifconfig_vtnet0="DHCP"` set). This confirms smolBSD images (which have DHCP in rc.conf) CAN bootstrap pkg during build.
 - PCR0 validated manually 2026-05-16: `B6A903D197F7F1DFDAD0C3D74244009C9AA407F55AE5F753D7F8B3F0C10F5727` (documented in docs/VM-TESTING.md)
-- Self-hosted runner `pop4090-amd64` is online and confirmed working (labels: `self-hosted, linux, amd64, kvm`)
+- Self-hosted runner `<kvm-host>-amd64` is online and confirmed working (labels: `self-hosted, linux, amd64, kvm`)
 - The smolBSD release config already has the critical fixes: XMSS removal, SSH key pre-gen, sshd_keygen_enable=NO pattern, PermitRootLogin yes
 
 </specifics>

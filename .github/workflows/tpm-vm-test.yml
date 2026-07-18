@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-# tpm-vm-test.yml — TPM 2.0 T1-T6 acceptance suite on pop4090 QEMU+swtpm.
+# tpm-vm-test.yml — TPM 2.0 T1-T6 acceptance suite on <kvm-host> QEMU+swtpm.
 # Runs against the smolBSD amd64 image built with 'device tpm' + tpm2-tools.
 # Image path: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
-# Runner: pop4090-amd64 (self-hosted, linux, amd64, kvm)
+# Runner: <kvm-host>-amd64 (self-hosted, linux, amd64, kvm)
 #
 # Phase-3 acceptance gates:
 #   T1: swtpm socket appears within 3s
@@ -20,6 +20,15 @@
 
 name: TPM VM Test
 
+# Dispatch-only: this job needs the self-hosted KVM runner, which is
+# currently offline. With `on: push` every push to any branch queued a run
+# that could never start (60 lifetime runs; 8 zombies queued at the time of
+# this change), leaving PR checks perpetually pending. Re-add a push trigger
+# when the runner returns — or better, port T1-T6 to the hosted runner:
+# ubuntu-latest now has working KVM (see build-image-hosted.yml preflight)
+# and swtpm is an apt install away; the image can come from the hosted
+# build's artifact instead of the runner-local path below —
+# implemented in tpm-hosted.yml (auto-runs after each green hosted build).
 on:
   workflow_dispatch:
   push:

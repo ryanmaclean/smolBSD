@@ -161,10 +161,14 @@ def request-thread-attestation-required [messages: list, in_reply_to_id: string]
 # Result is logged but never fatal — HALT proceeds regardless.
 def try-irc-dm [task_id: string, reason: string, root: string] {
     let msg = $"HALT ($task_id): ($reason)"
-    let irc_host = "10.0.3.203"
+    # IRC host is internal infrastructure — never hardcoded in the repo.
+    # Unset => fallback is inert ("no-route"), which the design tolerates.
+    let irc_host = $env.SMOLBSD_IRC_HOST? | default ""
     let halt_path = [$root, "var", "mail", $"HALT.($task_id)"] | path join
 
-    let result = try {
+    let result = if $irc_host == "" {
+        "no-route"
+    } else { try {
         # TLS attempt on 6697 — pipe IRC NICK/USER/PRIVMSG/QUIT sequence
         let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
         # out+err> /dev/null: suppress both stdout (s_client banner) and stderr (error msgs)
@@ -174,12 +178,12 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
         # Plain fallback on 6667
         try {
             let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
-            let out = $irc_cmds | ^nc -w 5 $irc_host 6667 2>/dev/null
+            let out = $irc_cmds | ^nc -w 5 $irc_host 6667 err> /dev/null
             "plain-ok"
         } catch {
             "no-route"
         }
-    }
+    } }
 
     # Record outcome in the HALT marker file
     try {
@@ -234,7 +238,7 @@ Do not modify any other messages in the spool. Append only.
     $prompt | save --force $prompt_file
 
     # override with SMOLBSD_CLAUDE_MODEL env var
-    let model = $env | get SMOLBSD_CLAUDE_MODEL? | default "claude-sonnet-4-6"
+    let model = $env | get SMOLBSD_CLAUDE_MODEL? | default "claude-sonnet-5"
     # Launch claude as a truly-detached process (survives coord-tick.nu exit).
     # Prompt is passed via stdin redirect to avoid shell quoting fragility.
     let sh_cmd = $"claude --print --bare --allowedTools 'Write,Bash,Read,Glob,Grep' --max-budget-usd 1.0 --model ($model) < '($prompt_file)' >'($log_file)' 2>&1 &"

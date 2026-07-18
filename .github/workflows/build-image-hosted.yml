@@ -1,0 +1,249 @@
+# SPDX-License-Identifier: Apache-2.0
+# build-image-hosted.yml — Build the smolBSD image on a GitHub-HOSTED runner.
+#
+# No self-hosted infrastructure required: standard GitHub Linux x64 runners
+# expose /dev/kvm (nested virtualization), so we boot a stock FreeBSD
+# 15.0-RELEASE BASIC-CLOUDINIT VM under KVM, build world+kernel+image inside
+# it (FIX-9 cloudware-release path), scp the artifact out, and run the size
+# and boot gates on the runner itself.
+#
+# vs build-image.yml (PATH B, self-hosted): same nested-VM strategy, but the
+# base image is downloaded instead of pre-staged, /usr/src is shallow-cloned
+# inside the VM, and root SSH access is bootstrapped with a NoCloud cloud-init
+# seed (FreeBSD nuageinit) instead of a pre-configured password image.
+#
+# Legs:
+#   amd64   — full: build + size gate + KVM boot gate.
+#   aarch64 — cross-built from the same amd64 FreeBSD VM (TARGET/TARGET_ARCH
+#             handled by bin/build-smolbsd.nu base_make_args). Size gate only:
+#             an aarch64 boot gate needs HVF/bhyve ARM hardware; TCG on x64
+#             is >480s (see docs/PHASE-1-RESULTS.md) and would always fail.
+#
+# Timing: buildworld -j4 inside a KVM guest is ~2.5-4 h; job timeout is set
+# just under the 6 h hosted-runner ceiling. If this proves too tight, the
+# options are a larger runner (more cores), a ccache'd obj tree, or the
+# self-hosted pipeline.
+
+name: Build smolBSD Image (hosted runner)
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Target architecture"
+        type: choice
+        options: [amd64, aarch64]
+        default: amd64
+      vmsize:
+        description: "Image VMSIZE (sparse)"
+        default: "2g"
+  # TEMPORARY pre-merge validation trigger: workflow_dispatch is unavailable
+  # until this file lands on the default branch, but push triggers fire from
+  # the branch's own workflow file. Remove after the first green run.
+  push:
+    branches: ['claude/ur-bsd-26-qnmjho']
+    paths:
+      - '.github/workflows/build-image-hosted.yml'
+      - 'bin/build-smolbsd.nu'
+      - 'release/tools/smolbsd-qemu*.conf'
+      - 'sys/amd64/conf/SMOLBSD'
+      - 'sys/arm64/conf/SMOLBSD'
+
+env:
+  WORK: /mnt/smolbsd-ci
+  SSH_PORT: "2252"
+  SRC_BRANCH: releng/15.0
+  BASE_URL: https://download.freebsd.org/releases/VM-IMAGES/15.0-RELEASE/amd64/Latest
+  BASE_IMG: FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2
+
+jobs:
+  build:
+    name: Build smolBSD ${{ inputs.arch || 'amd64' }} qcow2
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    defaults:
+      run:
+        shell: bash   # explicit shell => bash -eo pipefail (tee must not mask failures)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight — KVM, disk, packages
+        run: |
+          set -e
+          test -c /dev/kvm || {
+            echo "ERROR: /dev/kvm not available on this runner."
+            echo "Hosted x64 Linux runners expose KVM; arm64 runners do not."
+            exit 1
+          }
+          # Hosted runners ship /dev/kvm as root:kvm 0660 and the runner user
+          # is not in the kvm group — qemu fails with EPERM without this
+          # (first run proved it). Same reason build-image.yml uses sudo qemu.
+          sudo chmod 666 /dev/kvm
+          test -w /dev/kvm && echo "/dev/kvm writable"
+          # /mnt has the large free space on hosted runners (~60 GB); the
+          # in-VM scratch disk and base image live there.
+          sudo mkdir -p "$WORK" && sudo chown "$(id -u)" "$WORK"
+          df -h / /mnt
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils expect xz-utils genisoimage openssh-client
+
+      - name: Fetch FreeBSD 15.0 base image
+        run: |
+          set -e
+          cd "$WORK"
+          curl -fsSL -o base.qcow2.xz "$BASE_URL/$BASE_IMG.xz"
+          unxz base.qcow2.xz
+          # growfs_enable in the official image expands the rootfs to fill
+          # the resized disk on first boot; buildworld needs the headroom.
+          qemu-img resize base.qcow2 60G
+          qemu-img info base.qcow2
+
+      - name: Create cloud-init NoCloud seed (root SSH key)
+        run: |
+          set -e
+          cd "$WORK"
+          ssh-keygen -t ed25519 -N '' -f ci_key -q
+          printf 'instance-id: smolbsd-ci\nlocal-hostname: smolbsd-build\n' > meta-data
+          {
+            echo '#cloud-config'
+            echo 'users:'
+            echo '  - name: root'
+            echo '    ssh_authorized_keys:'
+            echo "      - $(cat ci_key.pub)"
+            # FreeBSD sshd defaults to PermitRootLogin no and neither the
+            # BASIC-CLOUDINIT conf nor nuageinit changes it — without this the
+            # key is installed but every root login is refused.
+            echo 'runcmd:'
+            echo "  - echo 'PermitRootLogin prohibit-password' >> /etc/ssh/sshd_config"
+            echo '  - service sshd restart || true'
+          } > user-data
+          genisoimage -output seed.iso -volid cidata -joliet -rock user-data meta-data
+
+      - name: Boot FreeBSD build VM (KVM)
+        run: |
+          set -e
+          cd "$WORK"
+          qemu-img create -f qcow2 scratch.qcow2 40G   # /usr/obj overflow space
+          qemu-system-x86_64 \
+            -M q35 -accel kvm -cpu host \
+            -smp "$(nproc)" -m 12G \
+            -drive file=base.qcow2,format=qcow2,if=virtio \
+            -drive file=scratch.qcow2,format=qcow2,if=virtio \
+            -cdrom seed.iso \
+            -nic "user,model=virtio-net-pci,hostfwd=tcp::${SSH_PORT}-:22" \
+            -display none -daemonize \
+            -serial "file:${WORK}/serial.log" \
+            -pidfile "${WORK}/vm.pid"
+
+          # First boot runs growfs and firstboot_freebsd_update before sshd
+          # comes up — allow 10 minutes.
+          echo "Waiting for SSH (cloud-init key auth) ..."
+          for i in $(seq 1 120); do
+            if ssh -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                   -o ConnectTimeout=3 -o BatchMode=yes -p "$SSH_PORT" \
+                   root@127.0.0.1 'echo VM_UP && uname -rm'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "ERROR: SSH never came up. Serial console tail:"
+          tail -50 serial.log
+          exit 1
+
+      - name: Prepare VM — packages, src tree, repo
+        run: |
+          set -e
+          cd "$WORK"
+          SSH="ssh -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+               -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p $SSH_PORT root@127.0.0.1"
+          # Scratch disk -> /usr/obj (buildworld writes 15-40 GB of objects)
+          $SSH 'gpart create -s gpt vtbd1 && gpart add -t freebsd-ufs vtbd1 && \
+                newfs -U /dev/vtbd1p1 && mkdir -p /usr/obj && \
+                mount /dev/vtbd1p1 /usr/obj'
+          $SSH 'env ASSUME_ALWAYS_YES=yes pkg update -q && \
+                env ASSUME_ALWAYS_YES=yes pkg install -y git nushell'
+          # Shallow clone keeps this ~10x smaller/faster than a full checkout.
+          $SSH "git clone --depth 1 -b $SRC_BRANCH https://git.freebsd.org/src.git /usr/src"
+          # Ship the smolBSD repo (kernconfs, release confs, build pipeline).
+          tar -C "$GITHUB_WORKSPACE" -cf - . | $SSH 'mkdir -p /root/smolBSD && tar -C /root/smolBSD -xf -'
+
+      - name: Build (world + kernel + cloudware-release) inside VM
+        env:
+          VMSIZE_INPUT: ${{ inputs.vmsize || '2g' }}
+        run: |
+          set -e
+          cd "$WORK"
+          SSH="ssh -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+               -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p $SSH_PORT root@127.0.0.1"
+          $SSH "cd /root/smolBSD && nu bin/build-smolbsd.nu \
+                  --arch '${{ inputs.arch || 'amd64' }}' --vmsize '$VMSIZE_INPUT'" \
+            2>&1 | tee build.log
+          # Locate the artifact (FIX-9: cloudware-release writes
+          # <objdir>/usr/src/release/smolbsd.ufs.qcow2)
+          ART=$($SSH "find /usr/obj -name smolbsd.ufs.qcow2 2>/dev/null | head -1")
+          [ -n "$ART" ] || ART=$($SSH "find /usr/obj -name '*.ufs.qcow2' 2>/dev/null | head -1")
+          test -n "$ART" || { echo "ERROR: no qcow2 artifact found in /usr/obj"; exit 1; }
+          echo "artifact=$ART"
+          scp -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -P "$SSH_PORT" "root@127.0.0.1:$ART" \
+              "$WORK/smolbsd-${{ inputs.arch || 'amd64' }}.qcow2"
+          ls -lh "$WORK/smolbsd-${{ inputs.arch || 'amd64' }}.qcow2"
+
+      - name: Size gate (<= 512 MiB)
+        id: size
+        continue-on-error: true   # deferred: enforced after the boot gate below
+        run: |
+          BYTES=$(wc -c < "$WORK/smolbsd-${{ inputs.arch || 'amd64' }}.qcow2")
+          LIMIT=536870912
+          echo "artifact: $BYTES bytes; limit: $LIMIT bytes"
+          if [ "$BYTES" -le "$LIMIT" ]; then
+            echo "SIZE GATE: PASS ($((BYTES / 1048576)) MiB <= 512 MiB)"
+          else
+            echo "SIZE GATE: FAIL (over by $(((BYTES - LIMIT) / 1048576)) MiB)"
+            exit 1
+          fi
+
+      - name: Boot gate (KVM, amd64 only)
+        if: ${{ (inputs.arch || 'amd64') == 'amd64' }}
+        run: |
+          set -e
+          cd "$WORK"
+          # aarch64 is skipped: TCG on x64 is >480s (PHASE-1); the ARM boot
+          # gate runs on HVF/bhyve hardware per docs/BHYVE-GATE-AMD64.md.
+          expect -c '
+            set timeout 60
+            set t0 [clock seconds]
+            spawn qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M -smp 2 \
+              -drive file='"$WORK"'/smolbsd-amd64.qcow2,format=qcow2,if=virtio,snapshot=on \
+              -nic user,model=virtio-net-pci -display none -serial mon:stdio
+            expect {
+              "login:"        { puts "\nTIME_TO_LOGIN=[expr [clock seconds]-$t0]s\nVERDICT=pass"; exit 0 }
+              "mountroot>"    { puts "\nVERDICT=fail (mountroot — see UR-BSD-VERIFY Finding 2)"; exit 2 }
+              "panic"         { puts "\nVERDICT=fail (kernel panic)"; exit 2 }
+              timeout         { puts "\nVERDICT=fail (no login within 60s)"; exit 1 }
+              eof             { puts "\nVERDICT=fail (qemu exited)"; exit 2 }
+            }'
+
+      - name: Enforce size gate
+        if: ${{ steps.size.outcome == 'failure' }}
+        run: |
+          echo "Size gate failed (see 'Size gate' step) — failing the job now that the boot gate has reported."
+          exit 1
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smolbsd-${{ inputs.arch || 'amd64' }}
+          if-no-files-found: warn
+          path: |
+            /mnt/smolbsd-ci/smolbsd-*.qcow2
+            /mnt/smolbsd-ci/build.log
+            /mnt/smolbsd-ci/serial.log
+
+      - name: Teardown VM
+        if: always()
+        run: |
+          [ -f "$WORK/vm.pid" ] && sudo kill "$(cat "$WORK/vm.pid")" 2>/dev/null || true

@@ -4,7 +4,7 @@
 #                              using a FreeBSD QEMU VM as the build environment.
 #
 # Why a nested VM?  `make release` / `make vm-image` requires FreeBSD-native tools
-# (newfs, mdconfig, etc.).  pop4090 (10.0.2.42) is a Linux/KVM host, so we boot a
+# (newfs, mdconfig, etc.).  <kvm-host> (<kvm-host-ip>) is a Linux/KVM host, so we boot a
 # stock FreeBSD VM, inject our configs, build inside it, then SCP the artifact out.
 #
 # Typical call:
@@ -159,7 +159,7 @@ def create-overlay [base: string, overlay: string, dry_run: bool] {
 
 # Launch the FreeBSD build VM in the background.
 # Returns the PID of the QEMU process.
-def start-vm [overlay: string, ssh_port: int, dry_run: bool]: nothing -> int {
+def start-vm [overlay: string, scratch: string, ssh_port: int, dry_run: bool]: nothing -> int {
     let serial_log = "/tmp/smolbsd-build-serial.log"
 
     log-step "vm-start" "launching FreeBSD build VM" {
@@ -175,9 +175,10 @@ def start-vm [overlay: string, ssh_port: int, dry_run: bool]: nothing -> int {
         "-accel"  "kvm"
         "-cpu"    "host"
         "-bios"   "/usr/share/qemu/OVMF.fd"
-        "-m"      "4G"
+        "-m"      "8G"
         "-smp"    "8"
         "-drive"  $"file=($overlay),format=qcow2,if=virtio"
+        "-drive"  $"file=($scratch),format=qcow2,if=virtio"
         "-nic"    $"user,model=virtio-net-pci,hostfwd=tcp::($ssh_port)-:22"
         "-nographic"
         "-monitor" "none"
@@ -252,7 +253,7 @@ def stop-vm [pid: int, dry_run: bool] {
     let sh_r = (^/usr/bin/env sh -c $"sshpass -p smolbsd ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -p 2242 root@127.0.0.1 'poweroff' 2>/dev/null" | complete)
     ^sleep 5
     # Kill the QEMU process if still running
-    let kill_r = (^kill $pid 2>/dev/null | complete)
+    let kill_r = (^kill $pid | complete)
     log-step "vm-stop" "build VM stopped" {pid: $pid}
 }
 
@@ -364,16 +365,30 @@ def main [
     # ── 1. Preflight ────────────────────────────────────────────────────────
     preflight $resolved_vm_image $dry_run
 
-    # ── 2. Create overlay ───────────────────────────────────────────────────
+    # ── 2. Create overlay + obj scratch disk ────────────────────────────────
+    # buildworld + 'make packages' write 15-40+ GB under /usr/obj; the stock
+    # VM rootfs (~5 GB) cannot hold it (same fix as build-image.yml's 20 GB
+    # scratch and build-image-hosted.yml's 40 GB scratch).
     create-overlay $resolved_vm_image $overlay $dry_run
+    let scratch = "/tmp/smolbsd-build-scratch.qcow2"
+    let scratch_r = run-cmd ["qemu-img" "create" "-f" "qcow2" $scratch "40G"] $dry_run
+    if $scratch_r.exit_code != 0 {
+        error make {msg: $"qemu-img create scratch failed (exit ($scratch_r.exit_code)): ($scratch_r.stderr)"}
+    }
 
     # ── 3. Start VM ─────────────────────────────────────────────────────────
-    mut vm_pid = start-vm $overlay $ssh_port $dry_run
+    mut vm_pid = start-vm $overlay $scratch $ssh_port $dry_run
 
     # ── 4. Wait for SSH ─────────────────────────────────────────────────────
     wait-for-ssh $ssh_port $dry_run
 
     # ── 5. In-VM build pipeline ─────────────────────────────────────────────
+
+    # 5a0. Scratch disk -> /usr/obj (vtbd0 = rootfs overlay, vtbd1 = scratch)
+    vm-step "scratch-obj" (
+        "gpart create -s gpt vtbd1 && gpart add -t freebsd-ufs vtbd1 && " +
+        "newfs -U /dev/vtbd1p1 && mkdir -p /usr/obj && mount /dev/vtbd1p1 /usr/obj"
+    ) $ssh_port $dry_run
 
     # 5a. Refresh pkg metadata and install git
     vm-step "pkg-update" "env ASSUME_ALWAYS_YES=yes pkg update -q" $ssh_port $dry_run
@@ -388,16 +403,26 @@ def main [
     # 5d. Copy cloudware release conf
     vm-step "copy-conf" "cp /root/smolBSD/release/tools/smolbsd-qemu.conf /usr/src/release/tools/smolbsd-qemu.conf" $ssh_port $dry_run
 
-    # 5e. Build kernel (long — ~20 min on 8 vCPU KVM)
+    # 5e. Build world + kernel (long — world ~2-3 h, kernel ~20 min on 8 vCPU KVM)
+    # buildworld is REQUIRED: cloudware-release depends on pkgbase-repo, which
+    # runs `make -C /usr/src packages` and stages packages from the built world.
+    # (The old vm-image path skipped buildworld — but that target was a no-op
+    # touch anyway; see FIX-9.)
+    log-step "vm-buildworld" "starting world build (this takes ~2-3 h)" {}
+    vm-step "buildworld" "make -C /usr/src buildworld -j8" $ssh_port $dry_run
     log-step "vm-buildkernel" "starting kernel build (this takes ~20 min)" {}
     vm-step "buildkernel" "make -C /usr/src buildkernel KERNCONF=SMOLBSD -j8" $ssh_port $dry_run
 
     # 5f. Build release VM image (long — ~30 min)
-    log-step "vm-vm-image" "starting make vm-image (this takes ~30 min)" {}
-    vm-step "vm-image" (
-        "make -C /usr/src/release KERNCONF=SMOLBSD WITH_PKGBASE=yes " +
-        "VMFORMATS=qcow2 VMSIZE=2g " +
-        "CLOUDWARE_CONF=/root/smolBSD/release/tools/smolbsd-qemu.conf vm-image"
+    # FIX-9: use cloudware-release with the real ${TYPE}CONF variable
+    # (SMOLBSDCONF). The old `vm-image ... CLOUDWARE_CONF=` form never sourced
+    # the conf: CLOUDWARE_CONF is not a release Makefile variable and vm-image
+    # is a WITH_VMIMAGES-gated target that passes no -c to mk-vmimage.sh.
+    log-step "vm-cloudware-release" "starting make cloudware-release (this takes ~30 min)" {}
+    vm-step "cloudware-release" (
+        "make -C /usr/src/release cloudware-release KERNCONF=SMOLBSD " +
+        "WITH_CLOUDWARE=yes CLOUDWARE=smolbsd SMOLBSD_FORMAT=qcow2 SMOLBSD_FSLIST=ufs " +
+        "SMOLBSDCONF=/root/smolBSD/release/tools/smolbsd-qemu.conf VMSIZE=2g SWAPSIZE=128m"
     ) $ssh_port $dry_run
 
     # ── 6. Collect artifact ─────────────────────────────────────────────────
