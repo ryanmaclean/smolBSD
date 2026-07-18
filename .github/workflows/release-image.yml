@@ -30,6 +30,8 @@ on:
 
 permissions:
   contents: write   # create the release + upload assets
+  actions: read     # download-artifact across runs + resolve the run's head SHA
+                    # (an explicit permissions map drops all unlisted scopes)
 
 jobs:
   release:
@@ -50,8 +52,11 @@ jobs:
 
       - name: Checksum and rename
         run: |
-          test -f smolbsd-amd64.qcow2 || { echo "ERROR: artifact has no smolbsd-amd64.qcow2"; ls -la; exit 1; }
-          mv smolbsd-amd64.qcow2 "smolbsd-amd64-${{ inputs.tag }}.qcow2"
+          # Locate rather than assume: upload-artifact archives relative to the
+          # least common ancestor of its paths, which could change layout.
+          ART=$(find . -name 'smolbsd-amd64.qcow2' -type f | head -1)
+          test -n "$ART" || { echo "ERROR: artifact has no smolbsd-amd64.qcow2"; find . -maxdepth 3 -type f; exit 1; }
+          mv "$ART" "smolbsd-amd64-${{ inputs.tag }}.qcow2"
           sha256sum "smolbsd-amd64-${{ inputs.tag }}.qcow2" | tee "smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256"
           ls -lh smolbsd-amd64-*
 
@@ -59,6 +64,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Tag the commit the artifact was built from — without --target,
+          # gh tags the default branch HEAD, which may have moved since.
+          BUILD_SHA=$(gh api "repos/${{ github.repository }}/actions/runs/${{ inputs.run_id }}" --jq .head_sha)
+          echo "Tagging build commit $BUILD_SHA"
           BYTES=$(wc -c < "smolbsd-amd64-${{ inputs.tag }}.qcow2")
           MIB=$((BYTES / 1048576))
           {
@@ -72,6 +81,7 @@ jobs:
           } > notes.md
           gh release create "${{ inputs.tag }}" \
             --repo "${{ github.repository }}" \
+            --target "$BUILD_SHA" \
             --title "smolBSD ${{ inputs.tag }}" \
             --notes-file notes.md \
             $([ "${{ inputs.prerelease }}" = "true" ] && echo --prerelease) \
