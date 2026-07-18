@@ -21,8 +21,17 @@
 name: TPM VM Test
 
 on:
-  push:
   workflow_dispatch:
+  push:
+    paths:
+      # Only run when something that could change TPM-suite outcomes moves.
+      # Doc-only or coord-spool PRs skip the self-hosted TPM runner entirely.
+      - sys/amd64/conf/SMOLBSD
+      - release/tools/smolbsd-qemu.conf
+      - bin/bhyve-tpm-pcr-verify.nu
+      - bin/run-vm-tests.nu
+      - tests/tpm-seal-test.nu
+      - .github/workflows/tpm-vm-test.yml
 
 env:
   SMOLBSD_IMAGE: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
