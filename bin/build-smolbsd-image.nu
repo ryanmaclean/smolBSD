@@ -90,7 +90,7 @@ def preflight [vm_image: string, dry_run: bool] {
         "/usr/bin/qemu-system-x86_64"
         "/usr/local/bin/qemu-system-x86_64"
     ]
-    let qemu_found = $qemu_candidates | where { |p| $p | path exists } | first?
+    let qemu_found = $qemu_candidates | where { |p| $p | path exists } | get -o 0
     let qemu_path = if $qemu_found != null {
         $qemu_found
     } else {
@@ -105,7 +105,7 @@ def preflight [vm_image: string, dry_run: bool] {
 
     # sshpass
     let sshpass_candidates = ["/usr/bin/sshpass" "/usr/local/bin/sshpass"]
-    let sshpass_found = $sshpass_candidates | where { |p| $p | path exists } | first?
+    let sshpass_found = $sshpass_candidates | where { |p| $p | path exists } | get -o 0
     if $sshpass_found == null {
         let r = (^which sshpass | complete)
         if $r.exit_code != 0 {

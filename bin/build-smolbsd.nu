@@ -557,7 +557,7 @@ def find_qcow2 [obj: string arch_freebsd: string arch_target: string] {
 
     for dir in $candidates {
         if ($dir | path exists) {
-            let found = (ls $dir | where name =~ '\.qcow2$' | get name | first?)
+            let found = (ls $dir | where name =~ '\.qcow2$' | get name | get -o 0)
             if $found != null {
                 return $found
             }
@@ -567,7 +567,7 @@ def find_qcow2 [obj: string arch_freebsd: string arch_target: string] {
     # Broader fallback search
     let fallback = (
         do { ^find $obj -name '*.qcow2' -type f } |
-        complete | get stdout | lines | where { |l| ($l | str trim) != "" } | first?
+        complete | get stdout | lines | where { |l| ($l | str trim) != "" } | get -o 0
     )
     $fallback | default "<qcow2 not found — check /usr/obj manually>"
 }

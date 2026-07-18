@@ -37,6 +37,17 @@ on:
       vmsize:
         description: "Image VMSIZE (sparse)"
         default: "2g"
+  # TEMPORARY pre-merge validation trigger (round 2): dispatch only works
+  # from the default branch, whose copy still has the first? bug this branch
+  # fixes. Remove after the first fully green run.
+  push:
+    branches: ['claude/ur-bsd-26-qnmjho']
+    paths:
+      - '.github/workflows/build-image-hosted.yml'
+      - 'bin/build-smolbsd.nu'
+      - 'release/tools/smolbsd-qemu*.conf'
+      - 'sys/amd64/conf/SMOLBSD'
+      - 'sys/arm64/conf/SMOLBSD'
 
 env:
   WORK: /mnt/smolbsd-ci
@@ -166,14 +177,19 @@ jobs:
           cd "$WORK"
           SSH="ssh -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p $SSH_PORT root@127.0.0.1"
+          # Run the build but judge success by the ARTIFACT, not the script exit
+          # code: run #3 built the image, then died in post-build artifact
+          # location (a nu bug) and the qcow2 was lost with the ephemeral VM.
+          BUILD_RC=0
           $SSH "cd /root/smolBSD && nu bin/build-smolbsd.nu \
                   --arch '${{ inputs.arch || 'amd64' }}' --vmsize '$VMSIZE_INPUT'" \
-            2>&1 | tee build.log
+            2>&1 | tee build.log || BUILD_RC=$?
           # Locate the artifact (FIX-9: cloudware-release writes
           # <objdir>/usr/src/release/smolbsd.ufs.qcow2)
           ART=$($SSH "find /usr/obj -name smolbsd.ufs.qcow2 2>/dev/null | head -1")
           [ -n "$ART" ] || ART=$($SSH "find /usr/obj -name '*.ufs.qcow2' 2>/dev/null | head -1")
-          test -n "$ART" || { echo "ERROR: no qcow2 artifact found in /usr/obj"; exit 1; }
+          test -n "$ART" || { echo "ERROR: no qcow2 artifact found in /usr/obj (build rc=$BUILD_RC)"; exit 1; }
+          [ "$BUILD_RC" -eq 0 ] || echo "WARNING: build script exited rc=$BUILD_RC after producing the artifact - check build.log"
           echo "artifact=$ART"
           scp -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -P "$SSH_PORT" "root@127.0.0.1:$ART" \
