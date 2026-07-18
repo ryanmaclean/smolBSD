@@ -1,0 +1,176 @@
+# SPDX-License-Identifier: Apache-2.0
+# tpm-hosted.yml — TPM T1-T6 acceptance suite on a GitHub-HOSTED runner.
+#
+# Replaces the self-hosted-runner dependency of tpm-vm-test.yml: hosted x64
+# runners have working KVM (see build-image-hosted.yml), swtpm is an apt
+# install away, and the image comes from the hosted build's artifact instead
+# of a runner-local path.
+#
+# Triggers:
+#   - workflow_run: automatically after each successful "Build smolBSD Image
+#     (hosted runner)" run (active once this file is on the default branch).
+#   - workflow_dispatch: manual, with the build run ID to fetch the artifact
+#     from.
+#
+# amd64 only: QEMU's tpm-tis works there; aarch64's tpm-tis-device never
+# yields /dev/tpm0 in the guest (see sys/arm64/conf/SMOLBSD notes).
+#
+# Gates (docs: .github/workflows/tpm-vm-test.yml header, Phase 3):
+#   T1: swtpm control socket appears within 3s
+#   T2: /dev/tpm0 present in guest
+#   T3: TPM evidence in guest dmesg/kldstat (informational)
+#   T4: PCR sha256:0 readable and non-zero
+#   T5: seal/unseal round-trip with PCR 0+7 policy
+#   T6: PCR 23 changes after tpm2_pcrextend
+
+name: TPM T1-T6 (hosted runner)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Build run ID to fetch the smolbsd-amd64 artifact from"
+        required: true
+  workflow_run:
+    workflows: ["Build smolBSD Image (hosted runner)"]
+    types: [completed]
+
+env:
+  SSH_PORT: "2241"
+
+jobs:
+  tpm-t1-t6:
+    name: TPM T1-T6 on built image
+    # On workflow_run, only test artifacts of successful builds.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Preflight — KVM, packages
+        run: |
+          test -c /dev/kvm || { echo "ERROR: no /dev/kvm on this runner"; exit 1; }
+          sudo chmod 666 /dev/kvm
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils swtpm swtpm-tools sshpass openssh-client
+
+      - name: Fetch built image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: smolbsd-amd64
+          run-id: ${{ inputs.run_id || github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: T1 — swtpm socket
+        run: |
+          ls -lh
+          test -f smolbsd-amd64.qcow2 || { echo "ERROR: artifact has no smolbsd-amd64.qcow2 (build may predate the artifact naming)"; exit 1; }
+          mkdir -p /tmp/tpmstate
+          swtpm socket --tpmstate dir=/tmp/tpmstate --tpm2 \
+            --ctrl type=unixio,path=/tmp/swtpm.sock \
+            --pid-file /tmp/swtpm.pid --daemon
+          for i in 1 2 3; do
+            [ -S /tmp/swtpm.sock ] && { echo "T1 PASS: swtpm socket up at ${i}s"; exit 0; }
+            sleep 1
+          done
+          echo "T1 FAIL: swtpm socket did not appear within 3s"
+          exit 1
+
+      - name: Boot guest with TPM
+        run: |
+          qemu-system-x86_64 \
+            -M q35 -accel kvm -cpu host -m 1G \
+            -drive file=smolbsd-amd64.qcow2,format=qcow2,if=virtio,snapshot=on \
+            -chardev "socket,id=chrtpm,path=/tmp/swtpm.sock" \
+            -tpmdev emulator,id=tpm0,chardev=chrtpm \
+            -device tpm-tis,tpmdev=tpm0 \
+            -nic "user,model=virtio-net-pci,hostfwd=tcp::${SSH_PORT}-:22" \
+            -display none -daemonize \
+            -serial file:/tmp/serial.log \
+            -pidfile /tmp/vm.pid
+          echo "Waiting for guest SSH (root/smolbsd password auth) ..."
+          for i in $(seq 1 60); do
+            if sshpass -p smolbsd ssh -o StrictHostKeyChecking=no \
+                 -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 \
+                 -o PreferredAuthentications=password \
+                 -p "$SSH_PORT" root@127.0.0.1 'echo GUEST_UP'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "ERROR: guest SSH never came up. Serial tail:"
+          tail -50 /tmp/serial.log
+          exit 1
+
+      - name: T2-T6 — in-guest TPM checks
+        run: |
+          SSH() {
+            sshpass -p smolbsd ssh -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password \
+              -p "$SSH_PORT" root@127.0.0.1 "$@"
+          }
+          fail=0
+
+          # T2: device node
+          if SSH 'test -c /dev/tpm0'; then echo "T2 PASS: /dev/tpm0 present"
+          else echo "T2 FAIL: /dev/tpm0 missing"; fail=1; fi
+
+          # T3 (informational): kernel evidence
+          SSH 'kldstat -v 2>/dev/null | grep -i tpm || dmesg | grep -i tpm' \
+            && echo "T3 PASS: TPM kernel evidence" \
+            || echo "T3 WARN: no kldstat/dmesg TPM evidence (compiled-in driver may not list)"
+
+          # T4-T6 need tpm2-tools baked into the image (VM_EXTRA_PACKAGES, FIX-9)
+          if ! SSH 'command -v tpm2_pcrread' >/dev/null 2>&1; then
+            echo "T4-T6 FAIL: tpm2-tools not in image — VM_EXTRA_PACKAGES baking did not happen"
+            exit 1
+          fi
+
+          # T4: PCR0 readable, non-zero
+          if SSH 'tpm2_pcrread sha256:0' | grep -qE '0x[0-9A-Fa-f]*[1-9A-Fa-f]'; then
+            echo "T4 PASS: PCR sha256:0 non-zero"
+          else echo "T4 FAIL: PCR sha256:0 unreadable or zero"; fail=1; fi
+
+          # T5: seal/unseal round-trip against PCR 0+7 policy
+          if SSH 'set -e
+              d=$(mktemp -d)
+              cd "$d"
+              echo smolbsd-seal-test > secret.txt
+              tpm2_createprimary -C o -g sha256 -G ecc -c primary.ctx -Q
+              tpm2_createpolicy --policy-pcr -l sha256:0,7 -L policy.pcr -Q
+              tpm2_create -C primary.ctx -g sha256 -u seal.pub -r seal.priv \
+                -L policy.pcr -i secret.txt -Q
+              tpm2_load -C primary.ctx -u seal.pub -r seal.priv -c seal.ctx -Q
+              tpm2_unseal -c seal.ctx -p pcr:sha256:0,7 > out.txt
+              cmp secret.txt out.txt'; then
+            echo "T5 PASS: seal/unseal round-trip"
+          else echo "T5 FAIL: seal/unseal round-trip"; fail=1; fi
+
+          # T6: PCR 23 changes after extend
+          if SSH 'set -e
+              a=$(tpm2_pcrread sha256:23)
+              tpm2_pcrextend "23:sha256=$(printf smolbsd | sha256sum | cut -d" " -f1)"
+              b=$(tpm2_pcrread sha256:23)
+              [ "$a" != "$b" ]'; then
+            echo "T6 PASS: PCR 23 changed after extend"
+          else echo "T6 FAIL: PCR 23 did not change"; fail=1; fi
+
+          exit "$fail"
+
+      - name: Teardown
+        if: always()
+        run: |
+          [ -f /tmp/vm.pid ] && sudo kill "$(cat /tmp/vm.pid)" 2>/dev/null || true
+          [ -f /tmp/swtpm.pid ] && sudo kill "$(cat /tmp/swtpm.pid)" 2>/dev/null || true
+
+      - name: Upload serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tpm-t1-t6-logs
+          if-no-files-found: warn
+          path: /tmp/serial.log
