@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: Apache-2.0
+# release-image.yml — publish a built smolBSD qcow2 as a GitHub Release.
+#
+# Closes the newcomer gap called out in README Quickstart: workflow artifacts
+# expire and need a GitHub login; Releases are permanent, anonymous downloads.
+#
+# Flow: dispatch with the run ID of a green "Build smolBSD Image (hosted
+# runner)" run (the run whose size + boot gates you trust) and a tag. The
+# workflow downloads that run's smolbsd-amd64 artifact, checksums it, and
+# publishes qcow2 + sha256 to the Release.
+#
+# Deliberately manual: a release is a human judgement (gates green? size
+# acceptable?), not an automatic side effect of a build.
+
+name: Release smolBSD Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Build run ID whose smolbsd-amd64 artifact to publish"
+        required: true
+      tag:
+        description: "Release tag (e.g. v0.1.0)"
+        required: true
+      prerelease:
+        description: "Mark as pre-release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # create the release + upload assets
+
+jobs:
+  release:
+    name: Publish ${{ inputs.tag }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Fetch built image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: smolbsd-amd64
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Checksum and rename
+        run: |
+          test -f smolbsd-amd64.qcow2 || { echo "ERROR: artifact has no smolbsd-amd64.qcow2"; ls -la; exit 1; }
+          mv smolbsd-amd64.qcow2 "smolbsd-amd64-${{ inputs.tag }}.qcow2"
+          sha256sum "smolbsd-amd64-${{ inputs.tag }}.qcow2" | tee "smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256"
+          ls -lh smolbsd-amd64-*
+
+      - name: Create release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BYTES=$(wc -c < "smolbsd-amd64-${{ inputs.tag }}.qcow2")
+          MIB=$((BYTES / 1048576))
+          {
+            echo "smolBSD amd64 qcow2 — built by run ${{ inputs.run_id }} of the hosted pipeline."
+            echo ""
+            echo "- On-disk size: ${MIB} MiB (target: <= 512 MiB)"
+            echo "- Boot: \`qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M -drive file=smolbsd-amd64-${{ inputs.tag }}.qcow2,format=qcow2,if=virtio -nic user,model=virtio-net-pci -nographic\`"
+            echo "- Login: root / smolbsd — **dev image**: change the password on first login;"
+            echo "  never expose it beyond QEMU user-mode networking."
+            echo "- Verify: \`sha256sum -c smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256\`"
+          } > notes.md
+          gh release create "${{ inputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --title "smolBSD ${{ inputs.tag }}" \
+            --notes-file notes.md \
+            $([ "${{ inputs.prerelease }}" = "true" ] && echo --prerelease) \
+            "smolbsd-amd64-${{ inputs.tag }}.qcow2" \
+            "smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256"
+          echo "Release ${{ inputs.tag }} published."
