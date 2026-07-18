@@ -93,7 +93,7 @@ All pushes used `--force-with-lease`.
 | GitHub `dd/*` branches (3) | Clean |
 | Working repo (`/Users/studio/smolBSD`) | Synced to rewritten history; live spool on disk still contains original data (gitignored) |
 | Pre-push hook | Installed and verified working |
-| Gitea (`gitea/main`, `gitea/claude/blissful-shockley-eeb73b`) | **NOT yet force-pushed** — private Gitea at `i9-zfs-pop:3001`; lower urgency than public GitHub but should be updated |
+| Gitea (`gitea/main`, `gitea/claude/blissful-shockley-eeb73b`) | **NOT yet force-pushed** — private Gitea at `<gitea-host>:3001`; lower urgency than public GitHub but should be updated |
 
 ### Residual exposure — GitHub PR refs
 
@@ -131,5 +131,5 @@ This key was captured during a harvest command and recorded in a claims block. *
 | Terminate both Vultr instances (UUIDs redacted above) | Ryan MacLean | Termination confirmed out-of-band per task brief |
 | **Rotate Vultr API key `BTA56PEJBU6CIDUTVAAYTS64HB4SGFZ7FQ6Q`** | Ryan MacLean | **OUTSTANDING** — key found in live spool, not mentioned in original brief |
 | Contact GitHub Support to flush object cache / PR refs | Ryan MacLean | Outstanding |
-| Force-push rewritten history to Gitea (`i9-zfs-pop:3001`) | Ryan MacLean | Outstanding |
+| Force-push rewritten history to Gitea (`<gitea-host>:3001`) | Ryan MacLean | Outstanding |
 | Clear or redact live `var/mail/spool` on disk | Ryan MacLean | Outstanding — spool is gitignored but still contains raw secrets |

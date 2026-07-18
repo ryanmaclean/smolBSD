@@ -81,7 +81,7 @@ output_to            = "coordinator@smolbsd.local"
 output_format        = "mbox+toml-v1"
 attestation_required = true
 skills_recommended   = ["freebsd", "qemu-fleet", "freebsd-build-vm"]
-tools_required       = ["Read", "Write", "Edit", "Bash"]   # §17 : le coord refuse la distribution si le type de sous-agent en manque un
+tools_required       = ["Read", "Write", "Edit", "Bash"]   # §17 : le coord refuse la distribution si le type de sous-agent ne dispose pas de l'un de ces outils
 tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
 budget_tokens        = 80000
 ```
@@ -186,7 +186,7 @@ Selon `~/.claude/CLAUDE.md`, toute réponse avec `verdict = "pass"` et
 `attestation_required = true` DOIT contenir au moins un bloc `[[claims]]`. Le
 coordinateur effectue une contre-vérification avec `fleet-eval verify` avant de
 faire confiance à la réponse. Les réponses non fiables déclenchent un nouvel
-essai (politique définie par D2).
+essai (politique à définir par D2).
 
 ## 8. Rôles et affectations d'agents
 
@@ -619,10 +619,10 @@ mise en garde n'est que l'hypothèse explicite de contexte réseau qu'un agent
 démarré à froid doit reconnaître avant de déboguer « pourquoi le repli IRC a
 silencieusement échoué sans effet ».
 
-### 18.6 L'hôte Gitea est i9-zfs-pop:3001, pas gitea.local:3000
+### 18.6 L'hôte Gitea est <gitea-host>:3001, pas gitea.local:3000
 
 `gitea.local` (selon le DNS du parc dans CLAUDE.md) se résout en `<nas-ip>`
-(QNAS) mais Gitea tourne en réalité sur `i9-zfs-pop` à `<internal-ip>:3001`.
+(QNAS) mais Gitea tourne en réalité sur `<gitea-host>` à `<internal-ip>:3001`.
 Le port 3000 sur cet hôte est TensorZero. La table des noms d'hôtes du parc de
 CLAUDE.md est périmée pour cette entrée.
 

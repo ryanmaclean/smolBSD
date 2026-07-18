@@ -79,7 +79,7 @@ output_to            = "coordinator@smolbsd.local"
 output_format        = "mbox+toml-v1"
 attestation_required = true
 skills_recommended   = ["freebsd", "qemu-fleet", "freebsd-build-vm"]
-tools_required       = ["Read", "Write", "Edit", "Bash"]   # §17：サブエージェントタイプがいずれかを欠く場合、コーディネーターはディスパッチを拒否
+tools_required       = ["Read", "Write", "Edit", "Bash"]   # §17：サブエージェントタイプがこれらのツールのいずれかを欠く場合、コーディネーターはディスパッチを拒否する
 tools_allowed        = ["Read", "Write", "Edit", "Bash", "Grep", "Glob"]
 budget_tokens        = 80000
 ```
@@ -183,7 +183,7 @@ RTKを必須としません** — RTKが存在しない場合は生の出力に�
 `~/.claude/CLAUDE.md` に従い、`verdict = "pass"` かつ `attestation_required = true`
 のすべての返信は、少なくとも1つの `[[claims]]` ブロックを含まなければなりません
 （MUST）。コーディネーターは返信を信頼する前に `fleet-eval verify` でクロスチェック
-します。信頼できない返信はリトライをトリガーします（ポリシーはD2で規定）。
+します。信頼できない返信はリトライをトリガーします（ポリシーは D2 で定義予定）。
 
 ## 8. 役割とエージェント割り当て
 
@@ -589,10 +589,10 @@ tailnetピアとして認識しません）。
 投入されたエージェントが認識しておくべき明示的なネットワークコンテキストの前提に
 すぎません。
 
-### 18.6 Gitea ホストは i9-zfs-pop:3001 であり gitea.local:3000 ではない
+### 18.6 Gitea ホストは <gitea-host>:3001 であり gitea.local:3000 ではない
 
 `gitea.local`（CLAUDE.mdのフリートDNSによる）は `<nas-ip>`（QNAS）に解決されますが、
-Giteaは実際には `i9-zfs-pop` の `<internal-ip>:3001` で稼働しています。そのホストの
+Giteaは実際には `<gitea-host>` の `<internal-ip>:3001` で稼働しています。そのホストの
 ポート3000はTensorZeroです。CLAUDE.mdのフリートホスト名テーブルは、このエントリに
 ついて古くなっています。
 
