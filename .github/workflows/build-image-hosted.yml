@@ -37,17 +37,6 @@ on:
       vmsize:
         description: "Image VMSIZE (sparse)"
         default: "2g"
-  # TEMPORARY pre-merge validation trigger (round 2): dispatch only works
-  # from the default branch, whose copy still has the first? bug this branch
-  # fixes. Remove after the first fully green run.
-  push:
-    branches: ['claude/ur-bsd-26-qnmjho']
-    paths:
-      - '.github/workflows/build-image-hosted.yml'
-      - 'bin/build-smolbsd.nu'
-      - 'release/tools/smolbsd-qemu*.conf'
-      - 'sys/amd64/conf/SMOLBSD'
-      - 'sys/arm64/conf/SMOLBSD'
 
 env:
   WORK: /mnt/smolbsd-ci

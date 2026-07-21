@@ -125,6 +125,17 @@ Every FIX-9/FIX-10 assumption was checked directly against
 | Workflow header "NOPKGBASE skips tpm2-tools" | FALSE — `vm_extra_install_packages` chroot-installs `VM_EXTRA_PACKAGES` regardless of NOPKGBASE (only `WITHOUT_QEMU` skips it, vmimage.subr:205–247) | Header corrected; `NOPKGBASE=yes` kept in the proven pipeline |
 | Conf-provided builds get DHCP/growfs defaults | N/A — `vm_extra_enable_services` adds `ifconfig_DEFAULT`/`growfs_enable` only when NO conf is passed (vmimage.subr:195–201); our conf sets `ifconfig_vtnet0="DHCP"` itself | No change needed (noted so nobody "fixes" it) |
 
+## Empirical results — hosted pipeline run #6: GREEN (2026-07-18)
+
+**The scripted pipeline produced a gated smolBSD image end-to-end for the
+first time.** Run 29637188773, commit bc852b7: buildworld+kernel ~3h,
+cloudware-release ~5m, **size gate PASS** (<= 512 MiB; the whole artifact
+zip incl. logs is 87 MB compressed), **boot gate PASS: TIME_TO_LOGIN=9s**
+under KVM — serial log shows dhclient DHCPACK on vtnet0, syslogd, sshd,
+cron, then the login prompt. FIX-1..FIX-10 all validated in one run.
+Remaining from the original plan: aarch64 leg (cross-build + ARM-hardware
+boot gate) and the T1-T6 TPM suite against this artifact.
+
 ## Empirical results — hosted pipeline runs #3-#4 (2026-07-18)
 
 buildworld 1h50-3h10m (-j3) and buildkernel SMOLBSD **~2m**
