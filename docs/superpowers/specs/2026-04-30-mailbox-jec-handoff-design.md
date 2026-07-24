@@ -504,10 +504,10 @@ case — fallback failure is logged, not fatal. This caveat is just the
 explicit network-context assumption an agent dropped in cold needs to
 recognize before debugging "why did the IRC fallback silently no-op".
 
-### 18.6 Gitea host is i9-zfs-pop:3001, not gitea.local:3000
+### 18.6 Gitea host is <gitea-host>:3001, not gitea.local:3000
 
 `gitea.local` (per CLAUDE.md fleet DNS) resolves to `<nas-ip>` (QNAS) but
-Gitea actually runs on `i9-zfs-pop` at `<internal-ip>:3001`. Port 3000 on that
+Gitea actually runs on `<gitea-host>` at `<internal-ip>:3001`. Port 3000 on that
 host is TensorZero. The CLAUDE.md fleet hostname table is stale for this entry.
 
 **Tunnel from Tailscale (conference / remote):**

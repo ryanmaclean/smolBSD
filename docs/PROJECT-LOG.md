@@ -60,7 +60,7 @@ parses mbox + TOML bodies into structured records. Smoke-tested (task-0012):
 The upstream `freebsd-build-vm` skill named the build VM `fb-vm-24` (stale) and
 listed SSH port `2225` (stale). Ground truth: VM is `<aarch64-builder>`, port is `2222`.
 All smolBSD docs use the correct names. The global skill needs a separate update
-PR (flagged but out-of-scope for this repo). Gitea: `i9-zfs-pop:3001`, not
+PR (flagged but out-of-scope for this repo). Gitea: `<gitea-host>:3001`, not
 `gitea.local:3000` (QNAS hosts something else on :3000).
 
 ---

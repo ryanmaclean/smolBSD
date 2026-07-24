@@ -17,7 +17,7 @@ spec §18 and all plan files already document the drift accurately.
 The `gitea.local:3000` reference at `docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.md:223` is inside a TOML
 code block labeled `scope = ["gitea.local:3000/api/v1/repos/*"]` and is
 marked as `# advisory` — it is an example pattern, not a live URL. It is
-also noted in §18.6 that the actual Gitea is `i9-zfs-pop:3001`. No change
+also noted in §18.6 that the actual Gitea is `<gitea-host>:3001`. No change
 needed there.
 
 The `include MINIMAL` references in `sys/amd64/conf/SMOLBSD` and
