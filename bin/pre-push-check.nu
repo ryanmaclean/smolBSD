@@ -2,39 +2,44 @@
 # SPDX-License-Identifier: Apache-2.0
 # bin/pre-push-check.nu — scan spool for sensitive patterns before pushing
 #
-# Usage: nu bin/pre-push-check.nu
+# Usage: nu bin/pre-push-check.nu [--spool <path>]
 # Exit 0 = clean, Exit 1 = sensitive content found
+#
+# Covered by CI: .github/workflows/ci.yml runs this against absent, clean,
+# and dirty fixture spools (tests/fixtures/spool-*.mbox) on the pinned nu.
 
-def main [] {
-    let spool = "var/mail/spool"
+# All findings for one spool line (empty list = clean line).
+# Nushell's map is `each`; a per-line rule table beats a for+mut accumulator.
+def line-findings [lineno: int, line: string] {
+    [
+        # IPv4 that looks public: exempt lines starting with RFC1918/loopback
+        (if ($line =~ '(?:[0-9]{1,3}\.){3}[0-9]{1,3}') and not ($line =~ '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)') {
+            $"line ($lineno): possible public IP: ($line | str trim)"
+        })
+        # Instance UUIDs (Vultr-style)
+        (if $line =~ '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' {
+            $"line ($lineno): possible UUID/instance-id: ($line | str trim)"
+        })
+        # API keys (long alphanum strings)
+        (if $line =~ 'api.key\s*[:=]\s*\S{20,}' {
+            $"line ($lineno): possible API key"
+        })
+    ] | compact
+}
+
+def main [
+    --spool: string = "var/mail/spool"   # override for tests/fixtures
+] {
     if not ($spool | path exists) {
         print "spool absent — nothing to check"
         exit 0
     }
 
-    let content = open --raw $spool
-    mut hits = []
-
-    # IPv4 addresses that look like public IPs (not RFC1918)
-    # RFC1918: 10.x, 172.16-31.x, 192.168.x
-    let lines = $content | lines | enumerate
-    for entry in $lines {
-        let line = $entry.item
-        let lineno = $entry.index + 1
-        # Simple public IP heuristic: x.x.x.x where first octet not 10/172/192
-        # Use =~ regex match operator (Nushell 0.111+)
-        if ($line =~ '(?:[0-9]{1,3}\.){3}[0-9]{1,3}') and not ($line =~ '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)') {
-            $hits = $hits | append $"line ($lineno): possible public IP: ($line | str trim)"
-        }
-        # Instance UUIDs (Vultr-style)
-        if ($line =~ '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}') {
-            $hits = $hits | append $"line ($lineno): possible UUID/instance-id: ($line | str trim)"
-        }
-        # API keys (long alphanum strings)
-        if ($line =~ 'api.key\s*[:=]\s*\S{20,}') {
-            $hits = $hits | append $"line ($lineno): possible API key"
-        }
-    }
+    let hits = open --raw $spool
+        | lines
+        | enumerate
+        | each {|e| line-findings ($e.index + 1) $e.item }
+        | flatten
 
     if ($hits | length) > 0 {
         print "SENSITIVE CONTENT FOUND IN SPOOL:"

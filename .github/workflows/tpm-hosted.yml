@@ -68,7 +68,9 @@ jobs:
       - name: T1 — swtpm socket
         run: |
           ls -lh
-          test -f smolbsd-amd64.qcow2 || { echo "ERROR: artifact has no smolbsd-amd64.qcow2 (build may predate the artifact naming)"; exit 1; }
+          ART=$(find . -name 'smolbsd-amd64.qcow2' -type f | head -1)
+          test -n "$ART" || { echo "ERROR: artifact has no smolbsd-amd64.qcow2 (build may predate the artifact naming)"; find . -maxdepth 3 -type f; exit 1; }
+          [ "$ART" = "./smolbsd-amd64.qcow2" ] || mv "$ART" smolbsd-amd64.qcow2
           mkdir -p /tmp/tpmstate
           swtpm socket --tpmstate dir=/tmp/tpmstate --tpm2 \
             --ctrl type=unixio,path=/tmp/swtpm.sock \

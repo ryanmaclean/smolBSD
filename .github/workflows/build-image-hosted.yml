@@ -37,17 +37,6 @@ on:
       vmsize:
         description: "Image VMSIZE (sparse)"
         default: "2g"
-  # TEMPORARY pre-merge validation trigger: workflow_dispatch is unavailable
-  # until this file lands on the default branch, but push triggers fire from
-  # the branch's own workflow file. Remove after the first green run.
-  push:
-    branches: ['claude/ur-bsd-26-qnmjho']
-    paths:
-      - '.github/workflows/build-image-hosted.yml'
-      - 'bin/build-smolbsd.nu'
-      - 'release/tools/smolbsd-qemu*.conf'
-      - 'sys/amd64/conf/SMOLBSD'
-      - 'sys/arm64/conf/SMOLBSD'
 
 env:
   WORK: /mnt/smolbsd-ci
@@ -177,14 +166,29 @@ jobs:
           cd "$WORK"
           SSH="ssh -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
                -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -p $SSH_PORT root@127.0.0.1"
+          # Run the build but judge success by the ARTIFACT, not the script exit
+          # code: run #3 built the image, then died in post-build artifact
+          # location (a nu bug) and the qcow2 was lost with the ephemeral VM.
+          BUILD_RC=0
           $SSH "cd /root/smolBSD && nu bin/build-smolbsd.nu \
                   --arch '${{ inputs.arch || 'amd64' }}' --vmsize '$VMSIZE_INPUT'" \
-            2>&1 | tee build.log
+            2>&1 | tee build.log || BUILD_RC=$?
           # Locate the artifact (FIX-9: cloudware-release writes
           # <objdir>/usr/src/release/smolbsd.ufs.qcow2)
+          # Always pull the in-VM make log out — the real error lives there
+          # and dies with the ephemeral VM otherwise (runs #3/#4 lesson).
+          scp -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -P "$SSH_PORT" root@127.0.0.1:/var/tmp/smolbsd-build.log \
+              "$WORK/smolbsd-build-vm.log" || true
           ART=$($SSH "find /usr/obj -name smolbsd.ufs.qcow2 2>/dev/null | head -1")
           [ -n "$ART" ] || ART=$($SSH "find /usr/obj -name '*.ufs.qcow2' 2>/dev/null | head -1")
-          test -n "$ART" || { echo "ERROR: no qcow2 artifact found in /usr/obj"; exit 1; }
+          if [ -z "$ART" ]; then
+            echo "ERROR: no qcow2 artifact found in /usr/obj (build rc=$BUILD_RC)"
+            echo "==== tail of in-VM make log ===="
+            tail -n 150 "$WORK/smolbsd-build-vm.log" || true
+            exit 1
+          fi
+          [ "$BUILD_RC" -eq 0 ] || echo "WARNING: build script exited rc=$BUILD_RC after producing the artifact - check build.log"
           echo "artifact=$ART"
           scp -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -P "$SSH_PORT" "root@127.0.0.1:$ART" \
@@ -241,6 +245,7 @@ jobs:
           path: |
             /mnt/smolbsd-ci/smolbsd-*.qcow2
             /mnt/smolbsd-ci/build.log
+            /mnt/smolbsd-ci/smolbsd-build-vm.log
             /mnt/smolbsd-ci/serial.log
 
       - name: Teardown VM

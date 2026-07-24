@@ -35,7 +35,9 @@ Three ways in, depending on what you have:
    [hosted build pipeline](.github/workflows/build-image-hosted.yml) from the
    Actions tab — it builds the qcow2 on a stock GitHub runner and uploads it
    as a workflow artifact (see `docs/BUILDING.md`, "Building in a pipeline").
-   There are no prebuilt release images yet.
+   Gate-passing builds can be published via the manual `Release smolBSD Image` workflow —
+   check [Releases](https://github.com/ryanmaclean/smolBSD/releases) for
+   prebuilt images.
 2. **Have a FreeBSD 15 host?** Build natively — see **Build** below.
 3. **Already have a qcow2?** Boot it:
 
