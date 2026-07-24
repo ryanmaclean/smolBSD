@@ -108,12 +108,25 @@ jobs:
             echo "  never expose it beyond QEMU user-mode networking."
             echo "- Verify: \`sha256sum -c smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256\`"
           } > notes.md
-          gh release create "${{ inputs.tag }}" \
+          if ! gh release create "${{ inputs.tag }}" \
             --repo "${{ github.repository }}" \
             --target "$BUILD_SHA" \
             --title "smolBSD ${{ inputs.tag }}" \
             --notes-file notes.md \
             $([ "${{ inputs.prerelease }}" = "true" ] && echo --prerelease) \
             "smolbsd-amd64-${{ inputs.tag }}.qcow2" \
-            "smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256"
+            "smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256"; then
+            echo ""
+            echo "Release creation failed. If the error above is HTTP 403"
+            echo "'Resource not accessible by integration' (seen on release"
+            echo "run #2 despite contents:write), GITHUB_TOKEN is likely being"
+            echo "blocked from creating the tag by a tag protection rule or"
+            echo "ruleset on refs/tags/**. Fixes:"
+            echo "  1. Settings -> Rules: add GitHub Actions to the bypass"
+            echo "     list (or drop the tag rule), then re-run; or"
+            echo "  2. create the tag yourself and re-run — an existing tag"
+            echo "     needs no ref creation:"
+            echo "       git tag ${{ inputs.tag }} $BUILD_SHA && git push origin ${{ inputs.tag }}"
+            exit 1
+          fi
           echo "Release ${{ inputs.tag }} published."
