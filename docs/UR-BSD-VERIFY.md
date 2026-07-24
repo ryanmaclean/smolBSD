@@ -145,7 +145,8 @@ Changes shipped together, to be validated by the next hosted build + TPM run:
    `local.sqlite` kept), recursive `/usr/lib` `*.a` sweep.
 4. **SIZEREPORT instrumentation** at the end of `vm_extra_pre_umount`:
    du/largest-files/pkg-by-size printed into the in-VM make log
-   (`smolbsd-build-vm.log` artifact), `grep '^SIZEREPORT:'` to read. This is
+   (`smolbsd-build-vm.log` artifact); parse with `nu bin/sizereport.nu
+   smolbsd-build-vm.log` (or raw: `grep '^SIZEREPORT:'`). This is
    the ground truth for round 2 (FreeBSD-utilities file-level cuts — the
    ~48 MiB grab-bag leaf with no narrower official replacement on pkgbase).
 
