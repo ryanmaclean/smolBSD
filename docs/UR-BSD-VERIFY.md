@@ -124,6 +124,35 @@ Every FIX-9/FIX-10 assumption was checked directly against
 | `FreeBSD-set-kernels` works with custom KERNCONF | TRUE — sets are generated from package `set` annotations at repo-build time (create-sets.sh) | Watch item removed |
 | Workflow header "NOPKGBASE skips tpm2-tools" | FALSE — `vm_extra_install_packages` chroot-installs `VM_EXTRA_PACKAGES` regardless of NOPKGBASE (only `WITHOUT_QEMU` skips it, vmimage.subr:205–247) | Header corrected; `NOPKGBASE=yes` kept in the proven pipeline |
 | Conf-provided builds get DHCP/growfs defaults | N/A — `vm_extra_enable_services` adds `ifconfig_DEFAULT`/`growfs_enable` only when NO conf is passed (vmimage.subr:195–201); our conf sets `ifconfig_vtnet0="DHCP"` itself | No change needed (noted so nobody "fixes" it) |
+| D-02: "SLIRP has no outbound internet at test time" → pre-bake tpm2-tools | FALSE for hosted runners — `.planning` 03-CONTEXT.md itself records a successful in-guest `pkg install tpm2-tools` over SLIRP (HTTP/HTTPS work; only ICMP doesn't), and run #6's boot gate shows dhclient DHCPACK | tpm2-tools evicted from the image (~15–30 MiB closure); tpm-hosted.yml installs it in-guest at test time, with a skip-if-present guard for pre-eviction artifacts |
+
+## Image diet round 1 (pending CI validation)
+
+Changes shipped together, to be validated by the next hosted build + TPM run:
+
+1. **qcow2 compression on the runner** (`qemu-img convert -c`, default zlib —
+   zstd would require qemu ≥ 5.1 in every consumer). The size gate, boot
+   gate, and artifact now all use the compressed file; `qemu-img check` +
+   `qemu-img compare` guard the replacement. **Raw bytes stay printed every
+   run** — the size trend in this file and PHASE-1-RESULTS.md is tracked in
+   raw bytes, and compression must not mask raw-image growth. Expected:
+   ~100–130 MiB compressed from 223 MiB raw (run #6's 87 MB artifact zip
+   proved ~2.5× whole-file deflate; per-cluster compression is slightly
+   worse).
+2. **tpm2-tools eviction** (D-02 retirement above).
+3. **New trims**: `/boot/kernel/*.symbols|*.debug` (belt+braces, expected
+   ~0), `/var/db/pkg/repos` + `repo-*.sqlite` (catalogs are re-fetchable;
+   `local.sqlite` kept), recursive `/usr/lib` `*.a` sweep.
+4. **SIZEREPORT instrumentation** at the end of `vm_extra_pre_umount`:
+   du/largest-files/pkg-by-size printed into the in-VM make log
+   (`smolbsd-build-vm.log` artifact), `grep '^SIZEREPORT:'` to read. This is
+   the ground truth for round 2 (FreeBSD-utilities file-level cuts — the
+   ~48 MiB grab-bag leaf with no narrower official replacement on pkgbase).
+
+Deferred to later rounds (in rough value order): FreeBSD-utilities diet,
+`WITHOUT_KERBEROS`-class src.conf knobs (blocked on the sshd/GSSAPI ldd
+check above), dropping FreeBSD-vi, direct kernel boot dropping ESP+loader
+(~35–40 MiB, the docs/UR-BSD.md next phase).
 
 ## Empirical results — hosted pipeline run #6: GREEN (2026-07-18)
 

@@ -18,17 +18,18 @@
 # a separate scp.  A 20 GB scratch qcow2 is attached as a second drive so that
 # build objects (13 GB+) do not fill the VM rootfs (4.8 GB).
 #
-# CRITICAL: Do NOT add WITHOUT_QEMU or NOPKG to the make invocation — those
-# skip pkg install and would silently omit tpm2-tools (03-RESEARCH.md Pitfall 3).
-# NOPKGBASE=yes is fine and intentional here: verified against releng/15.0
-# vmimage.subr, it only switches the BASE install to installworld;
-# vm_extra_install_packages still chroot-installs VM_EXTRA_PACKAGES.
+# NOTE: tpm2-tools is no longer baked in (D-02 retired) — the TPM suites
+# install it in-guest at test time. WITHOUT_QEMU/NOPKG are still not added:
+# vm_extra_install_packages would be needed again the moment VM_EXTRA_PACKAGES
+# returns. NOPKGBASE=yes is fine and intentional here: verified against
+# releng/15.0 vmimage.subr, it only switches the BASE install to installworld.
 
 name: Build smolBSD TPM Image
 
 on:
   workflow_dispatch:
   push:
+    branches: [main]   # branch pushes must not queue runs on the (often offline) self-hosted runner
     paths:
       - sys/amd64/conf/SMOLBSD
       - release/tools/smolbsd-qemu.conf
@@ -76,11 +77,8 @@ jobs:
             echo "ERROR: 'device tpm' not found in SMOLBSD kernel config"
             exit 1
           }
-          # VM_EXTRA_PACKAGES=tpm2-tools must be present in qemu.conf
-          grep "VM_EXTRA_PACKAGES" "$FREEBSD_SRC/release/tools/smolbsd-qemu.conf" || {
-            echo "ERROR: VM_EXTRA_PACKAGES not found in smolbsd-qemu.conf"
-            exit 1
-          }
+          # tpm2-tools is no longer baked in (D-02 retired): the TPM suite
+          # pkg-installs it in the guest at test time (tpm-hosted.yml).
           echo "Configs copied and verified"
 
       - name: Create output directory
@@ -187,7 +185,7 @@ jobs:
           #      SMOLBSD_FORMAT=qcow2 SMOLBSD_FSLIST=ufs
           #      MK_DEBUG_FILES=no MK_TESTS=no MK_LIB32=no
           #      NOPKGBASE=yes (uses installworld, not pkgbase repos)
-          #      NOTE: do NOT add WITHOUT_QEMU/NOPKG — those skip tpm2-tools pkg install
+          #      NOTE: tpm2-tools no longer baked in (D-02 retired; installed at test time)
           #   7. The artifact lands at /usr/obj/amd64.amd64/usr/src/release/vm.ufs.qcow2
           ssh \
             -o StrictHostKeyChecking=no \
@@ -227,10 +225,6 @@ jobs:
             echo "ERROR: device tpm missing from SMOLBSD kernel config"
             exit 1
           }
-          grep "VM_EXTRA_PACKAGES" /usr/src/release/tools/smolbsd-qemu.conf || {
-            echo "ERROR: VM_EXTRA_PACKAGES missing from smolbsd-qemu.conf"
-            exit 1
-          }
           echo "Config checks passed"
 
           # 4. buildworld (uses all CPUs; objects go to /build/obj via /usr/obj symlink)
@@ -255,7 +249,7 @@ jobs:
           #    SMOLBSD is not a predefined cloudware type in Makefile.vm so
           #    SMOLBSD_FORMAT and SMOLBSD_FSLIST must be set explicitly.
           #    NOPKGBASE=yes uses installworld rather than pkgbase repos.
-          #    Do NOT add WITHOUT_QEMU/NOPKG — those skip tpm2-tools pkg install.
+          #    tpm2-tools no longer baked in (D-02 retired; installed at test time).
           set -o pipefail
           echo "Running cloudware-release ..."
           make -C /usr/src/release cloudware-release \
@@ -319,9 +313,9 @@ jobs:
 
       - name: Verify image size (warn if over 512 MiB)
         run: |
-          # tpm2-tools + 12 deps push the image to ~700 MiB (known deviation
-          # from the 512 MiB plan target — accepted in plan-03 decisions).
           # This step reports the size and warns but does not fail the build.
+          # (The old ~700 MiB tpm2-tools overage rationale is retired with
+          # the eviction — post-diet images should fit the 512 MiB budget.)
           command -v qemu-img >/dev/null 2>&1 || {
             echo "WARNING: qemu-img not found — install qemu-utils to enable size check"
             echo "  sudo apt-get install -y qemu-utils"
@@ -333,7 +327,7 @@ jobs:
           MIB=$(python3 -c "print(round($ACTUAL / 1048576, 1))")
           echo "actual-size: $ACTUAL bytes (${MIB} MiB)"
           if [ "$ACTUAL" -ge "$LIMIT" ]; then
-            echo "NOTE: image size ${MIB} MiB exceeds 512 MiB soft limit (tpm2-tools requirement accepted)"
+            echo "NOTE: image size ${MIB} MiB exceeds 512 MiB soft limit — investigate; the old tpm2-tools overage rationale is retired"
           else
             echo "PASS: image size within 512 MiB budget"
           fi
@@ -347,7 +341,6 @@ jobs:
           # Build metadata record for cache invalidation and audit
           {
             echo "KERNCONF=SMOLBSD"
-            echo "VM_EXTRA_PACKAGES=tpm2-tools"
             echo "VMSIZE=4g"
             echo "SMOLBSD_FORMAT=qcow2"
             echo "SMOLBSD_FSLIST=ufs"
