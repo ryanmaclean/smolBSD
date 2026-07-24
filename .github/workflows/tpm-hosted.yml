@@ -50,6 +50,14 @@ jobs:
         shell: bash
 
     steps:
+      - name: Validate run_id input
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          if ! [[ "${{ inputs.run_id }}" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: run_id must be the numeric build run ID (got '${{ inputs.run_id }}')."
+            exit 1
+          fi
+
       - name: Preflight — KVM, packages
         run: |
           test -c /dev/kvm || { echo "ERROR: no /dev/kvm on this runner"; exit 1; }

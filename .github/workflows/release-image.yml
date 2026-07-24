@@ -43,6 +43,35 @@ jobs:
         shell: bash
 
     steps:
+      - name: Validate inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Guard against the observed failure mode (release run #1): the tag
+          # typed into run_id -> download-artifact fails with a bare
+          # 'Not Found' 11 seconds in. Fail fast with the fix instead.
+          if ! [[ "${{ inputs.run_id }}" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: run_id must be the numeric Actions run ID (got '${{ inputs.run_id }}')."
+            echo "Did you swap run_id and tag? Recent successful build runs:"
+            gh run list --repo "${{ github.repository }}" \
+              --workflow build-image-hosted.yml --status success --limit 5 \
+              --json databaseId,displayTitle,createdAt \
+              --template '{{range .}}{{.databaseId}}  {{.createdAt}}  {{.displayTitle}}{{"\n"}}{{end}}'
+            exit 1
+          fi
+          # Confirm the run actually has the artifact before downloading.
+          if ! gh api "repos/${{ github.repository }}/actions/runs/${{ inputs.run_id }}/artifacts" \
+               --jq '.artifacts[].name' | grep -qx 'smolbsd-amd64'; then
+            echo "ERROR: run ${{ inputs.run_id }} has no 'smolbsd-amd64' artifact (expired, failed, or wrong run)."
+            echo "Recent successful build runs:"
+            gh run list --repo "${{ github.repository }}" \
+              --workflow build-image-hosted.yml --status success --limit 5 \
+              --json databaseId,displayTitle,createdAt \
+              --template '{{range .}}{{.databaseId}}  {{.createdAt}}  {{.displayTitle}}{{"\n"}}{{end}}'
+            exit 1
+          fi
+          echo "run_id ${{ inputs.run_id }} valid; artifact present."
+
       - name: Fetch built image artifact
         uses: actions/download-artifact@v4
         with:
