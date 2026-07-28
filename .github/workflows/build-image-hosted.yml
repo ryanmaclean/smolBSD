@@ -37,25 +37,10 @@ on:
       vmsize:
         description: "Image VMSIZE (sparse)"
         default: "2g"
-  # TEMPORARY pre-merge validation trigger (round 3): the session driving
-  # this branch cannot dispatch workflows (no actions:write), so a branch
-  # push is its autonomous way to run the branch's copy. (Dispatch DOES
-  # honor --ref, so a human can equivalently run:
-  #   gh workflow run build-image-hosted.yml --ref claude/ur-bsd-26-qnmjho)
-  # NOTE: on build success, workflow_run auto-fires MAIN's tpm-hosted.yml
-  # copy, which predates the tpm2-tools eviction and will go RED with a
-  # stale "tpm2-tools not in image" message — expected pre-merge. Validate
-  # the eviction with: gh workflow run tpm-hosted.yml --ref <this branch>
-  # -f run_id=<build run id>. Remove this trigger after the first green
-  # build validates the compression + trims.
-  push:
-    branches: ['claude/ur-bsd-26-qnmjho']
-    paths:
-      - '.github/workflows/build-image-hosted.yml'
-      - 'bin/build-smolbsd.nu'
-      - 'release/tools/smolbsd-qemu*.conf'
-      - 'sys/amd64/conf/SMOLBSD'
-      - 'sys/arm64/conf/SMOLBSD'
+  # (The round-3 temporary push trigger was retired after run #7 went
+  # green — raw 91 MiB, compressed 33 MiB, 9s boot. To validate a branch
+  # copy pre-merge, dispatch with --ref:
+  #   gh workflow run build-image-hosted.yml --ref <branch>)
 
 env:
   WORK: /mnt/smolbsd-ci
