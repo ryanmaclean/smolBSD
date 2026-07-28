@@ -17,7 +17,7 @@ As of 2026-07-24:
 
 | Leg     | Boot gate              | Image size            | Notes                                  |
 |---------|------------------------|-----------------------|----------------------------------------|
-| amd64   | 9s to login on KVM — PASS | **91 MiB raw, 33 MiB compressed download** (≤ 512 MiB gate PASS) | Built end-to-end by the hosted pipeline; [release 0.1.0](https://github.com/ryanmaclean/smolBSD/releases/tag/0.1.0) (223 MiB pre-diet) |
+| amd64   | 9s to login on KVM — PASS | **66.6 MiB raw, 26.6 MiB compressed download** (≤ 512 MiB gate PASS) | Built end-to-end by the hosted pipeline; [releases](https://github.com/ryanmaclean/smolBSD/releases) (0.1.0: 223 MiB, 0.2.0: 91/33 MiB, diet round 2: 66.6/26.6 MiB) |
 | aarch64 | needs ARM hardware (see `docs/BHYVE-GATE-AMD64.md`) | cross-built by the same pipeline, size gate only | Earlier native-build baseline: 11s on HVF, 1.41 GiB pre-diet |
 
 See `docs/UR-BSD-VERIFY.md` for the verified findings and the image-diet

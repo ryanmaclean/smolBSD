@@ -207,6 +207,12 @@ Top dirs (MiB): /usr 44 (share 19, lib 11, bin 8, sbin 7), /boot 21
 (kernel 14), /lib 18. Top files: kernel 13M, **magic.mgc 10.2M**,
 libcrypto 6.2M, **libzpool.so.2 3.8M**, local.sqlite 2.4M.
 
+**Round 2 VALIDATED — run 30375142187 (2026-07-28): raw 66.6 MiB
+(69,861,376 B), compressed 26.6 MiB (27,918,336 B), size gate PASS at
+26 MiB, boot gate TIME_TO_LOGIN=9s with healthy serial (dhclient,
+sshd, cron, login). The estimate below (~25 MiB) matched reality
+(91 → 66.6 MiB). Trend: 1.41 GiB → 223 → 91 → 66.6 MiB raw.**
+
 Round-2 rm list (est. ~25 MiB raw, all file-level, boot-gate validated):
 `/usr/share/misc/magic.mgc` + `magic` (~12M, file(1) DB), ZFS userland
 libs on a UFS image (`libzpool`, `libzfs*`, `libnvpair`, `libuutil`,

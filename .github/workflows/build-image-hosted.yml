@@ -37,20 +37,11 @@ on:
       vmsize:
         description: "Image VMSIZE (sparse)"
         default: "2g"
-  # TEMPORARY pre-merge validation trigger (round 4): validates the
-  # round-2 diet trims (magic DB, ZFS userland, loader variants, misc —
-  # see docs/UR-BSD-VERIFY.md SIZEREPORT section; projected ~66 MiB raw /
-  # ~25 MiB download). The driving session cannot dispatch; humans can:
-  #   gh workflow run build-image-hosted.yml --ref <branch>
-  # Remove after the round-2 build passes both gates.
-  push:
-    branches: ['claude/ur-bsd-26-qnmjho']
-    paths:
-      - '.github/workflows/build-image-hosted.yml'
-      - 'bin/build-smolbsd.nu'
-      - 'release/tools/smolbsd-qemu*.conf'
-      - 'sys/amd64/conf/SMOLBSD'
-      - 'sys/arm64/conf/SMOLBSD'
+  # (Round-4 temporary push trigger retired after the round-2 diet build
+  # went green — raw 66.6 MiB, compressed 26.6 MiB, 9s boot, run
+  # 30375142187. Pre-merge validation without dispatch rights: re-add a
+  # push trigger scoped to the branch, or a human runs
+  #   gh workflow run build-image-hosted.yml --ref <branch>)
 
 env:
   WORK: /mnt/smolbsd-ci
