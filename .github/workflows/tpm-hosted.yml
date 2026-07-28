@@ -93,9 +93,12 @@ jobs:
           test -n "$ART" || { echo "ERROR: artifact has no smolbsd-amd64.qcow2 (build may predate the artifact naming)"; find . -maxdepth 3 -type f; exit 1; }
           [ "$ART" = "./smolbsd-amd64.qcow2" ] || mv "$ART" smolbsd-amd64.qcow2
           mkdir -p /tmp/tpmstate
+          # swtpm's pid option is '--pid file=<path>' (not '--pid-file <path>'
+          # — that typo made swtpm print usage and exit 1, which was this
+          # workflow's actual T1 failure on every prior hosted run).
           swtpm socket --tpmstate dir=/tmp/tpmstate --tpm2 \
             --ctrl type=unixio,path=/tmp/swtpm.sock \
-            --pid-file /tmp/swtpm.pid --daemon
+            --pid file=/tmp/swtpm.pid --daemon
           for i in 1 2 3; do
             [ -S /tmp/swtpm.sock ] && { echo "T1 PASS: swtpm socket up at ${i}s"; exit 0; }
             sleep 1
