@@ -1,0 +1,22 @@
+--- makefs stage begins ---
+Creating image ...
+SIZEREPORT: ==== rootfs total (MiB) ====
+SIZEREPORT: 402	/mnt/vm-root
+SIZEREPORT: ==== directories to depth 2 (MiB) ====
+SIZEREPORT: 402	/mnt/vm-root
+SIZEREPORT: 210	/mnt/vm-root/usr
+SIZEREPORT: 121	/mnt/vm-root/usr/lib
+SIZEREPORT: 88	/mnt/vm-root/boot
+SIZEREPORT: 74	/mnt/vm-root/boot/kernel
+SIZEREPORT: 55	/mnt/vm-root/usr/bin
+SIZEREPORT: ==== 30 largest files (KiB) ====
+SIZEREPORT: 44120	/mnt/vm-root/boot/kernel/kernel
+SIZEREPORT: 12300	/mnt/vm-root/usr/lib/libLLVM.so.19
+SIZEREPORT: 9800	/mnt/vm-root/usr/bin/openssl
+SIZEREPORT: ==== installed packages by size (bytes) ====
+SIZEREPORT: 50331648 FreeBSD-utilities
+SIZEREPORT: 41943040 FreeBSD-kernel-smolbsd
+SIZEREPORT: 12582912 FreeBSD-clibs
+SIZEREPORT: ==== end ====
+Image `smolbsd.ufs' complete
+some unrelated trailing log line

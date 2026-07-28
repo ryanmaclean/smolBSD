@@ -43,6 +43,35 @@ jobs:
         shell: bash
 
     steps:
+      - name: Validate inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Guard against the observed failure mode (release run #1): the tag
+          # typed into run_id -> download-artifact fails with a bare
+          # 'Not Found' 11 seconds in. Fail fast with the fix instead.
+          if ! [[ "${{ inputs.run_id }}" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: run_id must be the numeric Actions run ID (got '${{ inputs.run_id }}')."
+            echo "Did you swap run_id and tag? Recent successful build runs:"
+            gh run list --repo "${{ github.repository }}" \
+              --workflow build-image-hosted.yml --status success --limit 5 \
+              --json databaseId,displayTitle,createdAt \
+              --template '{{range .}}{{.databaseId}}  {{.createdAt}}  {{.displayTitle}}{{"\n"}}{{end}}'
+            exit 1
+          fi
+          # Confirm the run actually has the artifact before downloading.
+          if ! gh api "repos/${{ github.repository }}/actions/runs/${{ inputs.run_id }}/artifacts" \
+               --jq '.artifacts[].name' | grep -qx 'smolbsd-amd64'; then
+            echo "ERROR: run ${{ inputs.run_id }} has no 'smolbsd-amd64' artifact (expired, failed, or wrong run)."
+            echo "Recent successful build runs:"
+            gh run list --repo "${{ github.repository }}" \
+              --workflow build-image-hosted.yml --status success --limit 5 \
+              --json databaseId,displayTitle,createdAt \
+              --template '{{range .}}{{.databaseId}}  {{.createdAt}}  {{.displayTitle}}{{"\n"}}{{end}}'
+            exit 1
+          fi
+          echo "run_id ${{ inputs.run_id }} valid; artifact present."
+
       - name: Fetch built image artifact
         uses: actions/download-artifact@v4
         with:
@@ -73,18 +102,33 @@ jobs:
           {
             echo "smolBSD amd64 qcow2 — built by run ${{ inputs.run_id }} of the hosted pipeline."
             echo ""
-            echo "- On-disk size: ${MIB} MiB (target: <= 512 MiB)"
+            echo "- Download size: ${MIB} MiB (compressed qcow2 — boots as-is in any qemu; raw-size target: <= 512 MiB)"
             echo "- Boot: \`qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M -drive file=smolbsd-amd64-${{ inputs.tag }}.qcow2,format=qcow2,if=virtio -nic user,model=virtio-net-pci -nographic\`"
             echo "- Login: root / smolbsd — **dev image**: change the password on first login;"
             echo "  never expose it beyond QEMU user-mode networking."
             echo "- Verify: \`sha256sum -c smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256\`"
           } > notes.md
-          gh release create "${{ inputs.tag }}" \
+          if ! gh release create "${{ inputs.tag }}" \
             --repo "${{ github.repository }}" \
             --target "$BUILD_SHA" \
             --title "smolBSD ${{ inputs.tag }}" \
             --notes-file notes.md \
             $([ "${{ inputs.prerelease }}" = "true" ] && echo --prerelease) \
             "smolbsd-amd64-${{ inputs.tag }}.qcow2" \
-            "smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256"
+            "smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256"; then
+            echo ""
+            echo "Release creation failed. If the error above is HTTP 403"
+            echo "'Resource not accessible by integration': GITHUB_TOKEN"
+            echo "cannot create a tag pointing at a commit whose WORKFLOW"
+            echo "FILES differ from main (the 'workflows' permission check —"
+            echo "verified 2026-07-28; it is NOT a tag ruleset). This bites"
+            echo "when run_id built a BRANCH commit with workflow changes."
+            echo "Fixes:"
+            echo "  1. merge the branch first and release a main-built run"
+            echo "     (or pass a run whose commit is on main); or"
+            echo "  2. create the tag yourself and re-run — an existing tag"
+            echo "     needs no ref creation:"
+            echo "       git tag ${{ inputs.tag }} $BUILD_SHA && git push origin ${{ inputs.tag }}"
+            exit 1
+          fi
           echo "Release ${{ inputs.tag }} published."

@@ -37,6 +37,10 @@ on:
       vmsize:
         description: "Image VMSIZE (sparse)"
         default: "2g"
+  # (The round-3 temporary push trigger was retired after run #7 went
+  # green — raw 91 MiB, compressed 33 MiB, 9s boot. To validate a branch
+  # copy pre-merge, dispatch with --ref:
+  #   gh workflow run build-image-hosted.yml --ref <branch>)
 
 env:
   WORK: /mnt/smolbsd-ci
@@ -194,6 +198,36 @@ jobs:
               -P "$SSH_PORT" "root@127.0.0.1:$ART" \
               "$WORK/smolbsd-${{ inputs.arch || 'amd64' }}.qcow2"
           ls -lh "$WORK/smolbsd-${{ inputs.arch || 'amd64' }}.qcow2"
+
+      - name: Compress qcow2 (in place)
+        run: |
+          set -e
+          ARCH="${{ inputs.arch || 'amd64' }}"
+          RAW="$WORK/smolbsd-${ARCH}.qcow2"
+          RAW_BYTES=$(wc -c < "$RAW")
+          # Per-cluster zlib compression: read-transparent to every qemu that
+          # can open qcow2. Deliberately NOT zstd (-o compression_type=zstd),
+          # which requires qemu >= 5.1 in every downstream consumer.
+          # The size gate, boot gate, upload, and release asset all reference
+          # this path, so replacing in place needs no other workflow changes;
+          # the boot gate opens it read-only (snapshot=on) so the write path
+          # never touches compressed clusters.
+          qemu-img convert -c -O qcow2 -o compat=1.1 "$RAW" "$RAW.c.tmp"
+          qemu-img check "$RAW.c.tmp"
+          # Bit-for-bit guest-content equality before replacing the artifact.
+          qemu-img compare -f qcow2 -F qcow2 "$RAW" "$RAW.c.tmp"
+          mv -f "$RAW.c.tmp" "$RAW"
+          COMP_BYTES=$(wc -c < "$RAW")
+          # Raw bytes stay visible every run: the size trend in
+          # docs/PHASE-1-RESULTS.md / UR-BSD-VERIFY.md is tracked in raw
+          # bytes, and compression must not mask raw-image growth.
+          echo "raw_bytes=$RAW_BYTES compressed_bytes=$COMP_BYTES"
+          {
+            echo "### qcow2 compression (${ARCH})"
+            echo "| raw MiB | compressed MiB |"
+            echo "|---|---|"
+            echo "| $((RAW_BYTES / 1048576)) | $((COMP_BYTES / 1048576)) |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Size gate (<= 512 MiB)
         id: size

@@ -41,8 +41,12 @@ env:
 jobs:
   tpm-t1-t6:
     name: TPM T1-T6 on built image
-    # On workflow_run, only test artifacts of successful builds.
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # On workflow_run, only test artifacts of successful MAIN builds:
+    # workflow_run always executes the default-branch copy of this file,
+    # so auto-testing branch-built artifacts pairs an old workflow with a
+    # new image (or vice versa). Branch artifacts are validated by
+    # dispatching this workflow with --ref <branch> -f run_id=<build run>.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -50,6 +54,14 @@ jobs:
         shell: bash
 
     steps:
+      - name: Validate run_id input
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          if ! [[ "${{ inputs.run_id }}" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: run_id must be the numeric build run ID (got '${{ inputs.run_id }}')."
+            exit 1
+          fi
+
       - name: Preflight — KVM, packages
         run: |
           test -c /dev/kvm || { echo "ERROR: no /dev/kvm on this runner"; exit 1; }
@@ -72,9 +84,12 @@ jobs:
           test -n "$ART" || { echo "ERROR: artifact has no smolbsd-amd64.qcow2 (build may predate the artifact naming)"; find . -maxdepth 3 -type f; exit 1; }
           [ "$ART" = "./smolbsd-amd64.qcow2" ] || mv "$ART" smolbsd-amd64.qcow2
           mkdir -p /tmp/tpmstate
+          # swtpm's pid option is '--pid file=<path>' (not '--pid-file <path>'
+          # — that typo made swtpm print usage and exit 1, which was this
+          # workflow's actual T1 failure on every prior hosted run).
           swtpm socket --tpmstate dir=/tmp/tpmstate --tpm2 \
             --ctrl type=unixio,path=/tmp/swtpm.sock \
-            --pid-file /tmp/swtpm.pid --daemon
+            --pid file=/tmp/swtpm.pid --daemon
           for i in 1 2 3; do
             [ -S /tmp/swtpm.sock ] && { echo "T1 PASS: swtpm socket up at ${i}s"; exit 0; }
             sleep 1
@@ -108,6 +123,39 @@ jobs:
           tail -50 /tmp/serial.log
           exit 1
 
+      - name: Install tpm2-tools in guest (D-02 retired — SLIRP has outbound)
+        run: |
+          # tpm2-tools is no longer baked into the image: hosted runners give
+          # the SLIRP guest full outbound NAT, so install at test time.
+          # NOTE: snapshot=on makes this install ephemeral — fine because
+          # T2-T6 run in the same boot; a future reboot-between-gates would
+          # silently lose it and must re-install.
+          SSHOPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+                   -o PreferredAuthentications=password -o ServerAliveInterval=15
+                   -p "$SSH_PORT" root@127.0.0.1)
+          # Transition guard: artifacts from pre-eviction builds still have it.
+          if sshpass -p smolbsd ssh "${SSHOPTS[@]}" 'command -v tpm2_pcrread' >/dev/null 2>&1; then
+            echo "tpm2-tools already present (pre-eviction artifact) — skipping install"
+            exit 0
+          fi
+          # certctl rehash: FreeBSD-caroot ships certs under /usr/share/certs
+          # but /etc/ssl/certs may be unpopulated if the post-install hook
+          # never ran in the DESTDIR chroot; idempotent, ~1s.
+          # IGNORE_OSVERSION: repo packages may be built on a newer 15.x than
+          # the image's FreeBSD_version.
+          if ! timeout 420 sshpass -p smolbsd ssh "${SSHOPTS[@]}" '
+                set -e
+                certctl rehash || true
+                env ASSUME_ALWAYS_YES=yes IGNORE_OSVERSION=yes /usr/sbin/pkg bootstrap
+                env ASSUME_ALWAYS_YES=yes IGNORE_OSVERSION=yes pkg install -y tpm2-tools
+                command -v tpm2_pcrread'; then
+            echo "INSTALL FAIL: pkg bootstrap/install of tpm2-tools failed over SLIRP."
+            echo "This is a network/repo/trust infra failure, NOT a TPM regression:"
+            echo "check DNS (10.0.2.3), pkg.FreeBSD.org reachability, /etc/ssl/certs,"
+            echo "and ABI/osversion in the log above."
+            exit 1
+          fi
+
       - name: T2-T6 — in-guest TPM checks
         run: |
           SSH() {
@@ -126,9 +174,10 @@ jobs:
             && echo "T3 PASS: TPM kernel evidence" \
             || echo "T3 WARN: no kldstat/dmesg TPM evidence (compiled-in driver may not list)"
 
-          # T4-T6 need tpm2-tools baked into the image (VM_EXTRA_PACKAGES, FIX-9)
+          # T4-T6 need tpm2-tools — installed at test time by the
+          # "Install tpm2-tools in guest" step (or pre-baked in older artifacts).
           if ! SSH 'command -v tpm2_pcrread' >/dev/null 2>&1; then
-            echo "T4-T6 FAIL: tpm2-tools not in image — VM_EXTRA_PACKAGES baking did not happen"
+            echo "T4-T6 FAIL: tpm2_pcrread unavailable despite the install step passing — inspect its logs"
             exit 1
           fi
 
@@ -138,16 +187,25 @@ jobs:
           else echo "T4 FAIL: PCR sha256:0 unreadable or zero"; fail=1; fi
 
           # T5: seal/unseal round-trip against PCR 0+7 policy
+          # tpm2_flushcontext -t between steps: swtpm has few transient-object
+          # slots, and without flushing, Esys_Load dies with 0x902 "out of
+          # memory for object contexts" (seen on the first full T5 run).
+          # Saved .ctx files reload via TPM2_ContextLoad after a flush.
           if SSH 'set -e
               d=$(mktemp -d)
               cd "$d"
               echo smolbsd-seal-test > secret.txt
               tpm2_createprimary -C o -g sha256 -G ecc -c primary.ctx -Q
+              tpm2_flushcontext -t
               tpm2_createpolicy --policy-pcr -l sha256:0,7 -L policy.pcr -Q
+              tpm2_flushcontext -t
+              tpm2_flushcontext -s || true
               tpm2_create -C primary.ctx -g sha256 -u seal.pub -r seal.priv \
                 -L policy.pcr -i secret.txt -Q
+              tpm2_flushcontext -t
               tpm2_load -C primary.ctx -u seal.pub -r seal.priv -c seal.ctx -Q
               tpm2_unseal -c seal.ctx -p pcr:sha256:0,7 > out.txt
+              tpm2_flushcontext -t
               cmp secret.txt out.txt'; then
             echo "T5 PASS: seal/unseal round-trip"
           else echo "T5 FAIL: seal/unseal round-trip"; fail=1; fi

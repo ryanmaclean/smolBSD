@@ -77,6 +77,11 @@ Hosted-runner caveats: buildworld at `-j4` inside the nested VM takes ~2.5–4 h
 SSH bootstrap should be debugged from the uploaded `serial.log`. If the time
 budget doesn't fit, use a larger runner or the self-hosted path.
 
+The uploaded qcow2 is **compressed** (`qemu-img convert -c`, zlib — readable
+by any qemu; the size and boot gates run against the compressed file). The
+raw size is printed in the "Compress qcow2" step and the run summary so the
+size trend stays visible.
+
 ## Size tuning
 
 The release configs in `release/tools/` filter packages and strip non-essential
@@ -88,6 +93,16 @@ bin/analyze-image.sh path/to/FreeBSD-15-aarch64-smolbsd.qcow2
 
 This mounts the image read-only and reports top directories, top files, and
 installed packages, then exits non-zero if total exceeds 512 MiB.
+
+CI builds need no mount at all: the release confs print a `SIZEREPORT` block
+(rootfs total, directories, largest files, packages by size) into the in-VM
+make log, which the hosted workflow uploads as `smolbsd-build-vm.log`. Parse
+it with:
+
+```sh
+nu bin/sizereport.nu smolbsd-build-vm.log        # tables, largest first
+nu bin/sizereport.nu smolbsd-build-vm.log --top 30
+```
 
 ## Partial runs
 

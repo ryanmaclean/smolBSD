@@ -124,6 +124,97 @@ Every FIX-9/FIX-10 assumption was checked directly against
 | `FreeBSD-set-kernels` works with custom KERNCONF | TRUE — sets are generated from package `set` annotations at repo-build time (create-sets.sh) | Watch item removed |
 | Workflow header "NOPKGBASE skips tpm2-tools" | FALSE — `vm_extra_install_packages` chroot-installs `VM_EXTRA_PACKAGES` regardless of NOPKGBASE (only `WITHOUT_QEMU` skips it, vmimage.subr:205–247) | Header corrected; `NOPKGBASE=yes` kept in the proven pipeline |
 | Conf-provided builds get DHCP/growfs defaults | N/A — `vm_extra_enable_services` adds `ifconfig_DEFAULT`/`growfs_enable` only when NO conf is passed (vmimage.subr:195–201); our conf sets `ifconfig_vtnet0="DHCP"` itself | No change needed (noted so nobody "fixes" it) |
+| D-02: "SLIRP has no outbound internet at test time" → pre-bake tpm2-tools | FALSE for hosted runners — `.planning` 03-CONTEXT.md itself records a successful in-guest `pkg install tpm2-tools` over SLIRP (HTTP/HTTPS work; only ICMP doesn't), and run #6's boot gate shows dhclient DHCPACK | tpm2-tools evicted from the image (~15–30 MiB closure); tpm-hosted.yml installs it in-guest at test time, with a skip-if-present guard for pre-eviction artifacts |
+
+## Image diet round 1 — VALIDATED: run #7 GREEN (2026-07-24)
+
+**Run 30109365470, commit 0039c7c: raw 91 MiB (was 223 MiB), compressed
+33 MiB shipped, boot gate TIME_TO_LOGIN=9s on the compressed image.**
+Compress-step evidence: `raw_bytes=95682560 compressed_bytes=34275328`,
+`qemu-img check` clean, `qemu-img compare` "Images are identical"; size
+gate PASS at 32 MiB. The trims alone (pkg repo catalogs, tpm2-tools
+closure, kernel symbols, static libs) cut ~130 MiB of raw — far above the
+~35–60 MiB estimate, mostly the previously-unmeasured `/var/db/pkg/repos`
+catalogs. The original sub-100 MiB raw target is MET; the download is
+33 MB. The auto-chained TPM run (30122923572) went red exactly as
+predicted pre-merge (main's copy predates the eviction — not a
+regression; resolves on merge). The SIZEREPORT block is in the run's
+`smolbsd-build-vm.log` artifact — parse with `nu bin/sizereport.nu` for
+round-2 targeting. To publish: dispatch "Release smolBSD Image" with
+run_id 30109365470.
+
+Changes shipped together, validated by the run above:
+
+1. **qcow2 compression on the runner** (`qemu-img convert -c`, default zlib —
+   zstd would require qemu ≥ 5.1 in every consumer). The size gate, boot
+   gate, and artifact now all use the compressed file; `qemu-img check` +
+   `qemu-img compare` guard the replacement. **Raw bytes stay printed every
+   run** — the size trend in this file and PHASE-1-RESULTS.md is tracked in
+   raw bytes, and compression must not mask raw-image growth. Expected:
+   ~100–130 MiB compressed from 223 MiB raw (run #6's 87 MB artifact zip
+   proved ~2.5× whole-file deflate; per-cluster compression is slightly
+   worse).
+2. **tpm2-tools eviction** (D-02 retirement above).
+3. **New trims**: `/boot/kernel/*.symbols|*.debug` (belt+braces, expected
+   ~0), `/var/db/pkg/repos` + `repo-*.sqlite` (catalogs are re-fetchable;
+   `local.sqlite` kept), recursive `/usr/lib` `*.a` sweep.
+4. **SIZEREPORT instrumentation** at the end of `vm_extra_pre_umount`:
+   du/largest-files/pkg-by-size printed into the in-VM make log
+   (`smolbsd-build-vm.log` artifact); parse with `nu bin/sizereport.nu
+   smolbsd-build-vm.log` (or raw: `grep '^SIZEREPORT:'`). This is
+   the ground truth for round 2 (FreeBSD-utilities file-level cuts — the
+   ~48 MiB grab-bag leaf with no narrower official replacement on pkgbase).
+
+Deferred to later rounds (in rough value order): FreeBSD-utilities diet,
+`WITHOUT_KERBEROS`-class src.conf knobs (blocked on the sshd/GSSAPI ldd
+check above), dropping FreeBSD-vi, direct kernel boot dropping ESP+loader
+(~35–40 MiB, the docs/UR-BSD.md next phase).
+
+## TPM T1-T6: GREEN on the evicted image (2026-07-28, run 30374624881)
+
+The eviction is validated end-to-end: in-guest `pkg bootstrap && pkg
+install tpm2-tools` over SLIRP worked (D-02 conclusively dead), and all
+six gates pass. Two latent bugs fixed on the way, both predating the diet:
+
+1. **swtpm was never invoked correctly on hosted runners**: `--pid-file`
+   is not an swtpm option (`--pid file=<path>` is) — swtpm printed usage
+   and exited 1, so every prior hosted TPM run died at T1. The
+   "expected red pre-merge" runs were red for this reason, not the
+   missing install step.
+2. **T5 seal/unseal died with 0x902** ("out of memory for object
+   contexts"): swtpm has few transient-object slots and the sequence
+   never flushed. `tpm2_flushcontext -t` between steps fixes it.
+
+## Release publishing: the 403 is a workflows-permission check, NOT a ruleset
+
+The 0.2.0 one-shot's git tag push produced the definitive error:
+`refusing to allow a GitHub App to create or update workflow
+'.github/workflows/build-image-hosted.yml' without 'workflows'
+permission`. GITHUB_TOKEN can never hold `workflows`, and creating a
+tag/release ref pointing at a commit whose workflow files differ from
+main trips this check. The 0.1.0 dispatch's REST 403 was the same thing
+(its build commit was a branch commit with workflow changes). **No
+settings change needed** — release from commits already on main (the
+normal post-merge case) and the check never fires. The earlier
+"tag ruleset" hypothesis in this file and release-image.yml is retired.
+
+## SIZEREPORT — run #7 (rootfs 93 MiB); round-2 targets
+
+Top packages (bytes): FreeBSD-utilities 49.5M, kernel-smolbsd 13.9M,
+**libmagic 12.3M**, runtime 9.2M, openssl-lib 7.6M, bootloader 6.8M,
+**zfs-lib 4.8M**, clibs 4.0M, ssh 3.8M, kerberos-lib 1.8M.
+Top dirs (MiB): /usr 44 (share 19, lib 11, bin 8, sbin 7), /boot 21
+(kernel 14), /lib 18. Top files: kernel 13M, **magic.mgc 10.2M**,
+libcrypto 6.2M, **libzpool.so.2 3.8M**, local.sqlite 2.4M.
+
+Round-2 rm list (est. ~25 MiB raw, all file-level, boot-gate validated):
+`/usr/share/misc/magic.mgc` + `magic` (~12M, file(1) DB), ZFS userland
+libs on a UFS image (`libzpool`, `libzfs*`, `libnvpair`, `libuutil`,
+~6M+), unused loader variants (`loader_4th.efi`, `loader_simp.efi`,
+`loader.kboot`, `loader_ia32.efi`, `userboot*`, ~3M — keep `loader.efi`
++ BIOS boot blocks + `/boot/lua`), `tcpdump` (1.4M), `pci_vendors` +
+`usb_vendors` (2.2M), `libomp` (0.9M), `/etc/ssh/moduli` (0.6M; sshd
+falls back to curve25519). Projected: **~66 MiB raw / ~25 MiB download**.
 
 ## Empirical results — hosted pipeline run #6: GREEN (2026-07-18)
 
