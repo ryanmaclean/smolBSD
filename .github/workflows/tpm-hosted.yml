@@ -34,6 +34,13 @@ on:
   workflow_run:
     workflows: ["Build smolBSD Image (hosted runner)"]
     types: [completed]
+  # TEMPORARY pre-merge validation trigger: run THIS branch's copy (with the
+  # install-tpm2-tools step) against the run #7 artifact, since the session
+  # driving the branch cannot dispatch workflows. Falls back to run
+  # 30109365470 below. Remove after the eviction validates green.
+  push:
+    branches: ['claude/ur-bsd-26-qnmjho']
+    paths: ['.github/workflows/tpm-hosted.yml']
 
 env:
   SSH_PORT: "2241"
@@ -46,7 +53,7 @@ jobs:
     # so auto-testing branch-built artifacts pairs an old workflow with a
     # new image (or vice versa). Branch artifacts are validated by
     # dispatching this workflow with --ref <branch> -f run_id=<build run>.
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -74,7 +81,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: smolbsd-amd64
-          run-id: ${{ inputs.run_id || github.event.workflow_run.id }}
+          # The '30109365470' fallback serves the TEMPORARY push trigger only
+          # (run #7's artifact); remove it together with that trigger.
+          run-id: ${{ inputs.run_id || github.event.workflow_run.id || '30109365470' }}
           github-token: ${{ github.token }}
 
       - name: T1 — swtpm socket
