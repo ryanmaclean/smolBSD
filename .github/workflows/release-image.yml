@@ -102,7 +102,7 @@ jobs:
           {
             echo "smolBSD amd64 qcow2 — built by run ${{ inputs.run_id }} of the hosted pipeline."
             echo ""
-            echo "- On-disk size: ${MIB} MiB (target: <= 512 MiB)"
+            echo "- Download size: ${MIB} MiB (compressed qcow2 — boots as-is in any qemu; raw-size target: <= 512 MiB)"
             echo "- Boot: \`qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M -drive file=smolbsd-amd64-${{ inputs.tag }}.qcow2,format=qcow2,if=virtio -nic user,model=virtio-net-pci -nographic\`"
             echo "- Login: root / smolbsd — **dev image**: change the password on first login;"
             echo "  never expose it beyond QEMU user-mode networking."

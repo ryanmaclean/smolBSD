@@ -13,15 +13,15 @@ shared conversation history.
 
 ## Status
 
-As of 2026-05-08:
+As of 2026-07-24:
 
 | Leg     | Boot gate              | Image size            | Notes                                  |
 |---------|------------------------|-----------------------|----------------------------------------|
-| aarch64 | 11s on HVF — PASS      | 1.41 GiB (INVESTIGATING vs 512 MiB target) | Native build on `<aarch64-builder>` |
-| amd64   | KVM gate pending       | 2.5 GiB (official VM image) | Use Vultr/x86 KVM host for gate run |
+| amd64   | 9s to login on KVM — PASS | 223 MiB raw (≤ 512 MiB gate PASS); CI artifact now ships compressed | Built end-to-end by the hosted pipeline; [release 0.1.0](https://github.com/ryanmaclean/smolBSD/releases/tag/0.1.0) |
+| aarch64 | needs ARM hardware (see `docs/BHYVE-GATE-AMD64.md`) | cross-built by the same pipeline, size gate only | Earlier native-build baseline: 11s on HVF, 1.41 GiB pre-diet |
 
-See `docs/PHASE-1-RESULTS.md` for the full report (sha256s, fleet deploy on
-<pi-node>, amd64 BIOS-boot verification).
+See `docs/UR-BSD-VERIFY.md` for the verified findings and the image-diet
+plan, `docs/PHASE-1-RESULTS.md` for the original baseline report.
 
 ## Quickstart
 
