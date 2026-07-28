@@ -15,11 +15,12 @@
 
 name: SMOLFIRE microVM kernel
 
+# (Branch push trigger retired after run #8 went GREEN: Firecracker
+# TIME_TO_READY=543ms with interactive-shell proof, QEMU microvm 476ms,
+# 37 MiB one-ELF OS. Re-add a branch-scoped push trigger for pre-merge
+# validation, or dispatch with --ref.)
 on:
   workflow_dispatch:
-  push:
-    branches: ['claude/ur-bsd-26-qnmjho']
-    paths: ['.github/workflows/smolfire.yml', 'bin/build-smolfire.sh', 'sys/amd64/conf/SMOLFIRE']
 
 env:
   WORK: /mnt/smolfire-ci

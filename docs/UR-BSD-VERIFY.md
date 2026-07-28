@@ -170,6 +170,47 @@ Deferred to later rounds (in rough value order): FreeBSD-utilities diet,
 check above), dropping FreeBSD-vi, direct kernel boot dropping ESP+loader
 (~35–40 MiB, the docs/UR-BSD.md next phase).
 
+## SMOLFIRE: rump-style one-ELF microVM — GREEN (2026-07-28, run 30393485718)
+
+**The entire OS is one 37 MiB PVH ELF (kernel + static /rescue userland
+as embedded MFS root) booting to an interactive shell in
+`TIME_TO_READY=543ms` under Firecracker v1.12.0 and 476ms under QEMU
+microvm — with the WITNESS debug checker still enabled.** Build:
+kernel-toolchain + buildkernel only, ~25 min/cycle, no buildworld, no
+pkgbase (the FreeBSD-utilities problem is sidestepped by construction).
+Pieces: sys/amd64/conf/SMOLFIRE (include FIRECRACKER + TMPFS),
+bin/build-smolfire.sh (rescue rootfs, MFS_IMAGE embed, pv.c patch),
+smolfire.yml (build + dual-VMM boot gates + interactive-shell proof),
+tests/smolfire-rootfs-test.nu (init(8) contract, in ci.yml).
+
+Eight-run debugging ledger (every layer was the FIRECRACKER conf's EC2
+assumptions vs nested-KVM runners — full evidence in the run logs):
+1. Firecracker < v1.12.0 has no PVH (merged in PR #5048) → instant
+   KVM_EXIT_SHUTDOWN, zero serial.
+2. Gate matched literal "panic" and killed the VMM before the message
+   printed — gates must drain evidence on failure.
+3. hint.acpi.0.disabled=1 forces the mptable enumerator, whose
+   unknown-entry panic is unconditional against Firecracker's
+   deprecated (since v1.8, ACPI) MP table → boot_args override wins
+   (md_envp is consulted before the conf's static env).
+4. machdep.disable_tsc_calibration=1 + no Intel CPUID freq leaves on
+   AMD runners → tsc_freq=0 → lapic TSC-deadline panic.
+5. Enabling calibration exposed the real upstream defect: pv.c installs
+   xen_delay (pvclock, no shared-info page on non-Xen PVH) as early
+   DELAY unconditionally → page fault in start_TSC. No env fix exists
+   (machdep.tsc_freq is RW-only, not a tunable; kvm_clock attaches too
+   late). Fix: build-time patch pointing xen_pvh_init_ops at
+   i8254_init/i8254_delay — Firecracker/microvm provide a KVM in-kernel
+   PIT; equivalent to the native path (native_clock_source_init is
+   literally { i8254_init(); }). Upstream candidate.
+6. Patch-step lesson: an exact-spacing grep guard silently skipped
+   (real file is tab-aligned) — patch guards must fail loud on
+   unrecognized shape, and transformations get replay-verified against
+   the real upstream file before pushing.
+
+Next: strip WITNESS/INVARIANTS from SMOLFIRE for production speed,
+add vtnet to the rootfs bring-up, ship the ELF as a release asset.
+
 ## TPM T1-T6: GREEN on the evicted image (2026-07-28, run 30374624881)
 
 The eviction is validated end-to-end: in-guest `pkg bootstrap && pkg
