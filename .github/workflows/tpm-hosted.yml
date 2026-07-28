@@ -196,16 +196,25 @@ jobs:
           else echo "T4 FAIL: PCR sha256:0 unreadable or zero"; fail=1; fi
 
           # T5: seal/unseal round-trip against PCR 0+7 policy
+          # tpm2_flushcontext -t between steps: swtpm has few transient-object
+          # slots, and without flushing, Esys_Load dies with 0x902 "out of
+          # memory for object contexts" (seen on the first full T5 run).
+          # Saved .ctx files reload via TPM2_ContextLoad after a flush.
           if SSH 'set -e
               d=$(mktemp -d)
               cd "$d"
               echo smolbsd-seal-test > secret.txt
               tpm2_createprimary -C o -g sha256 -G ecc -c primary.ctx -Q
+              tpm2_flushcontext -t
               tpm2_createpolicy --policy-pcr -l sha256:0,7 -L policy.pcr -Q
+              tpm2_flushcontext -t
+              tpm2_flushcontext -s || true
               tpm2_create -C primary.ctx -g sha256 -u seal.pub -r seal.priv \
                 -L policy.pcr -i secret.txt -Q
+              tpm2_flushcontext -t
               tpm2_load -C primary.ctx -u seal.pub -r seal.priv -c seal.ctx -Q
               tpm2_unseal -c seal.ctx -p pcr:sha256:0,7 > out.txt
+              tpm2_flushcontext -t
               cmp secret.txt out.txt'; then
             echo "T5 PASS: seal/unseal round-trip"
           else echo "T5 FAIL: seal/unseal round-trip"; fail=1; fi
