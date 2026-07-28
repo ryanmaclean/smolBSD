@@ -141,7 +141,7 @@ jobs:
         run: |
           set -e
           cd "$WORK"
-          printf '{\n "boot-source": { "kernel_image_path": "%s/smolfire-kernel", "boot_args": "" },\n "drives": [],\n "machine-config": { "vcpu_count": 1, "mem_size_mib": 128 }\n}\n' "$WORK" > fc.json
+          printf '{\n "boot-source": { "kernel_image_path": "%s/smolfire-kernel", "boot_args": "" },\n "drives": [],\n "machine-config": { "vcpu_count": 1, "mem_size_mib": 512 }\n}\n' "$WORK" > fc.json
           cat fc.json
           # The typed command is FIRE_$((6*7)) (braced send = no Tcl subst),
           # so terminal echo can never match FIRE_42 — only real sh output can.
@@ -160,7 +160,13 @@ jobs:
                   timeout   { puts "\nVERDICT=fail (shell unresponsive)"; exit 1 }
                 }
               }
-              "panic"   { puts "\nVERDICT=fail (kernel panic)"; exit 2 }
+              "panic"   {
+                # Drain the panic message + backtrace before failing —
+                # run #2 exited on the literal "panic" and ate the reason.
+                expect -timeout 5 timeout
+                puts "\nVERDICT=fail (kernel panic — full text above)"
+                exit 2
+              }
               timeout   { puts "\nVERDICT=fail (no READY within 30s)"; exit 1 }
               eof       { puts "\nVERDICT=fail (firecracker exited)"; exit 2 }
             }'
