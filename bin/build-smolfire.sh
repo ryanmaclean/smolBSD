@@ -72,21 +72,31 @@ NCPU=$(sysctl -n hw.ncpu)
 # bootability (not a SMOLFIRE target) for working TSC calibration
 # everywhere. Idempotent: skipped when already applied.
 PV=/usr/src/sys/x86/xen/pv.c
-if grep -q '\.early_delay = xen_delay,' "$PV"; then
+if grep -q 'i8254_delay' "$PV"; then
+    echo "==> pv.c already patched (i8254 early ops present)"
+else
+    # Fail LOUD if the file shape is unrecognized — run #7's lesson: an
+    # exact-spacing guard silently skipped the patch (the real file uses
+    # tab alignment: '.early_delay\t\t\t= xen_delay,').
+    grep -Eq 'early_delay[[:space:]]*=[[:space:]]*xen_delay' "$PV" \
+        || { echo "ERROR: pv.c shape unrecognized — refusing to build unpatched"; exit 1; }
     echo "==> patching pv.c: non-Xen PVH early clock/delay -> i8254"
     # awk for the multi-line insert (BSD sed does not expand \n in
-    # replacements); plain single-line seds for the member swaps.
-    awk '/^struct init_ops xen_pvh_init_ops = \{/ {
+    # replacements); line-scoped seds tolerate any member alignment.
+    awk 'ins == 0 && /struct init_ops xen_pvh_init_ops/ {
              print "extern void i8254_init(void);"
              print "extern void i8254_delay(int);"
              print ""
+             ins = 1
          } { print }' "$PV" > "$PV.new" && mv "$PV.new" "$PV"
-    sed -i '' \
-        -e 's/\.early_clock_source_init = xen_clock_init,/.early_clock_source_init = i8254_init,/' \
-        -e 's/\.early_delay = xen_delay,/.early_delay = i8254_delay,/' \
+    sed -i '' -E \
+        -e '/early_clock_source_init/s/xen_clock_init/i8254_init/' \
+        -e '/early_delay/s/xen_delay/i8254_delay/' \
         "$PV"
-    grep -q '\.early_delay = i8254_delay,' "$PV" || { echo "ERROR: pv.c patch did not apply"; exit 1; }
-    grep -q 'extern void i8254_delay' "$PV" || { echo "ERROR: pv.c extern insert did not apply"; exit 1; }
+    grep -Eq 'early_delay[[:space:]]*=[[:space:]]*i8254_delay' "$PV" \
+        || { echo "ERROR: pv.c member swap did not apply"; exit 1; }
+    grep -q 'extern void i8254_delay' "$PV" \
+        || { echo "ERROR: pv.c extern insert did not apply"; exit 1; }
 fi
 
 echo "==> makefs (UFS image with free-space headroom)"
