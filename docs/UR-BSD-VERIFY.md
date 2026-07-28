@@ -170,6 +170,52 @@ Deferred to later rounds (in rough value order): FreeBSD-utilities diet,
 check above), dropping FreeBSD-vi, direct kernel boot dropping ESP+loader
 (~35–40 MiB, the docs/UR-BSD.md next phase).
 
+## TPM T1-T6: GREEN on the evicted image (2026-07-28, run 30374624881)
+
+The eviction is validated end-to-end: in-guest `pkg bootstrap && pkg
+install tpm2-tools` over SLIRP worked (D-02 conclusively dead), and all
+six gates pass. Two latent bugs fixed on the way, both predating the diet:
+
+1. **swtpm was never invoked correctly on hosted runners**: `--pid-file`
+   is not an swtpm option (`--pid file=<path>` is) — swtpm printed usage
+   and exited 1, so every prior hosted TPM run died at T1. The
+   "expected red pre-merge" runs were red for this reason, not the
+   missing install step.
+2. **T5 seal/unseal died with 0x902** ("out of memory for object
+   contexts"): swtpm has few transient-object slots and the sequence
+   never flushed. `tpm2_flushcontext -t` between steps fixes it.
+
+## Release publishing: the 403 is a workflows-permission check, NOT a ruleset
+
+The 0.2.0 one-shot's git tag push produced the definitive error:
+`refusing to allow a GitHub App to create or update workflow
+'.github/workflows/build-image-hosted.yml' without 'workflows'
+permission`. GITHUB_TOKEN can never hold `workflows`, and creating a
+tag/release ref pointing at a commit whose workflow files differ from
+main trips this check. The 0.1.0 dispatch's REST 403 was the same thing
+(its build commit was a branch commit with workflow changes). **No
+settings change needed** — release from commits already on main (the
+normal post-merge case) and the check never fires. The earlier
+"tag ruleset" hypothesis in this file and release-image.yml is retired.
+
+## SIZEREPORT — run #7 (rootfs 93 MiB); round-2 targets
+
+Top packages (bytes): FreeBSD-utilities 49.5M, kernel-smolbsd 13.9M,
+**libmagic 12.3M**, runtime 9.2M, openssl-lib 7.6M, bootloader 6.8M,
+**zfs-lib 4.8M**, clibs 4.0M, ssh 3.8M, kerberos-lib 1.8M.
+Top dirs (MiB): /usr 44 (share 19, lib 11, bin 8, sbin 7), /boot 21
+(kernel 14), /lib 18. Top files: kernel 13M, **magic.mgc 10.2M**,
+libcrypto 6.2M, **libzpool.so.2 3.8M**, local.sqlite 2.4M.
+
+Round-2 rm list (est. ~25 MiB raw, all file-level, boot-gate validated):
+`/usr/share/misc/magic.mgc` + `magic` (~12M, file(1) DB), ZFS userland
+libs on a UFS image (`libzpool`, `libzfs*`, `libnvpair`, `libuutil`,
+~6M+), unused loader variants (`loader_4th.efi`, `loader_simp.efi`,
+`loader.kboot`, `loader_ia32.efi`, `userboot*`, ~3M — keep `loader.efi`
++ BIOS boot blocks + `/boot/lua`), `tcpdump` (1.4M), `pci_vendors` +
+`usb_vendors` (2.2M), `libomp` (0.9M), `/etc/ssh/moduli` (0.6M; sshd
+falls back to curve25519). Projected: **~66 MiB raw / ~25 MiB download**.
+
 ## Empirical results — hosted pipeline run #6: GREEN (2026-07-18)
 
 **The scripted pipeline produced a gated smolBSD image end-to-end for the
