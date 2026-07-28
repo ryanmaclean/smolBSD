@@ -1,0 +1,22 @@
+# SMOLFIRE — smolBSD microVM kernel, rump-kernel spirit on FreeBSD:
+# direct PVH kernel boot (Firecracker / QEMU microvm) with a static
+# /rescue-based MFS root embedded IN the kernel. No bootloader, no ESP,
+# no disk, no fsck — one ELF file is the whole OS.
+#
+# Base: releng/15.0 FIRECRACKER (standalone stripped conf: uart @0x3F8,
+# virtio_mmio + vtnet + virtio_blk, ACPI runtime-disabled via
+# hint.acpi.0.disabled, mptable CPU enumeration, PVH entry via XENHVM,
+# and — critically — `options MD_ROOT` + `device md` already present).
+#
+# The MFS image is passed at build time, not in this file:
+#   make buildkernel KERNCONF=SMOLFIRE MFS_IMAGE=/path/to/mfsroot.img
+# kern.post.mk links it in via embedfs.S when MD_ROOT_SIZE is unset, and
+# md(4) auto-mounts it: rootdevnames[0] = "ufs:/dev/md0" (md.c, MD_ROOT).
+#
+# SPDX-License-Identifier: Apache-2.0
+
+include FIRECRACKER
+ident SMOLFIRE
+
+# RAM-backed scratch space for the live system (md root is small)
+options TMPFS

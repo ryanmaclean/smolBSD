@@ -37,9 +37,10 @@ on:
       vmsize:
         description: "Image VMSIZE (sparse)"
         default: "2g"
-  # (The round-3 temporary push trigger was retired after run #7 went
-  # green — raw 91 MiB, compressed 33 MiB, 9s boot. To validate a branch
-  # copy pre-merge, dispatch with --ref:
+  # (Round-4 temporary push trigger retired after the round-2 diet build
+  # went green — raw 66.6 MiB, compressed 26.6 MiB, 9s boot, run
+  # 30375142187. Pre-merge validation without dispatch rights: re-add a
+  # push trigger scoped to the branch, or a human runs
   #   gh workflow run build-image-hosted.yml --ref <branch>)
 
 env:
