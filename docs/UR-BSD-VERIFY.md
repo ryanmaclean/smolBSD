@@ -210,6 +210,26 @@ assumptions vs nested-KVM runners — full evidence in the run logs):
 
 Next: strip WITNESS/INVARIANTS from SMOLFIRE for production speed,
 add vtnet to the rootfs bring-up, ship the ELF as a release asset.
+CORRECTION (skeptical audit): the pv.c patch as applied is NOT
+upstream-ready — it unconditionally drops Xen PVH bootability; an
+upstream version needs runtime isxen() dispatch in the init_ops. The
+finding (xen_delay installed on non-Xen PVH) is the upstreamable part.
+
+## Release 0.3.0 shipped-bytes verification (run 30407544832)
+
+A skeptical audit found three gaps: the boot gate never authenticates
+(the last real login predated round 2, which removed /etc/ssh/moduli),
+TPM never ran against the round-2 image, and nothing had ever booted
+the actual release assets. Closed by downloading 0.3.0 from the release
+URL and testing THOSE bytes: `sha256sum -c` PASS; released qcow2 booted
+with swtpm; **real root-password SSH authentication PASS**; PCR0
+read PASS (test-time tpm2-tools install over SLIRP); released gzipped
+ELF gunzipped and booted under Firecracker to the FIRE_42 interactive
+proof. Remaining honest caveats: release-note "built from merge
+6f08ce4" describes tree content (artifacts were built from branch
+commits 464a986/66d7e02 whose image/kernel inputs are byte-identical
+to the merge; verified by input-file trace, not rebuild); SMOLFIRE on
+non-KVM hosts (macOS HVF, TCG) is untested.
 
 ## TPM T1-T6: GREEN on the evicted image (2026-07-28, run 30374624881)
 
