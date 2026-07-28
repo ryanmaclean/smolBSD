@@ -17,7 +17,8 @@ NCPU=$(sysctl -n hw.ncpu)
 
 echo "==> rootfs: static /rescue crunchgen userland ($(du -sh /rescue | cut -f1))"
 rm -rf "$ROOT"
-mkdir -p "$ROOT/dev" "$ROOT/etc" "$ROOT/rescue" "$ROOT/sbin" "$ROOT/tmp" "$ROOT/mnt"
+mkdir -p "$ROOT/dev" "$ROOT/etc" "$ROOT/rescue" "$ROOT/sbin" "$ROOT/bin" \
+         "$ROOT/tmp" "$ROOT/mnt"
 cp -p /rescue/rescue "$ROOT/rescue/rescue"
 # crunchgen dispatches on argv[0]; hard-link the names we use (same fs).
 for n in init sh ifconfig sysctl mount umount mount_nullfs devfs mdconfig \
@@ -27,6 +28,10 @@ done
 # kernel default init_path already includes /rescue/init, but /sbin/init
 # is first — link it there so lookup is instant and intent is explicit.
 ln "$ROOT/rescue/rescue" "$ROOT/sbin/init"
+# init(8) hardcodes _PATH_BSHELL=/bin/sh to run /etc/rc (it does NOT
+# honor the rc shebang) and single-user fallback wants it too — without
+# this link init cannot run runcom at all.
+ln "$ROOT/rescue/rescue" "$ROOT/bin/sh"
 
 # init(8) runs /etc/rc and waits; rc never exits — it becomes the console
 # shell. Gate protocol: SMOLFIRE_READY on serial, then interactive sh.
@@ -40,8 +45,10 @@ exec /rescue/sh </dev/console >/dev/console 2>&1
 EOF
 chmod 755 "$ROOT/etc/rc"
 
-echo "==> makefs (auto-sized UFS image)"
-makefs -t ffs -o version=2 -o label=smolfire "$IMG" "$ROOT"
+echo "==> makefs (UFS image with free-space headroom)"
+# -b 10%: without it makefs sizes the image to its contents and the
+# root filesystem boots ~100% full — any runtime write would fail.
+makefs -t ffs -o version=2 -o label=smolfire -b 10% "$IMG" "$ROOT"
 ls -lh "$IMG"
 
 echo "==> kernel-toolchain + buildkernel SMOLFIRE (log: $LOG)"

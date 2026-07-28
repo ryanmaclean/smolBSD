@@ -172,9 +172,13 @@ jobs:
             }'
 
       - name: Boot gate — QEMU microvm (informational)
+        # Runs even when the Firecracker gate fails — that is exactly when
+        # the cross-check is most diagnostic (a VMM-specific vs kernel bug).
+        if: ${{ !cancelled() }}
         continue-on-error: true
         run: |
           cd "$WORK"
+          test -f "$WORK/smolfire-kernel" || { echo "no kernel built — nothing to cross-check"; exit 0; }
           # Secondary consumer check: PVH direct boot on stock QEMU microvm.
           # Informational: FIRECRACKER's mptable/ACPI assumptions may differ.
           timeout 60 expect -c '
