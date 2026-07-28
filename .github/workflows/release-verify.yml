@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: Apache-2.0
+# release-verify.yml — verify the SHIPPED 0.3.0 release bytes, not the CI
+# artifacts they came from. Closes three gaps a skeptical audit found:
+#   1. the boot gate never authenticates (login: prompt only) — the last
+#      real login ran against the round-1 (91 MiB) image, and round 2
+#      removed /etc/ssh/moduli + libs since;
+#   2. TPM was never exercised against the round-2 image;
+#   3. nothing ever downloaded the release assets and booted THOSE bytes.
+# TEMPORARY, self-triggering via branch push. Delete after a green run
+# (record results in docs/UR-BSD-VERIFY.md first).
+
+name: Verify release 0.3.0 (one-shot)
+
+on:
+  push:
+    branches: ['claude/ur-bsd-26-qnmjho']
+    paths: ['.github/workflows/release-verify.yml']
+
+env:
+  REL: https://github.com/ryanmaclean/smolBSD/releases/download/0.3.0
+  TAG: "0.3.0"
+  SSH_PORT: "2244"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Preflight
+        run: |
+          set -e
+          test -c /dev/kvm && sudo chmod 666 /dev/kvm
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils expect swtpm swtpm-tools sshpass openssh-client
+          FCV=v1.12.0
+          curl -fsSL -o fc.tgz "https://github.com/firecracker-microvm/firecracker/releases/download/${FCV}/firecracker-${FCV}-x86_64.tgz"
+          tar xzf fc.tgz
+          install -m 0755 "$(find . -name "firecracker-${FCV}-x86_64" -type f | head -1)" ./firecracker
+
+      - name: Download release assets and verify checksums
+        run: |
+          set -e
+          curl -fsSLO "$REL/smolbsd-amd64-$TAG.qcow2"
+          curl -fsSLO "$REL/smolfire-kernel-$TAG.gz"
+          curl -fsSLO "$REL/SHA256SUMS-$TAG"
+          sha256sum -c "SHA256SUMS-$TAG"
+          gunzip -k "smolfire-kernel-$TAG.gz"
+          ls -lh smolbsd-amd64-$TAG.qcow2 smolfire-kernel-$TAG
+
+      - name: Boot released qcow2 with TPM, authenticate, run commands
+        run: |
+          set -e
+          mkdir -p /tmp/tpmstate
+          swtpm socket --tpmstate dir=/tmp/tpmstate --tpm2 \
+            --ctrl type=unixio,path=/tmp/swtpm.sock \
+            --pid file=/tmp/swtpm.pid --daemon
+          qemu-system-x86_64 \
+            -M q35 -accel kvm -cpu host -m 1G \
+            -drive "file=smolbsd-amd64-$TAG.qcow2,format=qcow2,if=virtio,snapshot=on" \
+            -chardev "socket,id=chrtpm,path=/tmp/swtpm.sock" \
+            -tpmdev emulator,id=tpm0,chardev=chrtpm \
+            -device tpm-tis,tpmdev=tpm0 \
+            -nic "user,model=virtio-net-pci,hostfwd=tcp::${SSH_PORT}-:22" \
+            -display none -daemonize -serial file:/tmp/serial.log -pidfile /tmp/vm.pid
+          SSH() {
+            sshpass -p smolbsd ssh -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 \
+              -o PreferredAuthentications=password \
+              -p "$SSH_PORT" root@127.0.0.1 "$@"
+          }
+          # THE gap-closer: a real password authentication, not a prompt sighting.
+          ok=0
+          for i in $(seq 1 24); do
+            if SSH 'echo AUTH_OK && uname -rm && id'; then ok=1; break; fi
+            sleep 5
+          done
+          [ "$ok" = 1 ] || { echo "FAIL: ssh password login to the RELEASED image"; tail -40 /tmp/serial.log; exit 1; }
+          echo "== released-image sanity =="
+          SSH 'sysctl -n hw.physmem; df -h /; ls /usr/share/misc 2>/dev/null || echo "(misc trimmed as expected)"'
+          echo "== TPM against the released image =="
+          SSH 'test -c /dev/tpm0' && echo "TPM device present"
+          if ! SSH 'command -v tpm2_pcrread' >/dev/null 2>&1; then
+            SSH 'set -e
+                 certctl rehash || true
+                 env ASSUME_ALWAYS_YES=yes IGNORE_OSVERSION=yes /usr/sbin/pkg bootstrap
+                 env ASSUME_ALWAYS_YES=yes IGNORE_OSVERSION=yes pkg install -y tpm2-tools'
+          fi
+          SSH 'tpm2_pcrread sha256:0' | grep -qE '0x[0-9A-Fa-f]*[1-9A-Fa-f]' \
+            && echo "PCR0 read: PASS on released image" \
+            || { echo "FAIL: PCR0 unreadable on released image"; exit 1; }
+
+      - name: Boot released SMOLFIRE ELF under Firecracker
+        run: |
+          set -e
+          printf '{\n "boot-source": { "kernel_image_path": "%s/smolfire-kernel-%s", "boot_args": "hint.acpi.0.disabled=0 machdep.disable_tsc_calibration=0" },\n "drives": [],\n "machine-config": { "vcpu_count": 1, "mem_size_mib": 512 }\n}\n' "$PWD" "$TAG" > fc.json
+          expect -c '
+            set timeout 30
+            set t0 [clock milliseconds]
+            spawn ./firecracker --no-api --config-file fc.json
+            expect {
+              "SMOLFIRE_READY" {
+                puts "\nRELEASED_ELF_TIME_TO_READY=[expr [clock milliseconds]-$t0]ms"
+                send {echo FIRE_$((6*7))}
+                send "\r"
+                expect {
+                  "FIRE_42" { puts "\nVERDICT=pass (released ELF, interactive shell)"; exit 0 }
+                  timeout   { puts "\nVERDICT=fail (shell unresponsive)"; exit 1 }
+                }
+              }
+              "panic"   { expect -timeout 5 timeout; puts "\nVERDICT=fail (panic)"; exit 2 }
+              timeout   { puts "\nVERDICT=fail (no READY)"; exit 1 }
+              eof       { puts "\nVERDICT=fail (vmm exited)"; exit 2 }
+            }'
+
+      - name: Teardown
+        if: always()
+        run: |
+          [ -f /tmp/vm.pid ] && sudo kill "$(cat /tmp/vm.pid)" 2>/dev/null || true
+          [ -f /tmp/swtpm.pid ] && sudo kill "$(cat /tmp/swtpm.pid)" 2>/dev/null || true
+
+      - name: Upload serial log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-verify-logs
+          if-no-files-found: warn
+          path: /tmp/serial.log
