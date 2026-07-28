@@ -27,7 +27,10 @@ env:
   SRC_BRANCH: releng/15.0
   BASE_URL: https://download.freebsd.org/releases/VM-IMAGES/15.0-RELEASE/amd64/Latest
   BASE_IMG: FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2
-  FC_VER: v1.10.0
+  # PVH boot (the protocol FreeBSD kernels use — XEN_ELFNOTE_PHYS32_ENTRY)
+  # was merged in Firecracker v1.12.0 (PR #5048); v1.10.0 entered the ELF
+  # via the Linux protocol => instant KVM_EXIT_SHUTDOWN, zero serial (run #1).
+  FC_VER: v1.12.0
 
 jobs:
   smolfire:
