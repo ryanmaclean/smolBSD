@@ -9,17 +9,27 @@
 set -eu
 
 SRC=/usr/src
-ROOT=/root/smolfire-root
+# RESCUE_SRC and ROOT are env-overridable so the rootfs-assembly section
+# (pure POSIX sh) can run — and be tested — outside the FreeBSD build VM.
+RESCUE_SRC=${RESCUE_SRC:-/rescue/rescue}
+ROOT=${ROOT:-/root/smolfire-root}
 IMG=/root/smolfire-mfs.img
 OUT=/root/smolfire-kernel
 LOG=/var/tmp/smolfire-build.log
-NCPU=$(sysctl -n hw.ncpu)
 
-echo "==> rootfs: static /rescue crunchgen userland ($(du -sh /rescue | cut -f1))"
+# --rootfs-only: stop after the rootfs is assembled, before the
+# FreeBSD-only makefs/buildkernel steps (lets CI test assembly on Linux).
+ROOTFS_ONLY=no
+if [ "${1:-}" = "--rootfs-only" ]; then
+    ROOTFS_ONLY=yes
+fi
+
+RESCUE_DIR=$(dirname "$RESCUE_SRC")
+echo "==> rootfs: static /rescue crunchgen userland ($(du -sh "$RESCUE_DIR" | cut -f1))"
 rm -rf "$ROOT"
 mkdir -p "$ROOT/dev" "$ROOT/etc" "$ROOT/rescue" "$ROOT/sbin" "$ROOT/bin" \
          "$ROOT/tmp" "$ROOT/mnt"
-cp -p /rescue/rescue "$ROOT/rescue/rescue"
+cp -p "$RESCUE_SRC" "$ROOT/rescue/rescue"
 # crunchgen dispatches on argv[0]; hard-link the names we use (same fs).
 for n in init sh ifconfig sysctl mount umount mount_nullfs devfs mdconfig \
          ls cat echo ps sleep hostname kenv dmesg df date reboot; do
@@ -44,6 +54,14 @@ echo "SMOLFIRE_READY"
 exec /rescue/sh </dev/console >/dev/console 2>&1
 EOF
 chmod 755 "$ROOT/etc/rc"
+
+if [ "$ROOTFS_ONLY" = yes ]; then
+    echo "==> --rootfs-only: rootfs assembled at $ROOT (skipping makefs/buildkernel)"
+    exit 0
+fi
+
+# Below this point is FreeBSD-only (sysctl hw.ncpu, makefs, buildkernel).
+NCPU=$(sysctl -n hw.ncpu)
 
 echo "==> makefs (UFS image with free-space headroom)"
 # -b 10%: without it makefs sizes the image to its contents and the

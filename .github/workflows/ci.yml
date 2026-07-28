@@ -72,6 +72,9 @@ jobs:
       - name: sizereport parser tests
         run: nu tests/sizereport-test.nu
 
+      - name: smolfire rootfs assembly test
+        run: nu tests/smolfire-rootfs-test.nu
+
       - name: spool-archive tests
         run: nu tests/spool-archive-test.nu
 
