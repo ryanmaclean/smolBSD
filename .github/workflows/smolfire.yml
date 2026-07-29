@@ -15,15 +15,11 @@
 
 name: SMOLFIRE microVM kernel
 
+# (Round-2 push trigger retired after run #9 went GREEN: TIME_TO_READY=
+# 511ms, NET_GATE token-TCP pass + HOST_PING pass over TAP, microvm SLIRP
+# net pass at 569ms, de-debugged kernel, isxen() pv.c patch active.)
 on:
   workflow_dispatch:
-  # TEMPORARY pre-merge validation trigger (round 2): validates the
-  # de-debugged kernel (nooptions block), the vtnet + token-fetch net
-  # gate, and the upstream-shaped pv.c patch. Remove after green
-  # (baseline to beat: 543ms / 37 MiB with WITNESS on).
-  push:
-    branches: ['claude/ur-bsd-26-qnmjho']
-    paths: ['.github/workflows/smolfire.yml', 'bin/build-smolfire.sh', 'sys/amd64/conf/SMOLFIRE']
 
 env:
   WORK: /mnt/smolfire-ci

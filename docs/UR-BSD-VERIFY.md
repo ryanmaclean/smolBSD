@@ -208,8 +208,29 @@ assumptions vs nested-KVM runners — full evidence in the run logs):
    unrecognized shape, and transformations get replay-verified against
    the real upstream file before pushing.
 
+**Round 2 VALIDATED — run 30409991192 (2026-07-29): TIME_TO_READY=511ms
+Firecracker / 569ms microvm; NET_GATE pass (guest fetch of a per-run
+random token over TCP — TAP on Firecracker, SLIRP on microvm) and
+HOST_PING pass (host→guest ICMP over the NAT-less TAP); vtnet0 attaches
+via the virtio_mmio.device= cmdline chain on both VMMs.** Changes:
+(a) de-debug nooptions block mirroring releng's std.nodebug (upstream
+FIRECRACKER still ships GENERIC's -CURRENT debug set; "turn off in
+stable branch" was never done) — WITNESS warning gone from boot, KDB+
+KDB_TRACE+DDB kept for gate-readable panics; with INVARIANTS off,
+run #5's class of bug would be silent (documented trade — SMOLFIRE-DEBUG
+variant is the triage path back); (b) rc does kenv-fed static vtnet
+config (rescue ships route/ping/fetch/nc — verified in
+rescue/rescue/Makefile, MK_INET/MK_NETCAT defaults; loud build guard);
+(c) the sed pv.c swap is replaced by the upstream-shaped isxen()
+runtime-dispatch unified diff (pvh_early_{clock_source_init,delay} →
+i8254 on non-Xen PVH; Xen path preserved; "Timecounter TSC-low quality
+800" in the boot log proves it active). Bug-report draft lives in the
+round-2 design record.
+
 Next: strip WITNESS/INVARIANTS from SMOLFIRE for production speed,
 add vtnet to the rootfs bring-up, ship the ELF as a release asset.
+(→ all three done by round 2 above; remaining: submit the pv.c patch
+upstream, non-KVM host testing, 9600-baud console → 115200.)
 CORRECTION (skeptical audit): the pv.c patch as applied is NOT
 upstream-ready — it unconditionally drops Xen PVH bootability; an
 upstream version needs runtime isxen() dispatch in the init_ops. The
