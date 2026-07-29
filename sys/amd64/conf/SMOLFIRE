@@ -20,3 +20,23 @@ ident SMOLFIRE
 
 # RAM-backed scratch space for the live system (md root is small)
 options TMPFS
+
+# --- Production de-debug -------------------------------------------------
+# Upstream releng/15.0 FIRECRACKER still carries GENERIC's -CURRENT debug
+# block ("turn off in stable branch" — never done). Mirror what releng/15.0
+# did to GENERIC + upstream sys/conf/std.nodebug: drop every runtime
+# checker, keep KDB+KDB_TRACE+DDB so a panic still prints message +
+# "KDB: stack backtrace:" on the serial gate (STACK is already in the
+# base conf). config(8): nooptions removes at parse time, so this block
+# must stay BELOW `include FIRECRACKER`.
+nooptions 	INVARIANTS		# KASSERTs kernel-wide (~5-15% kernel-path CPU)
+nooptions 	INVARIANT_SUPPORT	# only needed by INVARIANTS (no modules here)
+nooptions 	WITNESS			# lock-order checker — the big boot-time cost
+nooptions 	WITNESS_SKIPSPIN	# WITNESS modifier, inert without it
+nooptions 	DEADLKRES		# deadlock-resolver kthread
+nooptions 	BUF_TRACKING		# per-buf history
+nooptions 	FULL_BUF_TRACKING	# more per-buf history
+nooptions 	QUEUE_MACRO_DEBUG_TRASH	# stores on every queue unlink
+nooptions 	MALLOC_DEBUG_MAXZONES	# collapse malloc(9) back to one zone
+nooptions 	GDB			# remote gdb stub — sole uart is the console
+nooptions 	NETGDB			# inert once GDB is gone (files: optional ... gdb)

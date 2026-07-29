@@ -31,7 +31,8 @@ mkdir -p "$ROOT/dev" "$ROOT/etc" "$ROOT/rescue" "$ROOT/sbin" "$ROOT/bin" \
          "$ROOT/tmp" "$ROOT/mnt"
 cp -p "$RESCUE_SRC" "$ROOT/rescue/rescue"
 # crunchgen dispatches on argv[0]; hard-link the names we use (same fs).
-for n in init sh ifconfig sysctl mount umount mount_nullfs devfs mdconfig \
+for n in init sh ifconfig route ping fetch nc sysctl mount umount \
+         mount_nullfs devfs mdconfig \
          ls cat echo ps sleep hostname kenv dmesg df date reboot; do
     ln "$ROOT/rescue/rescue" "$ROOT/rescue/$n"
 done
@@ -50,6 +51,23 @@ cat > "$ROOT/etc/rc" <<'EOF'
 PATH=/rescue; export PATH
 hostname smolfire
 ifconfig lo0 inet 127.0.0.1/8 up 2>/dev/null || true
+# Static net, kenv-fed: the PVH cmdline becomes static kenv (pv.c
+# boot_parse_cmdline_delim), so Firecracker boot_args / QEMU -append
+# "smolfire.ip=..." land here. Defaults match QEMU SLIRP topology.
+# Values must contain no spaces/commas (kenv cmdline delimiters).
+if ifconfig vtnet0 >/dev/null 2>&1; then
+    ip=$(kenv smolfire.ip 2>/dev/null) || ip=10.0.2.15/24
+    gw=$(kenv smolfire.gw 2>/dev/null) || gw=10.0.2.2
+    ifconfig vtnet0 inet "$ip" up
+    route -q add default "$gw" 2>/dev/null || true
+    # CI net gate: fetch a per-run random token over TCP and echo it.
+    url=$(kenv smolfire.fetch 2>/dev/null) || url=""
+    if [ -n "$url" ]; then
+        tok=$(fetch -q -T 5 -o - "$url" 2>/dev/null) \
+            && echo "SMOLFIRE_NET_OK $tok" \
+            || echo "SMOLFIRE_NET_FAIL"
+    fi
+fi
 echo "SMOLFIRE_READY"
 exec /rescue/sh </dev/console >/dev/console 2>&1
 EOF
@@ -60,43 +78,101 @@ if [ "$ROOTFS_ONLY" = yes ]; then
     exit 0
 fi
 
+# Net tools are MK_INET/MK_NETCAT-conditional upstream — fail loud if this
+# base's stock /rescue lacks them (run #7 lesson: guards never skip silently).
+for n in route ping fetch nc; do
+    [ -e "$RESCUE_DIR/$n" ] \
+        || { echo "ERROR: $RESCUE_DIR/$n missing — stock rescue lacks $n"; exit 1; }
+done
+
 # Below this point is FreeBSD-only (sysctl hw.ncpu, makefs, buildkernel).
 NCPU=$(sysctl -n hw.ncpu)
 
-# PVH early-delay patch: sys/x86/xen/pv.c installs xen_delay/xen_clock_init
-# as the early DELAY/clock ops on EVERY PVH boot — but on non-Xen PVH
-# (Firecracker, QEMU microvm) there is no shared-info page and xen_delay
-# faults in pvclock_get_timecount (run #6). Both VMMs provide a KVM
-# in-kernel i8254, so point the PVH ops at the same i8254_init/i8254_delay
-# the native (known-good QEMU/GENERIC) path uses. This trades Xen-dom
-# bootability (not a SMOLFIRE target) for working TSC calibration
-# everywhere. Idempotent: skipped when already applied.
+# PVH early-delay patch (upstream-shaped): dispatch early_delay /
+# early_clock_source_init on isxen() at runtime instead of using
+# xen_delay unconditionally — xen_delay faults on non-Xen PVH
+# (Firecracker, QEMU microvm) because HYPERVISOR_shared_info is never
+# mapped (run #6). Preserves real Xen PVH boots, unlike the old sed
+# swap. Upstream submission draft; drop once it lands in releng.
+# Idempotent: skipped when already applied.
 PV=/usr/src/sys/x86/xen/pv.c
-if grep -q 'i8254_delay' "$PV"; then
-    echo "==> pv.c already patched (i8254 early ops present)"
+if grep -q 'pvh_early_delay' "$PV"; then
+    echo "==> pv.c already patched (pvh_early_delay dispatch present)"
 else
-    # Fail LOUD if the file shape is unrecognized — run #7's lesson: an
-    # exact-spacing guard silently skipped the patch (the real file uses
-    # tab alignment: '.early_delay\t\t\t= xen_delay,').
+    # Fail LOUD if the file shape is unrecognized (run #7's lesson) —
+    # also catches a tree still carrying the old i8254 sed swap.
     grep -Eq 'early_delay[[:space:]]*=[[:space:]]*xen_delay' "$PV" \
         || { echo "ERROR: pv.c shape unrecognized — refusing to build unpatched"; exit 1; }
-    echo "==> patching pv.c: non-Xen PVH early clock/delay -> i8254"
-    # awk for the multi-line insert (BSD sed does not expand \n in
-    # replacements); line-scoped seds tolerate any member alignment.
-    awk 'ins == 0 && /struct init_ops xen_pvh_init_ops/ {
-             print "extern void i8254_init(void);"
-             print "extern void i8254_delay(int);"
-             print ""
-             ins = 1
-         } { print }' "$PV" > "$PV.new" && mv "$PV.new" "$PV"
-    sed -i '' -E \
-        -e '/early_clock_source_init/s/xen_clock_init/i8254_init/' \
-        -e '/early_delay/s/xen_delay/i8254_delay/' \
-        "$PV"
-    grep -Eq 'early_delay[[:space:]]*=[[:space:]]*i8254_delay' "$PV" \
-        || { echo "ERROR: pv.c member swap did not apply"; exit 1; }
-    grep -q 'extern void i8254_delay' "$PV" \
-        || { echo "ERROR: pv.c extern insert did not apply"; exit 1; }
+    echo "==> patching pv.c: isxen() runtime dispatch for early clock/delay"
+    patch -p1 -d /usr/src <<'PVEOF'
+--- a/sys/x86/xen/pv.c
++++ b/sys/x86/xen/pv.c
+@@ -69,6 +69,7 @@
+ #include <machine/md_var.h>
+ #include <machine/metadata.h>
+ #include <machine/cpu.h>
++#include <machine/clock.h>
+ 
+ #include <xen/xen-os.h>
+ #include <xen/hvm.h>
+@@ -95,6 +96,8 @@
+ 
+ /*--------------------------- Forward Declarations ---------------------------*/
+ static void xen_pvh_parse_preload_data(uint64_t);
++static void pvh_early_clock_source_init(void);
++static void pvh_early_delay(int);
+ static void pvh_parse_memmap(vm_paddr_t *, int *);
+ 
+ /*---------------------------- Extern Declarations ---------------------------*/
+@@ -107,8 +110,8 @@
+ /*-------------------------------- Global Data -------------------------------*/
+ struct init_ops xen_pvh_init_ops = {
+ 	.parse_preload_data		= xen_pvh_parse_preload_data,
+-	.early_clock_source_init	= xen_clock_init,
+-	.early_delay			= xen_delay,
++	.early_clock_source_init	= pvh_early_clock_source_init,
++	.early_delay			= pvh_early_delay,
+ 	.parse_memmap			= pvh_parse_memmap,
+ };
+ 
+@@ -147,6 +150,34 @@
+ 	return (xen);
+ }
+ 
++/*
++ * Early clock source and DELAY dispatch for PVH boots.
++ *
++ * The Xen implementations rely on the shared info page, and thus on
++ * hypercalls, which are only functional when running under Xen.  When
++ * booted in PVH mode by another VMM (e.g. Firecracker or QEMU microvm)
++ * fall back to the emulated i8254, mirroring the native init_ops.
++ */
++static void
++pvh_early_clock_source_init(void)
++{
++
++	if (isxen())
++		xen_clock_init();
++	else
++		i8254_init();
++}
++
++static void
++pvh_early_delay(int n)
++{
++
++	if (isxen())
++		xen_delay(n);
++	else
++		i8254_delay(n);
++}
++
+ #define CRASH(...) do {					\
+ 	if (isxen())					\
+ 		xc_printf(__VA_ARGS__);			\
+PVEOF
+    grep -q 'pvh_early_delay' "$PV" \
+        || { echo "ERROR: pv.c patch did not apply"; exit 1; }
 fi
 
 echo "==> makefs (UFS image with free-space headroom)"

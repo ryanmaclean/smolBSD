@@ -15,10 +15,9 @@
 
 name: SMOLFIRE microVM kernel
 
-# (Branch push trigger retired after run #8 went GREEN: Firecracker
-# TIME_TO_READY=543ms with interactive-shell proof, QEMU microvm 476ms,
-# 37 MiB one-ELF OS. Re-add a branch-scoped push trigger for pre-merge
-# validation, or dispatch with --ref.)
+# (Round-2 push trigger retired after run #9 went GREEN: TIME_TO_READY=
+# 511ms, NET_GATE token-TCP pass + HOST_PING pass over TAP, microvm SLIRP
+# net pass at 569ms, de-debugged kernel, isxen() pv.c patch active.)
 on:
   workflow_dispatch:
 
@@ -138,10 +137,21 @@ jobs:
           BYTES=$(wc -c < "$WORK/smolfire-kernel")
           echo "kernel_bytes=$BYTES ($((BYTES / 1048576)) MiB — this file is the whole OS)"
 
-      - name: Boot gate — Firecracker (target << 1s to SMOLFIRE_READY)
+      - name: Boot gate — Firecracker (net gate + target << 1s to SMOLFIRE_READY)
         run: |
           set -e
           cd "$WORK"
+          # Net gate prep: tap + per-run token server. Host<->guest only —
+          # NO NAT, no ip_forward (only needed for guest->internet).
+          sudo ip tuntap add tap0 mode tap user "$(id -un)"
+          sudo ip addr add 172.16.0.1/30 dev tap0
+          sudo ip link set tap0 up
+          TOK="net-${RANDOM}${RANDOM}"
+          mkdir -p "$WORK/www"; printf '%s' "$TOK" > "$WORK/www/token.txt"
+          ( cd "$WORK/www" && exec python3 -m http.server 8080 --bind 0.0.0.0 ) >/dev/null 2>&1 &
+          echo "$!" > "$WORK/httpd.pid"
+          sleep 1
+          curl -fsS "http://172.16.0.1:8080/token.txt" >/dev/null || { echo "ERROR: token server not answering"; exit 1; }
           # boot_args re-enables ACPI: the FIRECRACKER conf bakes
           # hint.acpi.0.disabled=1 (static env), but the PVH cmdline env is
           # consulted FIRST (kern_environment: md_envp before kern_envp), so
@@ -156,14 +166,26 @@ jobs:
           # the TSC-deadline LAPIC timer panics "TSC not initialized" in
           # lapic_init. Re-enabling calibration costs a few ms against the
           # emulated i8254 and works on any host.
-          printf '{\n "boot-source": { "kernel_image_path": "%s/smolfire-kernel", "boot_args": "hint.acpi.0.disabled=0 machdep.disable_tsc_calibration=0" },\n "drives": [],\n "machine-config": { "vcpu_count": 1, "mem_size_mib": 512 }\n}\n' "$WORK" > fc.json
+          # boot_args: env overrides (ledger #3/#4) + kenv-fed static net
+          # (rc reads smolfire.ip/gw/fetch; Firecracker auto-appends its
+          # virtio_mmio.device= entries so vtnet0 attaches).
+          printf '{\n "boot-source": { "kernel_image_path": "%s/smolfire-kernel", "boot_args": "hint.acpi.0.disabled=0 machdep.disable_tsc_calibration=0 smolfire.ip=172.16.0.2/30 smolfire.gw=172.16.0.1 smolfire.fetch=http://172.16.0.1:8080/token.txt" },\n "drives": [],\n "network-interfaces": [ { "iface_id": "eth0", "guest_mac": "06:00:AC:10:00:02", "host_dev_name": "tap0" } ],\n "machine-config": { "vcpu_count": 1, "mem_size_mib": 512 }\n}\n' "$WORK" > fc.json
           cat fc.json
           # The typed command is FIRE_$((6*7)) (braced send = no Tcl subst),
           # so terminal echo can never match FIRE_42 — only real sh output can.
+          # Gate order: rc emits the net marker BEFORE SMOLFIRE_READY; the
+          # token is per-run random, so a pass cannot be faked by echo.
           expect -c '
             set timeout 30
             set t0 [clock milliseconds]
             spawn '"$WORK"'/firecracker --no-api --config-file '"$WORK"'/fc.json
+            expect {
+              "SMOLFIRE_NET_OK '"$TOK"'" { puts "\nNET_GATE=pass (guest-initiated TCP, token verified)" }
+              "SMOLFIRE_NET_FAIL"        { puts "\nNET_GATE=fail (fetch failed in guest)"; exit 3 }
+              "panic"   { expect -timeout 5 timeout; puts "\nVERDICT=fail (kernel panic — full text above)"; exit 2 }
+              timeout   { puts "\nNET_GATE=fail (no net marker within 30s)"; exit 3 }
+              eof       { puts "\nVERDICT=fail (firecracker exited)"; exit 2 }
+            }
             expect {
               "SMOLFIRE_READY" {
                 set dt [expr [clock milliseconds]-$t0]
@@ -171,17 +193,16 @@ jobs:
                 send {echo FIRE_$((6*7))}
                 send "\r"
                 expect {
-                  "FIRE_42" { puts "\nVERDICT=pass (interactive shell confirmed)"; exit 0 }
+                  "FIRE_42" {
+                    if {[catch {exec ping -c 2 -W 2 172.16.0.2} pout]} {
+                      puts "\nHOST_PING=fail ($pout)"; exit 4
+                    } else { puts "\nHOST_PING=pass (host->guest ICMP over tap)" }
+                    puts "\nVERDICT=pass (interactive shell confirmed)"; exit 0
+                  }
                   timeout   { puts "\nVERDICT=fail (shell unresponsive)"; exit 1 }
                 }
               }
-              "panic"   {
-                # Drain the panic message + backtrace before failing —
-                # run #2 exited on the literal "panic" and ate the reason.
-                expect -timeout 5 timeout
-                puts "\nVERDICT=fail (kernel panic — full text above)"
-                exit 2
-              }
+              "panic"   { expect -timeout 5 timeout; puts "\nVERDICT=fail (kernel panic — full text above)"; exit 2 }
               timeout   { puts "\nVERDICT=fail (no READY within 30s)"; exit 1 }
               eof       { puts "\nVERDICT=fail (firecracker exited)"; exit 2 }
             }'
@@ -201,8 +222,16 @@ jobs:
             set t0 [clock milliseconds]
             spawn qemu-system-x86_64 -M microvm -accel kvm -cpu host -m 512M \
               -kernel '"$WORK"'/smolfire-kernel \
-              -append "hint.acpi.0.disabled=0 machdep.disable_tsc_calibration=0" \
+              -append "hint.acpi.0.disabled=0 machdep.disable_tsc_calibration=0 smolfire.fetch=http://10.0.2.2:8080/token.txt" \
+              -netdev user,id=n0 -device virtio-net-device,netdev=n0 \
               -display none -serial mon:stdio
+            expect {
+              "SMOLFIRE_NET_OK" { puts "\nMICROVM_NET=pass (SLIRP guest-initiated TCP)" }
+              "SMOLFIRE_NET_FAIL" { puts "\nMICROVM_NET=fail (informational)" }
+              "SMOLFIRE_READY"  { puts "\nMICROVM_TIME_TO_READY=[expr [clock milliseconds]-$t0]ms (net markers skipped)"; exit 0 }
+              timeout           { puts "\nMICROVM: no output (informational)"; exit 1 }
+              eof               { puts "\nMICROVM: qemu exited (informational)"; exit 1 }
+            }
             expect {
               "SMOLFIRE_READY" { puts "\nMICROVM_TIME_TO_READY=[expr [clock milliseconds]-$t0]ms"; exit 0 }
               timeout          { puts "\nMICROVM: no READY (informational)"; exit 1 }
@@ -225,3 +254,5 @@ jobs:
         if: always()
         run: |
           [ -f "$WORK/vm.pid" ] && sudo kill "$(cat "$WORK/vm.pid")" 2>/dev/null || true
+          [ -f "$WORK/httpd.pid" ] && kill "$(cat "$WORK/httpd.pid")" 2>/dev/null || true
+          sudo ip link del tap0 2>/dev/null || true
