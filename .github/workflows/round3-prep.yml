@@ -1,0 +1,108 @@
+# SPDX-License-Identifier: Apache-2.0
+# round3-prep.yml — two data-gathering checks against SHIPPED release bytes.
+#   1. TCG boot of the 0.4.0 smolfire kernel (closes the documented
+#      "untested on non-KVM hosts" caveat for the no-accel path).
+#   2. FreeBSD-utilities member enumeration from the 0.3.0 qcow2's
+#      /var/db/pkg/local.sqlite (kept in the image for exactly this) —
+#      the top-by-size file list is the round-3 diet cut-list input.
+# TEMPORARY, self-triggering. Delete after results land in the ledger.
+
+name: Round-3 prep (one-shot)
+
+on:
+  push:
+    branches: ['claude/ur-bsd-26-qnmjho']
+    paths: ['.github/workflows/round3-prep.yml']
+
+jobs:
+  prep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Preflight
+        run: |
+          set -e
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils expect sqlite3
+          curl -fsSLO "https://github.com/ryanmaclean/smolBSD/releases/download/0.4.0/smolfire-kernel-0.4.0.gz"
+          curl -fsSLO "https://github.com/ryanmaclean/smolBSD/releases/download/0.4.0/SHA256SUMS-0.4.0"
+          sha256sum -c SHA256SUMS-0.4.0
+          gunzip smolfire-kernel-0.4.0.gz
+          curl -fsSLO "https://github.com/ryanmaclean/smolBSD/releases/download/0.3.0/smolbsd-amd64-0.3.0.qcow2"
+
+      - name: TCG boot of released 0.4.0 kernel (no accelerator)
+        run: |
+          # Same PVH path, software emulation — the "drop -accel" claim.
+          # Generous timeout: TCG is 10-50x slower than KVM.
+          timeout 200 expect -c '
+            set timeout 180
+            set t0 [clock milliseconds]
+            spawn qemu-system-x86_64 -M microvm -cpu qemu64 -m 512M \
+              -kernel smolfire-kernel-0.4.0 \
+              -append "hint.acpi.0.disabled=0 machdep.disable_tsc_calibration=0" \
+              -display none -serial mon:stdio
+            expect {
+              "SMOLFIRE_READY" {
+                puts "\nTCG_TIME_TO_READY=[expr [clock milliseconds]-$t0]ms"
+                send {echo FIRE_$((6*7))}
+                send "\r"
+                expect {
+                  "FIRE_42" { puts "\nTCG_VERDICT=pass"; exit 0 }
+                  timeout   { puts "\nTCG_VERDICT=fail (shell unresponsive)"; exit 1 }
+                }
+              }
+              "panic"   { expect -timeout 5 timeout; puts "\nTCG_VERDICT=fail (panic)"; exit 2 }
+              timeout   { puts "\nTCG_VERDICT=fail (no READY in 180s)"; exit 1 }
+              eof       { puts "\nTCG_VERDICT=fail (qemu exited)"; exit 2 }
+            }'
+
+      - name: Enumerate FreeBSD-utilities members by size (0.3.0 image)
+        run: |
+          set -e
+          sudo modprobe nbd max_part=8
+          sudo qemu-nbd --read-only --connect=/dev/nbd0 smolbsd-amd64-0.3.0.qcow2
+          sleep 2
+          ROOTP=$(lsblk -nrpo NAME,FSTYPE /dev/nbd0 | awk '$2=="ufs"{print $1; exit}')
+          test -n "$ROOTP" || { echo "ERROR: no ufs partition"; lsblk /dev/nbd0; exit 1; }
+          sudo mkdir -p /mnt/img && sudo mount -o ro -t ufs -o ufstype=ufs2 "$ROOTP" /mnt/img
+          DB=/mnt/img/var/db/pkg/local.sqlite
+          test -f "$DB" || { echo "ERROR: local.sqlite missing"; ls /mnt/img/var/db/pkg; exit 1; }
+          cp "$DB" ./local.sqlite
+          echo "==== UTILREPORT: FreeBSD-utilities members by on-disk size (KiB) ===="
+          sqlite3 ./local.sqlite "
+            SELECT f.path FROM files f
+            JOIN packages p ON f.package_id = p.id
+            WHERE p.name = 'FreeBSD-utilities';" > utilfiles.txt
+          wc -l utilfiles.txt
+          # Size each surviving member from the mounted image (many were
+          # already rm'd by the size-trim; those show as MISSING and are
+          # excluded — the report reflects reality, not the manifest).
+          : > sized.txt
+          while IFS= read -r f; do
+            if [ -f "/mnt/img$f" ]; then
+              sz=$(stat -c %s "/mnt/img$f")
+              printf '%d %s\n' "$(( (sz + 1023) / 1024 ))" "$f" >> sized.txt
+            fi
+          done < utilfiles.txt
+          echo "UTILREPORT: surviving members: $(wc -l < sized.txt) of $(wc -l < utilfiles.txt) manifest entries"
+          echo "UTILREPORT: total surviving KiB: $(awk '{s+=$1} END {print s}' sized.txt)"
+          echo "==== UTILREPORT: top 60 by KiB ===="
+          sort -rn sized.txt | head -60 | sed 's/^/UTILREPORT: /'
+          echo "==== UTILREPORT: per-directory totals (KiB) ===="
+          awk '{n=split($2,a,"/"); d=a[2]"/"a[3]; s[d]+=$1} END {for (k in s) printf "%d %s\n", s[k], k}' sized.txt \
+            | sort -rn | head -15 | sed 's/^/UTILREPORT: /'
+          sudo umount /mnt/img && sudo qemu-nbd --disconnect /dev/nbd0
+
+      - name: Upload enumeration data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: round3-prep-data
+          if-no-files-found: warn
+          path: |
+            sized.txt
+            utilfiles.txt

@@ -1,0 +1,65 @@
+--- a/sys/x86/xen/pv.c
++++ b/sys/x86/xen/pv.c
+@@ -69,6 +69,7 @@
+ #include <machine/md_var.h>
+ #include <machine/metadata.h>
+ #include <machine/cpu.h>
++#include <machine/clock.h>
+ 
+ #include <xen/xen-os.h>
+ #include <xen/hvm.h>
+@@ -95,6 +96,8 @@
+ 
+ /*--------------------------- Forward Declarations ---------------------------*/
+ static void xen_pvh_parse_preload_data(uint64_t);
++static void pvh_early_clock_source_init(void);
++static void pvh_early_delay(int);
+ static void pvh_parse_memmap(vm_paddr_t *, int *);
+ 
+ /*---------------------------- Extern Declarations ---------------------------*/
+@@ -107,8 +110,8 @@
+ /*-------------------------------- Global Data -------------------------------*/
+ struct init_ops xen_pvh_init_ops = {
+ 	.parse_preload_data		= xen_pvh_parse_preload_data,
+-	.early_clock_source_init	= xen_clock_init,
+-	.early_delay			= xen_delay,
++	.early_clock_source_init	= pvh_early_clock_source_init,
++	.early_delay			= pvh_early_delay,
+ 	.parse_memmap			= pvh_parse_memmap,
+ };
+ 
+@@ -147,6 +150,34 @@
+ 	return (xen);
+ }
+ 
++/*
++ * Early clock source and DELAY dispatch for PVH boots.
++ *
++ * The Xen implementations rely on the shared info page, and thus on
++ * hypercalls, which are only functional when running under Xen.  When
++ * booted in PVH mode by another VMM (e.g. Firecracker or QEMU microvm)
++ * fall back to the emulated i8254, mirroring the native init_ops.
++ */
++static void
++pvh_early_clock_source_init(void)
++{
++
++	if (isxen())
++		xen_clock_init();
++	else
++		i8254_init();
++}
++
++static void
++pvh_early_delay(int n)
++{
++
++	if (isxen())
++		xen_delay(n);
++	else
++		i8254_delay(n);
++}
++
+ #define CRASH(...) do {					\
+ 	if (isxen())					\
+ 		xc_printf(__VA_ARGS__);			\
