@@ -365,3 +365,20 @@ tail printed on failure, so the next cycle is self-diagnosing. Gates
   (or compile the device in) rather than reverting the whole change.
 - If the image is not smaller despite a clean build: Finding 3 is the cause — the
   conf was not sourced; fix the invocation (step 1) and rebuild.
+
+## Round-3 prep results (run 30577593606) — premise revised
+
+TCG (no accelerator): the released 0.4.0 kernel boots to the FIRE_42
+interactive proof under pure software emulation (18s step) — the
+"KVM-only" caveat is closed for the no-accel path (macOS/HVF remains
+untested). FreeBSD-utilities enumeration from the shipped 0.3.0 image
+(local.sqlite via qemu-nbd): only **527 of 1,915 manifest entries
+survive, totaling 13.2 MiB** — the size-trim already removed the bulk;
+the ~48 MiB budget figure was the pre-trim package size. Biggest
+survivors: nologin 691K, libpcap 356K, libsysdecode 293K, makefs/dtc
+247K each, awk 228K, bc/dc 214K, usbdevs 210K, netstat 188K, ar5523
+firmware 150K, zstd quartet 135K, RDMA/InfiniBand libs ~460K combined.
+REVISED PLAN: a utilities file-cut is worth ~5–8 MiB raw (66.6 → ~59),
+not the projected 20–30 — diminishing returns; the full data is the
+round3-prep-data artifact. The next order of magnitude for tiny
+FreeBSD is SMOLFIRE (already shipped), not further full-image dieting.
