@@ -1,7 +1,7 @@
 # Research briefing — sandboxing, BSD kernels, RVA23 (July 2026)
 
-Three-topic research sweep run 2026-07-31 by three parallel research agents
-against primary sources (FreeBSD release notes and status reports, LWN,
+This three-topic research sweep was run 2026-07-31 by three parallel research
+agents against primary sources (FreeBSD release notes and status reports, LWN,
 riscv.org, vendor announcements). Findings ranked by relevance to smolBSD.
 
 Repo state at time of writing: SMOLFIRE one-ELF microVM boots in 511 ms
