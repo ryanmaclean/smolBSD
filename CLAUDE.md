@@ -1,8 +1,15 @@
-# smolBSD Coordinator — Claude Code Context
+# smolfire (formerly smolBSD) Coordinator — Claude Code Context
+
+> **Rename note**: the project is renaming smolBSD → **smolfire** ("smolBSD"
+> belongs to the unaffiliated NetBSDfr/smolBSD NetBSD micro-VM project).
+> Internal identifiers (`@smolbsd.local` addressing, `bin/smolbsd.nu`,
+> `SMOLBSD` kernconfs, artifact names) still use the old name until the
+> phase-2 rename lands — do not mix old and new names in new identifiers;
+> use `smolfire` for anything new and user-facing.
 
 ## 1. What this is
 
-**smolBSD coordinator** is a Nushell mbox+TOML multi-agent finite-state machine (FSM) for building and maintaining a minimal FreeBSD VM. The coordinator manages a set of agents that collaborate via a mailbox spool, advancing through FSM states (idle → dispatching → waiting → harvesting → halted) on each tick.
+**The smolfire coordinator** is a Nushell mbox+TOML multi-agent finite-state machine (FSM) for building and maintaining a minimal FreeBSD VM. The coordinator manages a set of agents that collaborate via a mailbox spool, advancing through FSM states (idle → dispatching → waiting → harvesting → halted) on each tick.
 
 ## 2. Key files
 
