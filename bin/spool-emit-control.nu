@@ -41,7 +41,7 @@ def main [
     let ts     = date now | date to-timezone utc | format date "%Y%m%d%H%M%S"
     let ts_iso = date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ"
     let safe_id = if $task_id != "" { $task_id } else { "all" }
-    let msg_id  = $"<ctrl.($action).($safe_id).($ts)@smolbsd.local>"
+    let msg_id  = $"<ctrl.($action).($safe_id).($ts)@smolfire.local>"
 
     mut body_lines = [
         $"category      = \"control\""
@@ -54,9 +54,9 @@ def main [
     }
 
     let mbox_msg = ([
-        $"From coordinator@smolbsd.local ($ts)"
-        "From: coordinator@smolbsd.local"
-        "To: coordinator@smolbsd.local"
+        $"From coordinator@smolfire.local ($ts)"
+        "From: coordinator@smolfire.local"
+        "To: coordinator@smolfire.local"
         $"Subject: [CONTROL] ($action) ($safe_id)"
         $"Message-ID: ($msg_id)"
         $"X-Control-Action: ($action)"

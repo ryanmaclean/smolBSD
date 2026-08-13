@@ -52,7 +52,7 @@ must_contain = \"FreeBSD\"
 max_boot_sec = 30
 
 [reply_contract]
-output_to            = \"coordinator@smolbsd.local\"
+output_to            = \"coordinator@smolfire.local\"
 output_format        = \"mbox+toml-v1\"
 attestation_required = true
 tools_required       = [\"Bash\"]
@@ -64,12 +64,12 @@ spec       = \"docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.md\"
 "
 
     # mbox envelope — From_ line (no colon) is the mbox separator per RFC 4155
-    let envelope = $"From coord@smolbsd.local ($dstamp)
-From: coordinator@smolbsd.local
-To: builder@smolbsd.local
+    let envelope = $"From coord@smolfire.local ($dstamp)
+From: coordinator@smolfire.local
+To: builder@smolfire.local
 Subject: [($task_id)] Boot smolBSD and collect system identity
 Date: ($ts)
-Message-ID: <($task_id).coord@smolbsd.local>
+Message-ID: <($task_id).coord@smolfire.local>
 X-Project: smolbsd
 X-Phase: tinyos/thesis-demo
 Content-Type: text/toml; charset=utf-8
@@ -79,7 +79,7 @@ Content-Type: text/toml; charset=utf-8
 
     $envelope | save --force $abs_spool
     print $"  task ($task_id) written to ($spool)"
-    print $"  Message-ID: <($task_id).coord@smolbsd.local>"
+    print $"  Message-ID: <($task_id).coord@smolfire.local>"
 
     # ── Step 2: Builder agent reads task and executes ────────────────────────
     print ""
@@ -126,14 +126,14 @@ evidence = ($result.uname | to json)
 verdict  = \"($result.verdict)\"
 "
 
-    let reply_envelope = $"From builder@smolbsd.local ($reply_dstamp)
-From: builder@smolbsd.local
-To: coordinator@smolbsd.local
+    let reply_envelope = $"From builder@smolfire.local ($reply_dstamp)
+From: builder@smolfire.local
+To: coordinator@smolfire.local
 Subject: Re: [($task_id)] Boot smolBSD and collect system identity
 Date: ($reply_ts)
-Message-ID: <($task_id).builder@smolbsd.local>
-In-Reply-To: <($task_id).coord@smolbsd.local>
-References: <($task_id).coord@smolbsd.local>
+Message-ID: <($task_id).builder@smolfire.local>
+In-Reply-To: <($task_id).coord@smolfire.local>
+References: <($task_id).coord@smolfire.local>
 X-Project: smolbsd
 X-Verdict: ($result.verdict)
 Content-Type: text/toml; charset=utf-8
@@ -143,7 +143,7 @@ Content-Type: text/toml; charset=utf-8
 
     $reply_envelope | save --append $abs_spool
     print $"  reply appended — verdict: ($result.verdict)"
-    print $"  Message-ID: <($task_id).builder@smolbsd.local>"
+    print $"  Message-ID: <($task_id).builder@smolfire.local>"
 
     # ── Step 4: Coordinator harvests via coord-tick ──────────────────────────
     print ""
@@ -185,9 +185,9 @@ Content-Type: text/toml; charset=utf-8
     print "╔══════════════════════════════════════════════════════╗"
     print "║  PROOF OF STATE TRANSFER                             ║"
     print "╠══════════════════════════════════════════════════════╣"
-    print $"║  task written:    <($task_id).coord@smolbsd.local>"
+    print $"║  task written:    <($task_id).coord@smolfire.local>"
     print $"║  agent executed:  ($result.mode)"
-    print $"║  reply received:  <($task_id).builder@smolbsd.local>"
+    print $"║  reply received:  <($task_id).builder@smolfire.local>"
     print $"║  FSM ticks:       ($tick_count)"
     print $"║  FSM final state: ($fsm_landed)"
     print $"║  verdict:         ($result.verdict)"

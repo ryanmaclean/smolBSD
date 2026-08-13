@@ -66,14 +66,14 @@ enregistrements structurés pour le traitement en aval.
 
 `var/mail/spool` — un seul fichier mbox RFC 822. Chaque message (requête du
 coordinateur et réponse d'agent) y réside. Les adresses suivent le schéma
-`<rôle>@smolbsd.local`. Le corps TOML transporte la charge utile structurée de
+`<rôle>@smolfire.local`. Le corps TOML transporte la charge utile structurée de
 la tâche.
 
 Exemples de rôles :
-- `coordinator@smolbsd.local`
-- `architect@smolbsd.local`
-- `builder@smolbsd.local`
-- `reviewer@smolbsd.local`
+- `coordinator@smolfire.local`
+- `architect@smolfire.local`
+- `builder@smolfire.local`
+- `reviewer@smolfire.local`
 
 ## Démarrage rapide
 

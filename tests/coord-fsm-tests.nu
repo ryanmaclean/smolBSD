@@ -58,8 +58,8 @@ def cleanup [root: string] {
 
 # Build a minimal mbox reply envelope (agent→coordinator).
 def make-reply-msg [
-    msg_id:     string   # e.g. "<task-0001.tester@smolbsd.local>"
-    in_reply_to: string  # e.g. "<task-0001.coord@smolbsd.local>"  (empty string for fresh messages)
+    msg_id:     string   # e.g. "<task-0001.tester@smolfire.local>"
+    in_reply_to: string  # e.g. "<task-0001.coord@smolfire.local>"  (empty string for fresh messages)
 ] {
     let dstamp = "Mon May  4 10:00:00 2026"
     let ts     = "Mon, 4 May 2026 10:00:00 -0000"
@@ -69,7 +69,7 @@ def make-reply-msg [
         ""
     }
 
-    $"From agent@smolbsd.local ($dstamp)\nFrom: agent@smolbsd.local\nTo: coordinator@smolbsd.local\nSubject: reply to task\nDate: ($ts)\nMessage-ID: ($msg_id)\n($irt_header)Content-Type: text/toml; charset=utf-8\n\ntask_id = \"test-task\"\nverdict  = \"pass\"\n"
+    $"From agent@smolfire.local ($dstamp)\nFrom: agent@smolfire.local\nTo: coordinator@smolfire.local\nSubject: reply to task\nDate: ($ts)\nMessage-ID: ($msg_id)\n($irt_header)Content-Type: text/toml; charset=utf-8\n\ntask_id = \"test-task\"\nverdict  = \"pass\"\n"
 }
 
 # ── Test 1: idle → no-op when spool is empty ──────────────────────────────────
@@ -108,7 +108,7 @@ def test-idle-to-harvesting-to-idle [] {
     let name = "FSM: idle->harvesting->idle on new message"
     let root = make-temp-root
 
-    let msg_id = "<task-0001.tester@smolbsd.local>"
+    let msg_id = "<task-0001.tester@smolfire.local>"
     let envelope = make-reply-msg $msg_id ""
 
     $envelope | save ($root | path join "var" "mail" "spool")
@@ -146,7 +146,7 @@ def test-dispatching-to-waiting-to-idle [] {
 
     # Seed state: FSM in "dispatching" with pending request fields populated
     # to match the current state-dispatching contract in coord-tick.nu.
-    let initial_req_id = $"<task-0002.initial@smolbsd.local>"
+    let initial_req_id = $"<task-0002.initial@smolfire.local>"
     let seed_state = {
         version:            "1"
         tick_count:         0
@@ -155,7 +155,7 @@ def test-dispatching-to-waiting-to-idle [] {
         last_tick_at:       "2026-05-04T10:00:00Z"
         pending_request_id: $initial_req_id
         pending_task_id:    $task_id
-        pending_to_addr:    "builder@smolbsd.local"
+        pending_to_addr:    "builder@smolfire.local"
         dispatched_at:      ""
         attempt_counts:     {}
         halted_tasks:       []
@@ -191,9 +191,9 @@ def test-dispatching-to-waiting-to-idle [] {
     }
 
     # Extract the actual dispatched Message-ID from the spool (state-dispatching
-    # generates IDs like <coord.N.rN.TS@smolbsd.local>) and reference it.
+    # generates IDs like <coord.N.rN.TS@smolfire.local>) and reference it.
     let dispatched_id = $spool_msgs | last | get headers | get "Message-ID"
-    let reply_id  = "<task-0002.reply@smolbsd.local>"
+    let reply_id  = "<task-0002.reply@smolfire.local>"
     let reply_env = make-reply-msg $reply_id $dispatched_id
     $reply_env | save --append $spool_path
 
@@ -259,10 +259,10 @@ def test-malformed-message [] {
     let root = make-temp-root
 
     # A valid mbox envelope but with a non-TOML body.
-    let msg_id  = "<task-0003.malformed@smolbsd.local>"
+    let msg_id  = "<task-0003.malformed@smolfire.local>"
     let dstamp  = "Mon May  4 10:00:00 2026"
     let ts      = "Mon, 4 May 2026 10:00:00 -0000"
-    let envelope = $"From agent@smolbsd.local ($dstamp)\nFrom: agent@smolbsd.local\nTo: coordinator@smolbsd.local\nSubject: malformed body test\nDate: ($ts)\nMessage-ID: ($msg_id)\nContent-Type: text/toml; charset=utf-8\n\nThis is NOT valid TOML @@@@\n= broken [\n"
+    let envelope = $"From agent@smolfire.local ($dstamp)\nFrom: agent@smolfire.local\nTo: coordinator@smolfire.local\nSubject: malformed body test\nDate: ($ts)\nMessage-ID: ($msg_id)\nContent-Type: text/toml; charset=utf-8\n\nThis is NOT valid TOML @@@@\n= broken [\n"
 
     $envelope | save ($root | path join "var" "mail" "spool")
 

@@ -159,12 +159,12 @@ def append-spool [
     let ts_iso = date now | format date "%Y-%m-%dT%H:%M:%SZ"
 
     let body = $"From smolbsd-runner ($ts)
-From: runner@smolbsd.local
-To: coordinator@smolbsd.local
+From: runner@smolfire.local
+To: coordinator@smolfire.local
 Subject: [task-0038] smolBSD amd64 SMOLBSD-kernel build harvest — ($verdict)
 Date: ($ts_iso)
-Message-ID: <task-0038.runner@smolbsd.local>
-In-Reply-To: <task-0037.runner@smolbsd.local>
+Message-ID: <task-0038.runner@smolfire.local>
+In-Reply-To: <task-0037.runner@smolfire.local>
 X-Project: smolbsd
 X-Phase: tinyos/phase-iii
 X-Verdict: ($verdict)

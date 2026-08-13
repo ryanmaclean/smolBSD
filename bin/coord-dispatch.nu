@@ -7,7 +7,7 @@
 # and write a reply back to the spool.
 #
 # Role routing:
-#   vm-*@smolbsd.local  → dispatch-vm  (boots qcow2, runs commands via SSH)
+#   vm-*@smolfire.local  → dispatch-vm  (boots qcow2, runs commands via SSH)
 #   anything else       → dispatch-claude (spawns claude CLI)
 
 # Find the claude CLI binary.
@@ -42,7 +42,7 @@ def dispatch-claude [
     let prompt = $"You are a smolBSD subagent with role '($role)'.
 
 Your task brief \(task_id: ($task_id)\) is in the spool at ($spool).
-Find the message with Message-ID containing '($task_id).coord@smolbsd.local', read the TOML body for your instructions, do the work, then append a properly-formatted mbox+TOML reply to ($spool).
+Find the message with Message-ID containing '($task_id).coord@smolfire.local', read the TOML body for your instructions, do the work, then append a properly-formatted mbox+TOML reply to ($spool).
 
 Brief summary:
 ($brief | str substring ..500)
@@ -71,7 +71,7 @@ Reply format: standard smolBSD mbox+TOML envelope with X-Verdict: pass|fail and 
 
 # ── Private: VM execution path ─────────────────────────────────────────────────
 
-# Dispatch a task to a real smolBSD VM (role pattern: vm-*@smolbsd.local).
+# Dispatch a task to a real smolBSD VM (role pattern: vm-*@smolfire.local).
 # Reads commands from the task TOML body's [commands] run = [...] section.
 # Returns {launched: bool, mode: string, verdict: string, boot_sec: int}
 export def dispatch-vm [
@@ -120,13 +120,13 @@ verdict  = ($result.verdict | to json)
 "
 
     let error_line = if "error" in $result { $"\nX-VM-Error: ($result.error)" } else { "" }
-    let reply_envelope = $"From vm-agent@smolbsd.local ($dstamp)
-From: vm-agent@smolbsd.local
-To: coordinator@smolbsd.local
+    let reply_envelope = $"From vm-agent@smolfire.local ($dstamp)
+From: vm-agent@smolfire.local
+To: coordinator@smolfire.local
 Subject: Re: [($task_id)] VM execution result
 Date: ($ts)
-Message-ID: <($task_id).vm-agent@smolbsd.local>
-In-Reply-To: <($task_id).coord@smolbsd.local>
+Message-ID: <($task_id).vm-agent@smolfire.local>
+In-Reply-To: <($task_id).coord@smolfire.local>
 X-Project: smolbsd
 X-Verdict: ($result.verdict)($error_line)
 Content-Type: text/toml; charset=utf-8

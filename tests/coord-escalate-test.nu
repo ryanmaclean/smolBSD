@@ -383,11 +383,11 @@ def test-spool-append-preserves-existing [] {
     let spool_path = [$root, "var", "mail", "spool"] | path join
 
     # Pre-seed the spool with a prior message.
-    let prior_msg = "From prior@smolbsd.local Mon May  4 10:00:00 2026
-From: prior@smolbsd.local
-To: coordinator@smolbsd.local
+    let prior_msg = "From prior@smolfire.local Mon May  4 10:00:00 2026
+From: prior@smolfire.local
+To: coordinator@smolfire.local
 Subject: existing task
-Message-ID: <prior.task@smolbsd.local>
+Message-ID: <prior.task@smolfire.local>
 Content-Type: text/toml; charset=utf-8
 
 task_id = \"existing\"
@@ -404,7 +404,7 @@ verdict  = \"pass\"
         }
         let raw = open --raw $spool_path
         # Both the original message and the new escalation message must be present.
-        let has_prior = $raw | str contains "prior.task@smolbsd.local"
+        let has_prior = $raw | str contains "prior.task@smolfire.local"
         let has_new   = $raw | str contains "task-app"
         let has_hdr   = $raw | str contains "X-Halt-Reason: retry-exhausted"
         $has_prior and $has_new and $has_hdr
@@ -465,7 +465,7 @@ def test-message-id-contains-task-id [] {
             return {name: $name, status: "fail", detail: $"exit=($r.exit_code)"}
         }
         let raw = open --raw $spool_path
-        # Format: <escalate.{task_id}.{ts}@smolbsd.local>
+        # Format: <escalate.{task_id}.{ts}@smolfire.local>
         $raw | str contains "escalate.task-mid."
     } catch {|e|
         cleanup $root

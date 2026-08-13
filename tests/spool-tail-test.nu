@@ -25,12 +25,12 @@ def assert [cond: bool, msg?: string] {
 # ── Two-message fixture mbox ──────────────────────────────────────────────────
 
 # Message A: outbound coordinator → architect, no verdict in TOML
-const MSG_A = "From coordinator@smolbsd.local Mon May  4 10:00:00 2026
-From: coordinator@smolbsd.local
-To: architect@smolbsd.local
+const MSG_A = "From coordinator@smolfire.local Mon May  4 10:00:00 2026
+From: coordinator@smolfire.local
+To: architect@smolfire.local
 Subject: [task-st-1] Design the widget
 Date: Mon, 4 May 2026 10:00:00 -0000
-Message-ID: <task-st-1.coord@smolbsd.local>
+Message-ID: <task-st-1.coord@smolfire.local>
 Content-Type: text/toml; charset=utf-8
 
 task_id = \"task-st-1\"
@@ -38,13 +38,13 @@ title   = \"Design the widget\"
 "
 
 # Message B: inbound architect → coordinator reply, verdict = pass
-const MSG_B = "From architect@smolbsd.local Mon May  4 11:30:00 2026
-From: architect@smolbsd.local
-To: coordinator@smolbsd.local
+const MSG_B = "From architect@smolfire.local Mon May  4 11:30:00 2026
+From: architect@smolfire.local
+To: coordinator@smolfire.local
 Subject: Re: [task-st-1] Design the widget
 Date: Mon, 4 May 2026 11:30:00 -0000
-Message-ID: <task-st-1.architect@smolbsd.local>
-In-Reply-To: <task-st-1.coord@smolbsd.local>
+Message-ID: <task-st-1.architect@smolfire.local>
+In-Reply-To: <task-st-1.coord@smolfire.local>
 Content-Type: text/toml; charset=utf-8
 
 task_id = \"task-st-1\"
@@ -68,8 +68,8 @@ do {
     assert equal $out.exit_code 0
 
     # Summary output must mention addresses from both messages
-    assert ($out.stdout | str contains "coordinator@smolbsd.local")
-    assert ($out.stdout | str contains "architect@smolbsd.local")
+    assert ($out.stdout | str contains "coordinator@smolfire.local")
+    assert ($out.stdout | str contains "architect@smolfire.local")
     # Summary must include both row indices (0 and 1)
     assert ($out.stdout | str contains "0")
     assert ($out.stdout | str contains "1")
@@ -87,8 +87,8 @@ do {
     assert equal $out.exit_code 0
 
     # Must include msg B's Message-ID and from address
-    assert ($out.stdout | str contains "task-st-1.architect@smolbsd.local")
-    assert ($out.stdout | str contains "architect@smolbsd.local")
+    assert ($out.stdout | str contains "task-st-1.architect@smolfire.local")
+    assert ($out.stdout | str contains "architect@smolfire.local")
     # Must show only one message separator (only msg B, not msg A)
     let separators = $out.stdout | lines | where {|l| $l | str starts-with "━━━ Message #"}
     assert equal ($separators | length) 1
@@ -109,7 +109,7 @@ do {
     assert equal $out.exit_code 0
 
     # Must show msg A — its from_line and Message-ID
-    assert ($out.stdout | str contains "coordinator@smolbsd.local")
+    assert ($out.stdout | str contains "coordinator@smolfire.local")
     # Must show only one message separator (only msg A)
     let seps_id = $out.stdout | lines | where {|l| $l | str starts-with "━━━ Message #"}
     assert equal ($seps_id | length) 1
@@ -140,8 +140,8 @@ do {
     assert equal $out.exit_code 0
 
     # Both messages carry task_id = "task-st-1", so both should appear
-    assert ($out.stdout | str contains "task-st-1.coord@smolbsd.local")
-    assert ($out.stdout | str contains "task-st-1.architect@smolbsd.local")
+    assert ($out.stdout | str contains "task-st-1.coord@smolfire.local")
+    assert ($out.stdout | str contains "task-st-1.architect@smolfire.local")
 
     rm $spool
 }
@@ -177,12 +177,12 @@ do {
 
 print "test: malformed TOML body is handled gracefully"
 do {
-    let bad_msg = "From agent@smolbsd.local Mon May  4 10:00:00 2026
-From: agent@smolbsd.local
-To: coordinator@smolbsd.local
+    let bad_msg = "From agent@smolfire.local Mon May  4 10:00:00 2026
+From: agent@smolfire.local
+To: coordinator@smolfire.local
 Subject: malformed
 Date: Mon, 4 May 2026 10:00:00 -0000
-Message-ID: <bad-toml@smolbsd.local>
+Message-ID: <bad-toml@smolfire.local>
 Content-Type: text/toml; charset=utf-8
 
 NOT VALID TOML @@@@ ===

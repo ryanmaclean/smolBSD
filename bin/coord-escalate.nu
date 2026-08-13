@@ -41,7 +41,7 @@ def main [
 
     let ts      = date now | date to-timezone utc | format date "%Y%m%d%H%M%S"
     let ts_iso  = date now | date to-timezone utc | format date "%Y-%m-%dT%H:%M:%SZ"
-    let msg_id  = $"<escalate.($task_id).($ts)@smolbsd.local>"
+    let msg_id  = $"<escalate.($task_id).($ts)@smolfire.local>"
     let subject = $"[ESCALATE] ($task_id): ($reason)"
     let ask     = $"Human review required: ($reason) after ($attempts) attempts. Check var/mail/HALT.($task_id) for details."
 
@@ -55,9 +55,9 @@ def main [
         $"ask      = \"($ask)\""
     ] | str join "\n"
 
-    let mbox_msg = $"From coordinator@smolbsd.local ($ts)
-From: coordinator@smolbsd.local
-To: operator@smolbsd.local
+    let mbox_msg = $"From coordinator@smolfire.local ($ts)
+From: coordinator@smolfire.local
+To: operator@smolfire.local
 Subject: ($subject)
 Message-ID: ($msg_id)
 X-Halt-Reason: ($reason)

@@ -61,13 +61,13 @@ jj new                                # 新しい変更を開く
 
 `var/mail/spool` — 単一のRFC 822 mboxファイル。すべてのメッセージ（コーディネーターの
 リクエストとエージェントの返信）がここに格納されます。アドレスは
-`<役割>@smolbsd.local` の形式に従います。TOML本文が構造化タスクのペイロードを運びます。
+`<役割>@smolfire.local` の形式に従います。TOML本文が構造化タスクのペイロードを運びます。
 
 役割の例：
-- `coordinator@smolbsd.local`
-- `architect@smolbsd.local`
-- `builder@smolbsd.local`
-- `reviewer@smolbsd.local`
+- `coordinator@smolfire.local`
+- `architect@smolfire.local`
+- `builder@smolfire.local`
+- `reviewer@smolfire.local`
 
 ## クイックスタート
 

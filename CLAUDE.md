@@ -1,11 +1,13 @@
 # smolfire (formerly smolBSD) Coordinator — Claude Code Context
 
-> **Rename note**: the project is renaming smolBSD → **smolfire** ("smolBSD"
+> **Rename note**: the project renamed smolBSD → **smolfire** ("smolBSD"
 > belongs to the unaffiliated NetBSDfr/smolBSD NetBSD micro-VM project).
-> Internal identifiers (`@smolbsd.local` addressing, `bin/smolbsd.nu`,
-> `SMOLBSD` kernconfs, artifact names) still use the old name until the
-> phase-2 rename lands — do not mix old and new names in new identifiers;
-> use `smolfire` for anything new and user-facing.
+> Done: repo name, spool addressing (`@smolfire.local`), CLI entry
+> (`bin/smolfire.nu`; `bin/smolbsd.nu` is a deprecated shim). Still on the
+> old name until phase 3b (issue #41): `SMOLBSD` kernconfs,
+> `smolbsd-qemu*.conf` release confs + `SMOLBSDCONF`, artifact basenames,
+> `SMOLBSD_*` env vars, helper scripts (`build-smolbsd.nu`,
+> `qemu-smolbsd.nu`, …). Use `smolfire` for anything new.
 
 ## 1. What this is
 

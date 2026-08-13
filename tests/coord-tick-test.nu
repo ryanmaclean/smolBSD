@@ -128,7 +128,7 @@ do {
 
     let msg_id = "<reply.pass.001@host>"
     let body = "verdict = \"pass\"\ntask_id = \"t1\""
-    let msg = make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $msg_id $body
+    let msg = make-msg "agent@smolfire.local" "coordinator@smolfire.local" $msg_id $body
     write-spool $spool_abs $msg
 
     run-tick $tmp $state_rel $spool_rel
@@ -152,7 +152,7 @@ do {
 
     let msg_id = "<request.t2.001@host>"
     let body = "task_id = \"t2\""
-    let msg = make-msg "coordinator@smolbsd.local" "agent@smolbsd.local" $msg_id $body
+    let msg = make-msg "coordinator@smolfire.local" "agent@smolfire.local" $msg_id $body
     write-spool $spool_abs $msg
 
     run-tick $tmp $state_rel $spool_rel
@@ -188,7 +188,7 @@ do {
         last_tick_at:       "2026-01-01T00:00:00Z"
         pending_request_id: "<req.123@host>"
         pending_task_id:    "t2"
-        pending_to_addr:    "agent@smolbsd.local"
+        pending_to_addr:    "agent@smolfire.local"
     }
 
     run-tick $tmp $state_rel $spool_rel
@@ -210,7 +210,7 @@ do {
     let pending_id = "<req.123@host>"
     let reply_id   = "<reply.for.req123@host>"
     let body = "verdict = \"pass\"\ntask_id = \"t2\""
-    let msg = (make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $reply_id $body
+    let msg = (make-msg "agent@smolfire.local" "coordinator@smolfire.local" $reply_id $body
                --in-reply-to $pending_id)
     write-spool $spool_abs $msg
 
@@ -222,7 +222,7 @@ do {
         last_tick_at:       "2026-01-01T00:00:00Z"
         pending_request_id: $pending_id
         pending_task_id:    "t2"
-        pending_to_addr:    "agent@smolbsd.local"
+        pending_to_addr:    "agent@smolfire.local"
     }
 
     run-tick $tmp $state_rel $spool_rel
@@ -267,7 +267,7 @@ do {
 
     let msg_id = "<reply.fail.t3@host>"
     let body = "verdict = \"fail\"\ntask_id = \"t3\""
-    let msg = make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $msg_id $body
+    let msg = make-msg "agent@smolfire.local" "coordinator@smolfire.local" $msg_id $body
     write-spool $spool_abs $msg
 
     run-tick $tmp $state_rel $spool_rel
@@ -294,7 +294,7 @@ do {
 
     let msg_id = "<fail.1@host>"
     let body = "verdict = \"fail\"\ntask_id = \"t-retry\""
-    let msg = make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $msg_id $body
+    let msg = make-msg "agent@smolfire.local" "coordinator@smolfire.local" $msg_id $body
     write-spool $spool_abs $msg
 
     run-tick $tmp $state_rel $spool_rel
@@ -338,7 +338,7 @@ do {
 
     let msg_id = "<fail.exhaust@host>"
     let body = "verdict = \"fail\"\ntask_id = \"t-exhaust\""
-    let msg = make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $msg_id $body
+    let msg = make-msg "agent@smolfire.local" "coordinator@smolfire.local" $msg_id $body
     write-spool $spool_abs $msg
 
     run-tick $tmp $state_rel $spool_rel
@@ -362,7 +362,7 @@ do {
     let msg_id = "<cap.mismatch.t-cap@host>"
     let body = "task_id = \"t-cap\"\nagent_type = \"reviewer\"\ntools_required = [\"Write\", \"Bash\"]"
     # outbound request (not to coordinator)
-    let msg = make-msg "coordinator@smolbsd.local" "reviewer@smolbsd.local" $msg_id $body
+    let msg = make-msg "coordinator@smolfire.local" "reviewer@smolfire.local" $msg_id $body
     write-spool $spool_abs $msg
 
     run-tick $tmp $state_rel $spool_rel
@@ -385,7 +385,7 @@ do {
 
     let msg_id = "<attest.fail.t-attest@host>"
     let body = "verdict = \"pass\"\ntask_id = \"t-attest\"\nattestation_required = true"
-    let msg = make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $msg_id $body
+    let msg = make-msg "agent@smolfire.local" "coordinator@smolfire.local" $msg_id $body
     write-spool $spool_abs $msg
 
     run-tick $tmp $state_rel $spool_rel
@@ -409,11 +409,11 @@ do {
     let req_id = "<req.attest.t-attest-req@host>"
     let req_body = "task_id = \"t-attest-req\"\nattestation_required = true"
     # Mark this as a historical request context message (non-dispatchable via in-reply-to).
-    let req_msg = make-msg "coordinator@smolbsd.local" "builder@smolbsd.local" $req_id $req_body --in-reply-to "<seed@host>"
+    let req_msg = make-msg "coordinator@smolfire.local" "builder@smolfire.local" $req_id $req_body --in-reply-to "<seed@host>"
 
     let reply_id = "<reply.attest.t-attest-req@host>"
     let reply_body = "verdict = \"pass\"\ntask_id = \"t-attest-req\""
-    let reply_msg = make-msg "builder@smolbsd.local" "coordinator@smolbsd.local" $reply_id $reply_body --in-reply-to $req_id
+    let reply_msg = make-msg "builder@smolfire.local" "coordinator@smolfire.local" $reply_id $reply_body --in-reply-to $req_id
 
     write-spool $spool_abs ($req_msg + "\n" + $reply_msg)
 
@@ -437,11 +437,11 @@ do {
 
     let req_id = "<req.attest.t-attest-ok@host>"
     let req_body = "task_id = \"t-attest-ok\"\nattestation_required = true"
-    let req_msg = make-msg "coordinator@smolbsd.local" "builder@smolbsd.local" $req_id $req_body --in-reply-to "<seed@host>"
+    let req_msg = make-msg "coordinator@smolfire.local" "builder@smolfire.local" $req_id $req_body --in-reply-to "<seed@host>"
 
     let reply_id = "<reply.attest.t-attest-ok@host>"
     let reply_body = "verdict = \"pass\"\ntask_id = \"t-attest-ok\"\n\n[[claims]]\nsubject = \"proof\"\nverdict = \"pass\""
-    let reply_msg = make-msg "builder@smolbsd.local" "coordinator@smolbsd.local" $reply_id $reply_body --in-reply-to $req_id
+    let reply_msg = make-msg "builder@smolfire.local" "coordinator@smolfire.local" $reply_id $reply_body --in-reply-to $req_id
 
     write-spool $spool_abs ($req_msg + "\n" + $reply_msg)
 
@@ -465,7 +465,7 @@ do {
     # Tick 1: original request requires attestation, coordinator dispatches and enters waiting.
     let req_id = "<req.attest.dispatch.chain@host>"
     let req_body = "task_id = \"t-attest-chain\"\nattestation_required = true"
-    let req_msg = make-msg "user@smolbsd.local" "builder@smolbsd.local" $req_id $req_body
+    let req_msg = make-msg "user@smolfire.local" "builder@smolfire.local" $req_id $req_body
     write-spool $spool_abs $req_msg
     run-tick $tmp $state_rel $spool_rel
 
@@ -477,7 +477,7 @@ do {
     # Coordinator must follow In-Reply-To chain to enforce original requirement.
     let reply_id = "<reply.attest.dispatch.chain@host>"
     let reply_body = "verdict = \"pass\"\ntask_id = \"t-attest-chain\""
-    let reply_msg = make-msg "builder@smolbsd.local" "coordinator@smolbsd.local" $reply_id $reply_body --in-reply-to $dispatch_id
+    let reply_msg = make-msg "builder@smolfire.local" "coordinator@smolfire.local" $reply_id $reply_body --in-reply-to $dispatch_id
     $reply_msg | save --append $spool_abs
     run-tick $tmp $state_rel $spool_rel
 
@@ -499,7 +499,7 @@ do {
 
     let msg_id = "<blocked.no-unblocker.t-block@host>"
     let body = "verdict = \"blocked\"\ntask_id = \"t-block\""
-    let msg = make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $msg_id $body
+    let msg = make-msg "agent@smolfire.local" "coordinator@smolfire.local" $msg_id $body
     write-spool $spool_abs $msg
 
     run-tick $tmp $state_rel $spool_rel
@@ -528,7 +528,7 @@ do {
     let spool_abs = [$tmp, $spool_rel] | path join
 
     # Tick 1: seed spool with an outbound request (not to coordinator, no In-Reply-To).
-    let req_msg = make-msg "user@smolbsd.local" "builder@smolbsd.local" "<orig.req.14@host>" (
+    let req_msg = make-msg "user@smolfire.local" "builder@smolfire.local" "<orig.req.14@host>" (
         "task_id = \"t14\""
     )
     write-spool $spool_abs $req_msg
@@ -544,7 +544,7 @@ do {
     let coord_msg_id = $st1.pending_request_id
 
     # Tick 2: append a reply addressed to coordinator with In-Reply-To = coord_msg_id.
-    let reply_msg = (make-msg "builder@smolbsd.local" "coordinator@smolbsd.local" "<reply.14@host>"
+    let reply_msg = (make-msg "builder@smolfire.local" "coordinator@smolfire.local" "<reply.14@host>"
         "task_id = \"t14\"\nverdict = \"pass\""
         --in-reply-to $coord_msg_id)
     $reply_msg | save --append $spool_abs
@@ -596,13 +596,13 @@ do {
     ) | save --force ([$mail_dir, "HALT.t15"] | path join)
 
     # Seed spool with a resume message using action = retry.
-    let resume_msg = (make-msg "user@smolbsd.local" "coordinator@smolbsd.local" "<resume.t15@host>"
+    let resume_msg = (make-msg "user@smolfire.local" "coordinator@smolfire.local" "<resume.t15@host>"
         "task_id = \"t15\"\naction = \"retry\"")
     # Add X-Resume-Tag and X-Resume-Action headers manually via raw string.
     let resume_raw = (
-        "From user@smolbsd.local Mon Jan  1 00:00:00 2026\n" +
-        "From: user@smolbsd.local\n" +
-        "To: coordinator@smolbsd.local\n" +
+        "From user@smolfire.local Mon Jan  1 00:00:00 2026\n" +
+        "From: user@smolfire.local\n" +
+        "To: coordinator@smolfire.local\n" +
         "Message-ID: <resume.t15@host>\n" +
         "X-Resume-Tag: resume-t15\n" +
         "X-Resume-Action: retry\n" +
@@ -662,9 +662,9 @@ do {
 
     # Seed spool with an abort resume message.
     let abort_raw = (
-        "From user@smolbsd.local Mon Jan  1 00:00:00 2026\n" +
-        "From: user@smolbsd.local\n" +
-        "To: coordinator@smolbsd.local\n" +
+        "From user@smolfire.local Mon Jan  1 00:00:00 2026\n" +
+        "From: user@smolfire.local\n" +
+        "To: coordinator@smolfire.local\n" +
         "Message-ID: <abort.t15@host>\n" +
         "X-Resume-Tag: resume-t15\n" +
         "X-Resume-Action: abort\n" +
@@ -723,9 +723,9 @@ do {
     ) | save --force ([$mail_dir, "HALT.t16b"] | path join)
 
     let resume_raw = (
-        "From user@smolbsd.local Mon Jan  1 00:00:00 2026\n" +
-        "From: user@smolbsd.local\n" +
-        "To: coordinator@smolbsd.local\n" +
+        "From user@smolfire.local Mon Jan  1 00:00:00 2026\n" +
+        "From: user@smolfire.local\n" +
+        "To: coordinator@smolfire.local\n" +
         "Message-ID: <resume.t16b@host>\n" +
         "X-Resume-Tag: resume-t16b\n" +
         "X-Resume-Action: retry\n" +
@@ -779,9 +779,9 @@ do {
     ) | save --force ([$mail_dir, "HALT.t16c"] | path join)
 
     let resume_raw = (
-        "From user@smolbsd.local Mon Jan  1 00:00:00 2026\n" +
-        "From: user@smolbsd.local\n" +
-        "To: coordinator@smolbsd.local\n" +
+        "From user@smolfire.local Mon Jan  1 00:00:00 2026\n" +
+        "From: user@smolfire.local\n" +
+        "To: coordinator@smolfire.local\n" +
         "Message-ID: <resume.t16c@host>\n" +
         "X-Resume-Tag: resume-t16c\n" +
         "X-Resume-Action: retry-as-builder\n" +
@@ -832,9 +832,9 @@ do {
     ) | save --force $state_abs
 
     # Seed a fail reply for t17 into the spool
-    let msg_id = "<t17.fail.agent@smolbsd.local>"
+    let msg_id = "<t17.fail.agent@smolfire.local>"
     let body   = "verdict = \"fail\"\ntask_id = \"t17\""
-    let msg    = make-msg "agent@smolbsd.local" "coordinator@smolbsd.local" $msg_id $body
+    let msg    = make-msg "agent@smolfire.local" "coordinator@smolfire.local" $msg_id $body
     write-spool $spool_abs $msg
 
     # Run coord-tick — must exit 0 even though IRC host is unreachable

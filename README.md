@@ -1,15 +1,15 @@
 # smolfire
 
-[![CI](https://github.com/ryanmaclean/smolBSD/actions/workflows/ci.yml/badge.svg)](https://github.com/ryanmaclean/smolBSD/actions/workflows/ci.yml)
+[![CI](https://github.com/ryanmaclean/smolfire/actions/workflows/ci.yml/badge.svg)](https://github.com/ryanmaclean/smolfire/actions/workflows/ci.yml)
 
-> **Renaming in progress — formerly "smolBSD".** That name belongs to
+> **Formerly "smolBSD".** That name belongs to
 > [NetBSDfr/smolBSD](https://github.com/NetBSDfr/smolBSD) by Emile "iMil"
 > Heitor — the NetBSD micro-VM builder (smolbsd.org, FOSDEM 2025/2026) that
 > inspired this project and predates it. This project is **not affiliated**
-> with it; we're adopting the name of our microVM flagship, **SMOLFIRE**,
-> project-wide. Internal identifiers (`bin/smolbsd.nu`, `@smolbsd.local`
-> spool addressing, `SMOLBSD` kernconfs) are renamed in a tracked second
-> phase — see the rename tracking issue.
+> with it; we adopted the name of our microVM flagship, **SMOLFIRE**,
+> project-wide. Build-pipeline identifiers (`SMOLBSD` kernconfs,
+> `smolbsd-qemu*.conf`, artifact names) keep the old name until the final
+> rename phase — see the rename tracking issue (#41).
 
 ## What it is
 
@@ -26,7 +26,7 @@ As of 2026-07-24:
 
 | Leg     | Boot gate              | Image size            | Notes                                  |
 |---------|------------------------|-----------------------|----------------------------------------|
-| amd64   | 9s to login on KVM — PASS | **66.6 MiB raw, 26.6 MiB compressed download** (≤ 512 MiB gate PASS) | Built end-to-end by the hosted pipeline; [releases](https://github.com/ryanmaclean/smolBSD/releases) (0.1.0: 223 MiB, 0.2.0: 91/33 MiB, diet round 2: 66.6/26.6 MiB) |
+| amd64   | 9s to login on KVM — PASS | **66.6 MiB raw, 26.6 MiB compressed download** (≤ 512 MiB gate PASS) | Built end-to-end by the hosted pipeline; [releases](https://github.com/ryanmaclean/smolfire/releases) (0.1.0: 223 MiB, 0.2.0: 91/33 MiB, diet round 2: 66.6/26.6 MiB) |
 | aarch64 | needs ARM hardware (see `docs/BHYVE-GATE-AMD64.md`) | cross-built by the same pipeline, size gate only | Earlier native-build baseline: 11s on HVF, 1.41 GiB pre-diet |
 | **SMOLFIRE** (microVM) | **511 ms to shell under Firecracker** (569 ms QEMU microvm), TCP net gate + host ping PASS | **37 MiB — one PVH ELF is the whole OS** (kernel + static /rescue MFS root) | Rump-kernel spirit: no bootloader, no disk, no pkgbase; `sys/amd64/conf/SMOLFIRE` + `bin/build-smolfire.sh` |
 
@@ -46,7 +46,7 @@ Three ways in, depending on what you have:
    Actions tab — it builds the qcow2 on a stock GitHub runner and uploads it
    as a workflow artifact (see `docs/BUILDING.md`, "Building in a pipeline").
    Gate-passing builds can be published via the manual `Release smolBSD Image` workflow —
-   check [Releases](https://github.com/ryanmaclean/smolBSD/releases) for
+   check [Releases](https://github.com/ryanmaclean/smolfire/releases) for
    prebuilt images.
 2. **Have a FreeBSD 15 host?** Build natively — see **Build** below.
 3. **Already have a qcow2?** Boot it:

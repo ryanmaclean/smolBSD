@@ -172,16 +172,16 @@ def test-tick1-dispatches [root: string, spool_abs: string, state_abs: string] {
         if ($match | length) > 0 {
             $match | first | get headers | get "Message-ID"
         } else {
-            $"<($task_id).initial@smolbsd.local>"
+            $"<($task_id).initial@smolfire.local>"
         }
     } else {
-        $"<($task_id).initial@smolbsd.local>"
+        $"<($task_id).initial@smolfire.local>"
     }
 
     let seeded = $cur_state
         | upsert fsm_state          "dispatching"
         | upsert pending_task_id    $task_id
-        | upsert pending_to_addr    "vm-builder@smolbsd.local"
+        | upsert pending_to_addr    "vm-builder@smolfire.local"
         | upsert pending_request_id $initial_req_id
         | upsert dispatched_at      ""
 

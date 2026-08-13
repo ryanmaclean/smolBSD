@@ -28,17 +28,17 @@ l'expérience convergent là.
 - **Topologie** : spool partagé unique, adressé par l'en-tête `To:`. Un seul fichier == état complet du système.
 - **Chemin** : `/Users/studio/smolBSD/var/mail/spool` (miroir de `/var/mail/` ; dans l'arbre source afin que le spool lui-même devienne partie de l'état du projet qui survit à un clone frais — c'est tout le point).
 - **Concurrence** : seul le coordinateur ajoute des messages. Les sous-agents lisent en filtrant par `To:` et **émettent** des réponses en ajoutant au fichier. Le coordinateur collecte à son prochain cycle. Aucun verrouillage requis à ce stade ; nous reviendrons dessus lorsque plusieurs rédacteurs apparaîtront.
-- **Fil de discussion** : `Message-ID` + `In-Reply-To`, exactement comme dans le courrier classique. Les réponses vont toujours `To: coordinator@smolbsd.local`.
+- **Fil de discussion** : `Message-ID` + `In-Reply-To`, exactement comme dans le courrier classique. Les réponses vont toujours `To: coordinator@smolfire.local`.
 
 ## 3. Convention d'adressage
 
 ```
-<rôle>@smolbsd.local        # adresse virtuelle basée sur le rôle, résolue par le coordinateur
-coordinator@smolbsd.local   # boîte de réception de l'orchestrateur
-architect@smolbsd.local
-builder@smolbsd.local
-reviewer@smolbsd.local
-researcher@smolbsd.local
+<rôle>@smolfire.local        # adresse virtuelle basée sur le rôle, résolue par le coordinateur
+coordinator@smolfire.local   # boîte de réception de l'orchestrateur
+architect@smolfire.local
+builder@smolfire.local
+reviewer@smolfire.local
+researcher@smolfire.local
 ```
 
 Dans la phase prototype, les « adresses » sont virtuelles — le coordinateur
@@ -52,11 +52,11 @@ une vraie entrée `passwd(5)` et un vrai `/var/mail/<rôle>`.
 
 ```
 From smolbsd-coord Tue Apr 30 12:50:00 2026
-From: coordinator@smolbsd.local
-To: architect@smolbsd.local
+From: coordinator@smolfire.local
+To: architect@smolfire.local
 Subject: [task-0001] Forge Tiny Baseline — bootstrap FreeBSD amd64 VM
 Date: Tue, 30 Apr 2026 12:50:00 -0000
-Message-ID: <task-0001.coord@smolbsd.local>
+Message-ID: <task-0001.coord@smolfire.local>
 X-Project: smolbsd
 X-Phase: tinyos/forge-tiny-baseline
 X-JEC-Compression: rtk-v1
@@ -77,7 +77,7 @@ prior_msgids = []
 must_pass = ["VM boots to login prompt unattended", ...]
 
 [reply_contract]
-output_to            = "coordinator@smolbsd.local"
+output_to            = "coordinator@smolfire.local"
 output_format        = "mbox+toml-v1"
 attestation_required = true
 skills_recommended   = ["freebsd", "qemu-fleet", "freebsd-build-vm"]
@@ -90,13 +90,13 @@ budget_tokens        = 80000
 
 ```
 From smolbsd-architect Tue Apr 30 14:10:00 2026
-From: architect@smolbsd.local
-To: coordinator@smolbsd.local
+From: architect@smolfire.local
+To: coordinator@smolfire.local
 Subject: Re: [task-0001] Forge Tiny Baseline — bootstrap FreeBSD amd64 VM
 Date: Tue, 30 Apr 2026 14:10:00 -0000
-Message-ID: <task-0001.architect@smolbsd.local>
-In-Reply-To: <task-0001.coord@smolbsd.local>
-References: <task-0001.coord@smolbsd.local>
+Message-ID: <task-0001.architect@smolfire.local>
+In-Reply-To: <task-0001.coord@smolfire.local>
+References: <task-0001.coord@smolfire.local>
 X-Project: smolbsd
 X-Verdict: pass
 Content-Type: text/toml; charset=utf-8
@@ -165,7 +165,7 @@ absent. L'en-tête `X-JEC-Compression` signale une capacité, pas une exigence.
 │             │     (Read, Bash via RTK, Edit, ...)
 │             │
 │             │  5. ajoute une réponse mbox adressée
-│             │     To: coordinator@smolbsd.local  ┌──────────────────┐
+│             │     To: coordinator@smolfire.local  ┌──────────────────┐
 │             │ ────────────────────────────────► │ var/mail/spool   │
 └─────────────┘                                    └──────────────────┘
        │ 6. l'agent se termine                             │
@@ -192,13 +192,13 @@ essai (politique à définir par D2).
 
 | Rôle            | Adresse                       | Type de sous-agent sous-jacent     | Outils requis (écritures ?)      |
 |-----------------|-------------------------------|------------------------------------|----------------------------------|
-| coordinator     | `coordinator@smolbsd.local`   | (cette session Opus 4.7 1M)        | Read+Write+Edit+Bash             |
-| architect       | `architect@smolbsd.local`     | `feature-dev:code-architect` (RO) **OU** `general-purpose` (RW) | dépend du champ `tools_required` — voir §17 |
-| builder         | `builder@smolbsd.local`       | `general-purpose` + skill freebsd  | Read+Write+Edit+Bash             |
-| reviewer        | `reviewer@smolbsd.local`      | `pr-review-toolkit:code-reviewer`  | Lecture principalement           |
-| researcher      | `researcher@smolbsd.local`    | `general-purpose` + Explore        | Lecture seule acceptable         |
-| security        | `security@smolbsd.local`      | `general-purpose` + skill redact   | Read+Bash (Write uniquement pour les enveloppes sous `var/run/secrets/`) |
-| ops             | `ops@smolbsd.local`           | `general-purpose` + skill fleet-irc | Read+Write+Bash                  |
+| coordinator     | `coordinator@smolfire.local`   | (cette session Opus 4.7 1M)        | Read+Write+Edit+Bash             |
+| architect       | `architect@smolfire.local`     | `feature-dev:code-architect` (RO) **OU** `general-purpose` (RW) | dépend du champ `tools_required` — voir §17 |
+| builder         | `builder@smolfire.local`       | `general-purpose` + skill freebsd  | Read+Write+Edit+Bash             |
+| reviewer        | `reviewer@smolfire.local`      | `pr-review-toolkit:code-reviewer`  | Lecture principalement           |
+| researcher      | `researcher@smolfire.local`    | `general-purpose` + Explore        | Lecture seule acceptable         |
+| security        | `security@smolfire.local`      | `general-purpose` + skill redact   | Read+Bash (Write uniquement pour les enveloppes sous `var/run/secrets/`) |
+| ops             | `ops@smolfire.local`           | `general-purpose` + skill fleet-irc | Read+Write+Bash                  |
 
 ## 9. État qui survit à un transfert
 
@@ -220,9 +220,9 @@ par schéma.
 
 | §  | Question            | Responsable | Msgid de réponse (enregistrement canonique) | Statut |
 |----|---------------------|----------|------------------------------------------|--------|
-| 11 | Gestion des secrets | security | `<design-d1.security@smolbsd.local>` (spool L441–711) | intégré v1.1 |
-| 12 | Politique de reprise | reviewer | `<design-d2.reviewer@smolbsd.local>` (spool L712–1057) | intégré v1.1 |
-| 13 | Canal d'escalade    | ops      | `<design-d3.ops@smolbsd.local>` (spool L215–440) | intégré v1.1 |
+| 11 | Gestion des secrets | security | `<design-d1.security@smolfire.local>` (spool L441–711) | intégré v1.1 |
+| 12 | Politique de reprise | reviewer | `<design-d2.reviewer@smolfire.local>` (spool L712–1057) | intégré v1.1 |
+| 13 | Canal d'escalade    | ops      | `<design-d3.ops@smolfire.local>` (spool L215–440) | intégré v1.1 |
 
 Le contenu complet des réponses réside dans le spool. Les sections ci-dessous
 sont des distillations ; en cas de conflit, la réponse du spool fait foi.
@@ -346,7 +346,7 @@ utile de la requête (les renvois purs sont interdits — pur muda) :
 - `prior_attempt_count` — 1 ou 2
 - `format_violation` — erreur d'analyse (si `category=malformed`)
 - `probe_disagreement` — sortie de la sonde fleet-eval (si `category=pass+probe-failed`)
-- Nouveau Message-ID par reprise : `<task-XXX.coord.r{N}@smolbsd.local>`
+- Nouveau Message-ID par reprise : `<task-XXX.coord.r{N}@smolfire.local>`
 - En-tête `X-Attempt: <N>` (indexé à partir de 1 ; l'état du coord est reconstructible depuis le spool seul)
 - Pour `no-reply` uniquement : `budget_tokens` double à chaque reprise, plafonné à 200000
 
@@ -370,7 +370,7 @@ distribution.
 
 ## 13. Canal d'escalade (d'après D3)
 
-**Primaire** : message dans le spool vers `user@smolbsd.local` + fichier
+**Primaire** : message dans le spool vers `user@smolfire.local` + fichier
 marqueur `var/mail/HALT`. Le spool *est* le substrat — le réutiliser ne coûte
 aucun outillage nouveau, s'insère correctement dans les fils de discussion,
 survit à un clone frais, et l'utilisateur dispose déjà des outils mbox
@@ -391,11 +391,11 @@ réponse de reprise.
 **Forme du message HALT :**
 
 ```
-From: coordinator@smolbsd.local
-To: user@smolbsd.local
+From: coordinator@smolfire.local
+To: user@smolfire.local
 Subject: [HALT] <task-id> — <one-line cause>
-Message-ID: <halt-<task-id>.coord@smolbsd.local>
-In-Reply-To: <task-id.coord@smolbsd.local>
+Message-ID: <halt-<task-id>.coord@smolfire.local>
+In-Reply-To: <task-id.coord@smolfire.local>
 References: <all retry msgids, space-separated>
 X-Priority: 1
 X-Halt-Reason: retry-exhausted | claim-verification-failed | malformed-reply
