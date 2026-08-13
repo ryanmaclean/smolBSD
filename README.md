@@ -1,10 +1,19 @@
-# smolBSD
+# smolfire
 
 [![CI](https://github.com/ryanmaclean/smolBSD/actions/workflows/ci.yml/badge.svg)](https://github.com/ryanmaclean/smolBSD/actions/workflows/ci.yml)
 
+> **Renaming in progress — formerly "smolBSD".** That name belongs to
+> [NetBSDfr/smolBSD](https://github.com/NetBSDfr/smolBSD) by Emile "iMil"
+> Heitor — the NetBSD micro-VM builder (smolbsd.org, FOSDEM 2025/2026) that
+> inspired this project and predates it. This project is **not affiliated**
+> with it; we're adopting the name of our microVM flagship, **SMOLFIRE**,
+> project-wide. Internal identifiers (`bin/smolbsd.nu`, `@smolbsd.local`
+> spool addressing, `SMOLBSD` kernconfs) are renamed in a tracked second
+> phase — see the rename tracking issue.
+
 ## What it is
 
-smolBSD is a minimal FreeBSD 15 VM (aarch64 primary, amd64 secondary) paired
+smolfire is a minimal FreeBSD 15 VM (aarch64 primary, amd64 secondary) paired
 with a Nushell coordinator finite-state machine that dispatches build,
 review, and ops tasks to agents over an mbox+TOML mail spool. The goal is a
 small qcow2 artifact that boots unattended to a login prompt in under 30

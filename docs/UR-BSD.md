@@ -16,7 +16,8 @@ Prior art worth knowing:
 - **PicoBSD** (1998) — the original existence proof.
 - **OccamBSD** (Michael Dexter) — modern "subtract until it breaks" FreeBSD;
   gets a bootable system into the tens-of-MB range.
-- **NetBSD smolBSD** (this repo's namesake) — sub-second boots into
+- **NetBSD smolBSD** (this repo's former namesake — the name is theirs, and
+  this project is renaming to smolfire; see README) — sub-second boots into
   Firecracker-style microVMs via direct kernel boot and MFS root.
 - **pkgbase in FreeBSD 15** — base is ~400 packages instead of one monolith,
   so minimization is a package-set problem, not a `WITHOUT_*` archaeology dig.
