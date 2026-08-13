@@ -2,7 +2,7 @@
 
 This three-topic research sweep was run 2026-07-31 by three parallel research
 agents against primary sources (FreeBSD release notes and status reports, LWN,
-riscv.org, vendor announcements). Findings ranked by relevance to smolBSD.
+riscv.org, vendor announcements). Findings ranked by relevance to smolfire (formerly smolBSD).
 
 Repo state at time of writing: SMOLFIRE one-ELF microVM boots in 511 ms
 (PR #37), image diet at 66.6 MiB raw / 26.6 MiB download (PR #36), TPM
@@ -65,7 +65,7 @@ per-jail privilege rules. See tracking issue.
   (Docker Sandboxes, Vercel Sandbox, E2B, Microsandbox).
   <https://northflank.com/blog/how-to-sandbox-ai-agents>
 
-**Positioning**: smolBSD — an agent-built FreeBSD microVM with jail/OCI
+**Positioning**: smolfire — an agent-built FreeBSD microVM with jail/OCI
 layering available inside — is a BSD-native instance of the
 microVM-per-agent pattern.
 
@@ -125,7 +125,7 @@ microVM-per-agent pattern.
 - swtpm TPM 2.0 emulation works (Win11 guests); 2025 TPM-passthrough and
   XHCI security fixes.
 
-**Actionable**: aarch64 smolBSD images can now be boot-gated on bhyve
+**Actionable**: aarch64 smolfire images can now be boot-gated on bhyve
 hosts, not just QEMU/HVF.
 
 ### OpenBSD (brief)
@@ -179,7 +179,7 @@ hosts, not just QEMU/HVF.
 
 ### Verdict
 
-A **QEMU-emulated riscv64 smolBSD target is realistic within months** —
+A **QEMU-emulated riscv64 smolfire target is realistic within months** —
 mostly kernconf + release-conf + CI-matrix work on the now-proven
 pipeline. Real RVA23 hardware deployment is 6-12 months premature: no
 FreeBSD support for the only shipping RVA23 silicon (K3), Tier-2 status,
