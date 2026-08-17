@@ -37,6 +37,17 @@ on:
       vmsize:
         description: "Image VMSIZE (sparse)"
         default: "2g"
+  # TEMPORARY (rename phase 3b, issue #41): validate the renamed pipeline
+  # (SMOLFIRE-VM kernconf, smolfire-*.conf, CLOUDWARE=smolfire artifact,
+  # root password change) pre-merge. The MCP token cannot workflow_dispatch
+  # (403). Remove after the first green run — same pattern as round 1.
+  push:
+    branches: [claude/stoic-pascal-u6y3T]
+    paths:
+      - .github/workflows/build-image-hosted.yml
+      - bin/build-smolfire-vm.nu
+      - release/tools/smolfire-qemu.conf
+      - sys/amd64/conf/SMOLFIRE-VM
   # (Round-4 temporary push trigger retired after the round-2 diet build
   # went green — raw 66.6 MiB, compressed 26.6 MiB, 9s boot, run
   # 30375142187. Pre-merge validation without dispatch rights: re-add a
