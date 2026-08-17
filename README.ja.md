@@ -88,7 +88,7 @@ ssh -J <hypervisor-host> -p 2222 builder@localhost
 <aarch64-builder> に SSH 接続して実行：
 
 ```sh
-make -j4 -C /usr/src buildworld buildkernel KERNCONF=SMOLBSD
+make -j4 -C /usr/src buildworld buildkernel KERNCONF=SMOLFIRE-VM
 ```
 
 aarch64 ネイティブパスではクロスコンパイルフラグは不要です。arm64 ホストからの
@@ -96,7 +96,7 @@ amd64 クロスコンパイルの場合：
 
 ```sh
 make -j4 -C /usr/src buildworld buildkernel \
-    KERNCONF=SMOLBSD \
+    KERNCONF=SMOLFIRE-VM \
     TARGET=amd64 \
     TARGET_ARCH=amd64
 ```

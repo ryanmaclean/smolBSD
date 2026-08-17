@@ -19,7 +19,7 @@ inside bhyve on a FreeBSD 15 host.
 > | Apple Silicon Mac running FreeBSD under HVF | No | HVF does not expose EL2; `vmm.ko` fails to load |
 > | Any VM with nested virtualisation disabled | No | bhyve requires hardware VMX/SVM |
 >
-> Passing `--tpm` with `--arch arm64` to `bin/bhyve-smolbsd.nu` will produce
+> Passing `--tpm` with `--arch arm64` to `bin/bhyve-smolfire-vm.nu` will produce
 > an explicit error: `arm64 bhyve has no virtio-tpm device; TPM testing
 > requires --arch amd64`.
 
@@ -83,16 +83,16 @@ Four commands from a fresh qcow2 artifact to a passing test suite:
 
 ```sh
 # 1. Convert qcow2 → raw (pads to 512 MiB minimum, verifies disk signature)
-nu bin/prep-bhyve-image.nu --input FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2
+nu bin/prep-bhyve-image.nu --input FreeBSD-15.0-RELEASE-amd64-SMOLFIRE-VM.qcow2
 
 # 2. Initialize and start the software TPM daemon
 nu bin/swtpm-setup.nu --action start
 
 # 3. Boot the VM (blocks until bhyve exits; attach console in another terminal)
-nu bin/bhyve-smolbsd.nu --image FreeBSD-15.0-RELEASE-amd64-SMOLBSD.raw --tpm
+nu bin/bhyve-smolfire-vm.nu --image FreeBSD-15.0-RELEASE-amd64-SMOLFIRE-VM.raw --tpm
 
 # 4. Run the TPM test suite against the running guest
-nu bin/run-vm-tests.nu --image FreeBSD-15.0-RELEASE-amd64-SMOLBSD.raw --tpm
+nu bin/run-vm-tests.nu --image FreeBSD-15.0-RELEASE-amd64-SMOLFIRE-VM.raw --tpm
 ```
 
 Attach the serial console from a second terminal while step 3 runs:
@@ -123,7 +123,7 @@ All six must pass for Phase III acceptance.
 > guest. Root cause: QEMU aarch64 generates an ACPI `TPM2` table with
 > `ControlArea=0`; the FreeBSD `tpm(4)` CRB driver reads `ControlArea` to
 > locate the MMIO CRB region, treats zero as invalid, and refuses to attach.
-> **Use amd64 QEMU with `-device tpm-tis`** (`bin/qemu-smolbsd.nu --arch amd64
+> **Use amd64 QEMU with `-device tpm-tis`** (`bin/qemu-smolfire-vm.nu --arch amd64
 > --tpm`) for OS-level TPM testing (T2–T6). amd64 QEMU with TCG works on
 > macOS/<hypervisor-host> without VT-x. See `plans/tinyos/PHASE-3-TPM.md §4a.3` for
 > the full analysis and evidence from task-0031.
@@ -246,7 +246,7 @@ launched without `--tpm`. Confirm the bhyve command line includes:
 Or for QEMU amd64, confirm the command includes:
 
 ```
--chardev socket,id=chrtpm,path=/var/run/smolbsd-qemu-tpm/swtpm.sock
+-chardev socket,id=chrtpm,path=/var/run/smolfire-qemu-tpm/swtpm.sock
 -tpmdev emulator,id=tpm0,chardev=chrtpm
 -device tpm-tis,tpmdev=tpm0
 ```

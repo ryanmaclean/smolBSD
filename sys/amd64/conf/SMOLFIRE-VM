@@ -2,7 +2,7 @@
 # Authoring chain: architect@smolbsd.local <task-0001.architect@smolbsd.local>
 #                  builder@smolbsd.local   <task-0002.builder@smolbsd.local>
 #
-# SMOLBSD — FreeBSD 15 amd64 minimal QEMU-only kernel
+# SMOLFIRE-VM — FreeBSD 15 amd64 minimal QEMU-only kernel
 # Target: headless VM, virtio block + net, UFS root, no physical hardware.
 # Derived from MINIMAL (which is derived from GENERIC).
 #
@@ -13,7 +13,7 @@
 # physical hardware; then add back QEMU-specific tuning.
 
 include MINIMAL
-ident SMOLBSD
+ident SMOLFIRE-VM
 
 # -----------------------------------------------------------------------
 # Strip physical storage controllers (not needed in QEMU virtio-blk world)

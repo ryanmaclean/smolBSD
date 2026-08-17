@@ -1,20 +1,20 @@
 # SPDX-License-Identifier: Apache-2.0
-# run-vm-tests.nu — master VM test orchestrator for smolBSD
+# run-vm-tests.nu — master VM test orchestrator for smolfire
 #
-# Launches a smolBSD image under qemu or bhyve, runs the full acceptance test
+# Launches a smolfire image under qemu or bhyve, runs the full acceptance test
 # suite, and writes a structured TOML result file.
 #
 # Usage (QEMU — default, works on <hypervisor-host> with HVF today):
-#   nu bin/run-vm-tests.nu --image smolbsd.qcow2
-#   nu bin/run-vm-tests.nu --image smolbsd.qcow2 --tpm
-#   nu bin/run-vm-tests.nu --image smolbsd.qcow2 --arch arm64
+#   nu bin/run-vm-tests.nu --image smolfire.qcow2
+#   nu bin/run-vm-tests.nu --image smolfire.qcow2 --tpm
+#   nu bin/run-vm-tests.nu --image smolfire.qcow2 --arch arm64
 #
 # Usage (bhyve — production FreeBSD bare-metal amd64 host):
-#   nu bin/run-vm-tests.nu --image smolbsd.raw --backend bhyve
-#   nu bin/run-vm-tests.nu --image smolbsd.raw --backend bhyve --tpm
+#   nu bin/run-vm-tests.nu --image smolfire.raw --backend bhyve
+#   nu bin/run-vm-tests.nu --image smolfire.raw --backend bhyve --tpm
 #
 # Skipping individual steps:
-#   nu bin/run-vm-tests.nu --image smolbsd.qcow2 --skip ["tpm","crash-recovery"]
+#   nu bin/run-vm-tests.nu --image smolfire.qcow2 --skip ["tpm","crash-recovery"]
 #
 # Prerequisites (qemu backend):
 #   qemu-system-aarch64 / qemu-system-x86_64  — emulators/qemu port
@@ -191,7 +191,7 @@ def step-launch [
     # Build the final immutable args list before spawning.
     # (Closures cannot capture mutable variables.)
     let args = if $backend == "qemu" {
-        # qemu-smolbsd.nu flags
+        # qemu-smolfire-vm.nu flags
         let base = [
             "--image"       $image
             "--arch"        $arch
@@ -204,7 +204,7 @@ def step-launch [
             $base
         }
     } else {
-        # bhyve-smolbsd.nu flags — destroy any stale VM first (synchronous)
+        # bhyve-smolfire-vm.nu flags — destroy any stale VM first (synchronous)
         ^bhyvectl --destroy $"--vm=($vm_name)" out+err> /dev/null
         let base = [
             "--image"       $image
@@ -220,7 +220,7 @@ def step-launch [
         }
     }
 
-    let script = if $backend == "qemu" { "bin/qemu-smolbsd.nu" } else { "bin/bhyve-smolbsd.nu" }
+    let script = if $backend == "qemu" { "bin/qemu-smolfire-vm.nu" } else { "bin/bhyve-smolfire-vm.nu" }
 
     let job_id = job spawn --tag $"vm-($vm_name)" {
         ^nu $script ...$args
@@ -255,9 +255,9 @@ def step-boot-gate [console: string, timeout_sec: int, backend: string, qemu_cmd
         let time_limit = if $arch == "arm64" { "30" } else { "120" }
 
         let result = (with-env {
-            SMOLBSD_QEMU_CMD: $qemu_cmd
-            SMOLBSD_TIME_LIMIT: $time_limit
-            SMOLBSD_ARCH: $arch
+            SMOLFIRE_QEMU_CMD: $qemu_cmd
+            SMOLFIRE_TIME_LIMIT: $time_limit
+            SMOLFIRE_ARCH: $arch
         } {
             ^expect $script | complete
         })
@@ -292,7 +292,7 @@ def step-boot-gate [console: string, timeout_sec: int, backend: string, qemu_cmd
         }
 
         let b_side = $console | str replace --regex "A$" "B"
-        let result = (with-env {SMOLBSD_CONSOLE: $b_side} {
+        let result = (with-env {SMOLFIRE_CONSOLE: $b_side} {
             ^expect $script | complete
         })
 
@@ -373,7 +373,7 @@ def step-tpm-device [console: string] {
     }
 
     let b_side = $console | str replace --regex "A$" "B"
-    let result = (with-env {SMOLBSD_CONSOLE: $b_side} {
+    let result = (with-env {SMOLFIRE_CONSOLE: $b_side} {
         ^expect $script | complete
     })
 
@@ -416,10 +416,10 @@ def step-crash-recovery [console: string, timeout_sec: int, backend: string, qem
         let recovery_limit = "90"
 
         let result = (with-env {
-            SMOLBSD_QEMU_CMD: $qemu_cmd
-            SMOLBSD_TIME_LIMIT: $boot_limit
-            SMOLBSD_RECOVERY_LIMIT: $recovery_limit
-            SMOLBSD_ARCH: $arch
+            SMOLFIRE_QEMU_CMD: $qemu_cmd
+            SMOLFIRE_TIME_LIMIT: $boot_limit
+            SMOLFIRE_RECOVERY_LIMIT: $recovery_limit
+            SMOLFIRE_ARCH: $arch
         } {
             ^expect $script | complete
         })
@@ -456,7 +456,7 @@ def step-crash-recovery [console: string, timeout_sec: int, backend: string, qem
         }
 
         let b_side = $console | str replace --regex "A$" "B"
-        let result = (with-env {SMOLBSD_CONSOLE: $b_side, TIMEOUT: ($timeout_sec | into string)} {
+        let result = (with-env {SMOLFIRE_CONSOLE: $b_side, TIMEOUT: ($timeout_sec | into string)} {
             ^expect $script | complete
         })
 
@@ -492,7 +492,7 @@ def step-teardown [vm_name: string, use_tpm: bool, tpm_state: string, backend: s
             $notes = $notes | append $"bhyvectl destroy: ($destroy.stderr | str trim)"
         }
     } else {
-        # qemu: kill by process name pattern; qemu-smolbsd.nu sets -name $vm_name.
+        # qemu: kill by process name pattern; qemu-smolfire-vm.nu sets -name $vm_name.
         let pkill_r = (^pkill -f $"qemu-system.*($vm_name)" | complete)
         if $pkill_r.exit_code == 0 {
             $notes = $notes | append $"qemu process killed (name: ($vm_name))"
@@ -527,7 +527,7 @@ def step-teardown [vm_name: string, use_tpm: bool, tpm_state: string, backend: s
 def print-summary [tests: list<record>, overall: string] {
     print ""
     print "┌─────────────────────────────────────────────────────────────────┐"
-    print "│  smolBSD VM Test Results                                        │"
+    print "│  smolfire VM Test Results                                        │"
     print "├──────────────────────┬──────────┬──────────────┬────────────────┤"
     print "│ Test                 │ Result   │ Duration     │ Detail         │"
     print "├──────────────────────┼──────────┼──────────────┼────────────────┤"
@@ -554,9 +554,9 @@ def print-summary [tests: list<record>, overall: string] {
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
-# Run the full smolBSD VM test suite against a qemu or bhyve hosted image.
+# Run the full smolfire VM test suite against a qemu or bhyve hosted image.
 #
-# --image          path to smolBSD qcow2 or raw image (required)
+# --image          path to smolfire qcow2 or raw image (required)
 # --backend        qemu (default) | bhyve
 # --arch           amd64 (default) | arm64
 # --tpm            enable swtpm TPM attachment (amd64 only)
@@ -568,20 +568,20 @@ def print-summary [tests: list<record>, overall: string] {
 # --timeout        global timeout in seconds (currently advisory)
 # --results-file   path to write TOML results
 export def main [
-    --image:        string                                  # path to smolBSD qcow2 or raw image
+    --image:        string                                  # path to smolfire qcow2 or raw image
     --backend:      string = "qemu"                         # qemu | bhyve
     --arch:         string = "amd64"                        # amd64 | arm64
     --tpm                                                   # enable swtpm TPM attachment (amd64 only)
-    --tpm-state:    string = "/var/run/smolbsd-tpm-test"
-    --vm-name:      string = "smolbsd-test"
+    --tpm-state:    string = "/var/run/smolfire-tpm-test"
+    --vm-name:      string = "smolfire-test"
     --hostfwd-ssh:  int    = 2240
     --console:      string = "/dev/nmdm0A"
     --skip:         list<string> = []
     --timeout:      int    = 300
-    --results-file: string = "/tmp/smolbsd-vm-test-results.toml"
+    --results-file: string = "/tmp/smolfire-vm-test-results.toml"
 ] {
     if $image == null or $image == "" {
-        error make {msg: "--image is required (path to smolBSD qcow2 or raw image)"}
+        error make {msg: "--image is required (path to smolfire qcow2 or raw image)"}
     }
 
     if $backend != "qemu" and $backend != "bhyve" {
@@ -598,13 +598,13 @@ export def main [
     # before step-launch runs (the expect scripts start their own QEMU process
     # independently — they don't attach to the one started by step-launch).
     #
-    # The string is passed to expect scripts via SMOLBSD_QEMU_CMD env var.
+    # The string is passed to expect scripts via SMOLFIRE_QEMU_CMD env var.
     # It must include -serial stdio and -nographic so the expect script can
     # read boot output from stdin/stdout.
     let qemu_cmd_str = if $backend == "qemu" {
         let norm_arch = if $arch == "arm64" { "aarch64" } else { $arch }
         let qemu_bin  = if $norm_arch == "aarch64" { "qemu-system-aarch64" } else { "qemu-system-x86_64" }
-        # Resolve BIOS path — same candidate list as qemu-smolbsd.nu find-bios.
+        # Resolve BIOS path — same candidate list as qemu-smolfire-vm.nu find-bios.
         let bios_candidates = if $norm_arch == "aarch64" {
             ["/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
              "/usr/local/share/qemu/edk2-aarch64-code.fd"
@@ -619,7 +619,7 @@ export def main [
              "/usr/share/OVMF/OVMF_CODE.fd"]
         }
         let bios = ($bios_candidates | where {|p| $p | path exists} | first | default "")
-        # Detect accelerator the same way qemu-smolbsd.nu detect-accel does.
+        # Detect accelerator the same way qemu-smolfire-vm.nu detect-accel does.
         let accel = do {
             let hv_r = (^sysctl kern.hv_support | complete)
             if $hv_r.exit_code == 0 {
@@ -640,7 +640,7 @@ export def main [
             "qemu64"
         }
         # aarch64: -machine virt,accel=<accel>  (accel embedded in machine flag)
-        # amd64:   -M q35 -accel <accel>         (matches qemu-smolbsd.nu build-cmd-amd64)
+        # amd64:   -M q35 -accel <accel>         (matches qemu-smolfire-vm.nu build-cmd-amd64)
         mut parts = if $norm_arch == "aarch64" {
             [$qemu_bin "-machine" $"virt,accel=($accel)" "-cpu" $cpu]
         } else {
@@ -657,7 +657,7 @@ export def main [
         ]
         $parts | str join " "
     } else {
-        ""   # bhyve path does not use SMOLBSD_QEMU_CMD
+        ""   # bhyve path does not use SMOLFIRE_QEMU_CMD
     }
 
     log-step "orchestrator" "run-vm-tests starting" {

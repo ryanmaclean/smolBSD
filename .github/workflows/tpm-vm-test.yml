@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # tpm-vm-test.yml — TPM 2.0 T1-T6 acceptance suite on <kvm-host> QEMU+swtpm.
-# Runs against the smolBSD amd64 image built with 'device tpm'. NOTE:
+# Runs against the smolfire amd64 image built with 'device tpm'. NOTE:
 # post-eviction images (D-02 retired) no longer bake tpm2-tools — T3/T4/T6
 # need the install-at-test-time step from tpm-hosted.yml ported here before
 # this suite can pass against a current image.
@@ -19,7 +19,7 @@
 # RESEARCH.md Pitfall 1 documents that step-tpm-device in run-vm-tests.nu
 # uses nmdm console (FreeBSD-only, broken on Linux/QEMU). bhyve-tpm-pcr-verify.nu
 # is used instead — covered by Claude's Discretion: "Whether to run bhyve
-# or QEMU for the T2-T6 suite." smolBSD image does not need any VM fixup script.
+# or QEMU for the T2-T6 suite." smolfire image does not need any VM fixup script.
 
 name: TPM VM Test
 
@@ -39,18 +39,18 @@ on:
     paths:
       # Only run when something that could change TPM-suite outcomes moves.
       # Doc-only or coord-spool PRs skip the self-hosted TPM runner entirely.
-      - sys/amd64/conf/SMOLBSD
-      - release/tools/smolbsd-qemu.conf
+      - sys/amd64/conf/SMOLFIRE-VM
+      - release/tools/smolfire-qemu.conf
       - bin/bhyve-tpm-pcr-verify.nu
       - bin/run-vm-tests.nu
       - tests/tpm-seal-test.nu
       - .github/workflows/tpm-vm-test.yml
 
 env:
-  SMOLBSD_IMAGE: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
-  SWTPM_STATE:   /tmp/smolbsd-tpm-ci
+  SMOLFIRE_IMAGE: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
+  SWTPM_STATE:   /tmp/smolfire-tpm-ci
   SSH_PORT:      2241
-  SSH_PASS:      smolbsd
+  SSH_PASS:      smolfire
 
 jobs:
   tpm-t1-t6:
@@ -77,14 +77,14 @@ jobs:
       - name: Show Nushell version
         run: nu --version
 
-      - name: Verify smolBSD image exists
+      - name: Verify smolfire image exists
         run: |
-          test -f "$SMOLBSD_IMAGE" || {
-            echo "ERROR: smolBSD image not found at $SMOLBSD_IMAGE"
+          test -f "$SMOLFIRE_IMAGE" || {
+            echo "ERROR: smolfire image not found at $SMOLFIRE_IMAGE"
             echo "Run build-image.yml workflow first to build the image."
             exit 1
           }
-          echo "Image found: $(ls -lh $SMOLBSD_IMAGE)"
+          echo "Image found: $(ls -lh $SMOLFIRE_IMAGE)"
 
       # The cloudware-release build installs the loader to /EFI/freebsd/loader.efi
       # but NOT to the UEFI removable-media fallback path /EFI/BOOT/BOOTX64.EFI.
@@ -100,7 +100,7 @@ jobs:
             sudo apt-get install -y libguestfs-tools
           fi
           # Check whether the fallback already exists
-          HAS_FALLBACK=$(sudo LIBGUESTFS_BACKEND=direct guestfish --ro -a "$SMOLBSD_IMAGE" -i \
+          HAS_FALLBACK=$(sudo LIBGUESTFS_BACKEND=direct guestfish --ro -a "$SMOLFIRE_IMAGE" -i \
             exists /EFI/BOOT/BOOTX64.EFI 2>/dev/null || echo "false")
           if [ "$HAS_FALLBACK" = "true" ]; then
             echo "Fallback bootloader already present — no patch needed"
@@ -108,7 +108,7 @@ jobs:
             echo "Fallback bootloader missing — copying loader.efi to /EFI/BOOT/BOOTX64.EFI"
             # guestfish inline command form (colon-separated) — avoids heredoc
             # indentation issues inside the YAML run block.
-            sudo LIBGUESTFS_BACKEND=direct guestfish -a "$SMOLBSD_IMAGE" \
+            sudo LIBGUESTFS_BACKEND=direct guestfish -a "$SMOLFIRE_IMAGE" \
               run : \
               mount /dev/sda1 / : \
               mkdir-p /EFI/BOOT : \
@@ -120,17 +120,17 @@ jobs:
       - name: Reset swtpm state (fresh PCR baseline)
         run: nu bin/swtpm-setup.nu --action reset --state-dir "$SWTPM_STATE"
 
-      - name: Boot smolBSD with QEMU+swtpm (background)
+      - name: Boot smolfire with QEMU+swtpm (background)
         run: |
-          nohup nu bin/qemu-smolbsd.nu \
-            --image "$SMOLBSD_IMAGE" \
+          nohup nu bin/qemu-smolfire-vm.nu \
+            --image "$SMOLFIRE_IMAGE" \
             --arch amd64 \
             --tpm \
             --tpm-state "$SWTPM_STATE" \
             --hostfwd-ssh "$SSH_PORT" \
             --mem 512M \
-            --name smolbsd-tpm-ci \
-            > /tmp/smolbsd-qemu-ci.log 2>&1 &
+            --name smolfire-tpm-ci \
+            > /tmp/smolfire-qemu-ci.log 2>&1 &
           echo "QEMU_PID=$!" >> "$GITHUB_ENV"
           echo "QEMU launched (PID $!)"
 
@@ -149,7 +149,7 @@ jobs:
             sleep 1
           done
           echo "ERROR: SSH did not respond within 120s"
-          tail -30 /tmp/smolbsd-qemu-ci.log || true
+          tail -30 /tmp/smolfire-qemu-ci.log || true
           exit 1
 
       - name: Run T1-T6 TPM acceptance suite
@@ -158,14 +158,14 @@ jobs:
             --host 127.0.0.1 \
             --port "$SSH_PORT" \
             --password "" \
-            2>&1 | tee /tmp/smolbsd-t1t6-ci.toml
+            2>&1 | tee /tmp/smolfire-t1t6-ci.toml
 
       - name: Report T1-T6 results in job summary
         if: always()
         run: |
           echo "## TPM T1-T6 Results" >> "$GITHUB_STEP_SUMMARY"
           echo '```toml' >> "$GITHUB_STEP_SUMMARY"
-          cat /tmp/smolbsd-t1t6-ci.toml >> "$GITHUB_STEP_SUMMARY" || echo "(no results file)" >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/smolfire-t1t6-ci.toml >> "$GITHUB_STEP_SUMMARY" || echo "(no results file)" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup — shutdown guest and stop swtpm

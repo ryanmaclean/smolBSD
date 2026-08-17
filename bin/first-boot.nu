@@ -1,32 +1,32 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# first-boot.nu — smolBSD first-boot initialisation script.
+# first-boot.nu — smolfire first-boot initialisation script.
 #
 # Invoked once on first boot by rc.local or an rc.d service.
-# Idempotent: exits 0 immediately if /etc/smolbsd/.first-boot-done exists.
+# Idempotent: exits 0 immediately if /etc/smolfire/.first-boot-done exists.
 #
 # Actions performed (in order):
 #   1. Probe board identity via board-probe.nu (sibling script)
 #   2. Set hostname: <board>-<last4MAC>  (e.g. "pi5-a3f2", "rk3588-09bc")
 #   3. Expand SSH host keys if any are missing (ssh-keygen -A)
-#   4. Touch /etc/smolbsd/.first-boot-done sentinel
+#   4. Touch /etc/smolfire/.first-boot-done sentinel
 #
 # Deployment: install both first-boot.nu and board-probe.nu to the same
-# directory (default: /usr/local/smolbsd/bin/).  Set SMOLBSD_BIN_DIR in
+# directory (default: /usr/local/smolfire/bin/).  Set SMOLFIRE_BIN_DIR in
 # the environment if the install path differs.
 #
 # See: plans/tinyos/PHASE-2-PHYSICAL-BOOT.md
-#      release/tools/smolbsd-pi5.conf
-#      release/tools/smolbsd-rk3588.conf
+#      release/tools/smolfire-pi5.conf
+#      release/tools/smolfire-rk3588.conf
 #      bin/board-probe.nu
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-const SENTINEL     = "/etc/smolbsd/.first-boot-done"
-const SENTINEL_DIR = "/etc/smolbsd"
-const LOG_TAG      = "smolbsd-first-boot"
+const SENTINEL     = "/etc/smolfire/.first-boot-done"
+const SENTINEL_DIR = "/etc/smolfire"
+const LOG_TAG      = "smolfire-first-boot"
 
 # ---------------------------------------------------------------------------
 # Locate sibling scripts
@@ -34,18 +34,18 @@ const LOG_TAG      = "smolbsd-first-boot"
 
 # Resolve the directory that contains this script so sibling scripts
 # (board-probe.nu) can be found regardless of cwd.
-# Falls back to SMOLBSD_BIN_DIR env var, then /usr/local/smolbsd/bin.
+# Falls back to SMOLFIRE_BIN_DIR env var, then /usr/local/smolfire/bin.
 def script-bin-dir []: nothing -> string {
-    # SMOLBSD_BIN_DIR override (set by rc.d service or tests)
-    if "SMOLBSD_BIN_DIR" in $env {
-        return $env.SMOLBSD_BIN_DIR
+    # SMOLFIRE_BIN_DIR override (set by rc.d service or tests)
+    if "SMOLFIRE_BIN_DIR" in $env {
+        return $env.SMOLFIRE_BIN_DIR
     }
     # $env.CURRENT_FILE is set by Nushell when running a script file.
     if "CURRENT_FILE" in $env {
         return ($env.CURRENT_FILE | path dirname)
     }
     # Hardcoded install-time fallback.
-    "/usr/local/smolbsd/bin"
+    "/usr/local/smolfire/bin"
 }
 
 # ---------------------------------------------------------------------------
@@ -254,13 +254,13 @@ def main [] {
         exit 0
     }
 
-    log-info "=== smolBSD first-boot initialisation starting ==="
+    log-info "=== smolfire first-boot initialisation starting ==="
 
     # 1. Board probe
     let board_info = get-board-info
 
-    # 2. Hostname: use board type, fall back to "smolbsd" for unknown.
-    let board_label = if $board_info.board == "unknown" { "smolbsd" } else { $board_info.board }
+    # 2. Hostname: use board type, fall back to "smolfire" for unknown.
+    let board_label = if $board_info.board == "unknown" { "smolfire" } else { $board_info.board }
     set-hostname $board_label
 
     # 3. SSH host keys
@@ -269,6 +269,6 @@ def main [] {
     # 4. Sentinel
     write-sentinel
 
-    log-info "=== smolBSD first-boot initialisation complete ==="
+    log-info "=== smolfire first-boot initialisation complete ==="
     exit 0
 }

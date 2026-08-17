@@ -1,23 +1,23 @@
 #!/usr/bin/env expect
 # Physical board boot gate — RK3588 (reference: ROCK 5B)
 # Materialized from plans/tinyos/PHASE-2-PHYSICAL-BOOT.md §6-7
-# Authoring chain: planner@smolbsd.local <task-0023.coord@smolbsd.local>
+# Authoring chain: planner@smolfire.local <task-0023.coord@smolfire.local>
 #
 # tests/time-to-ready-rk3588.exp
 #
 # Prerequisites:
 #   - CP2102 or similar 3.3V USB-UART adapter connected to RK3588 debug UART
 #   - Default board: ROCK 5B — UART2 (TX=pin 8, RX=pin 10 of 40-pin header)
-#   - Serial device available at $env(SMOLBSD_SERIAL) or default /dev/ttyUSB0
+#   - Serial device available at $env(SMOLFIRE_SERIAL) or default /dev/ttyUSB0
 #   - Board powered off before running; script waits for serial output
-#   - smolbsd-aarch64-rk3588.raw written to SD/eMMC (tests/sd-write.nu)
+#   - smolfire-aarch64-rk3588.raw written to SD/eMMC (tests/sd-write.nu)
 #
 # Console: UART2 at 0xff1a0000 (RK3588, ROCK 5B) — 115200 8N1
-# Serial device: override with env var SMOLBSD_SERIAL (e.g. /dev/tty.usbserial-0002)
+# Serial device: override with env var SMOLFIRE_SERIAL (e.g. /dev/tty.usbserial-0002)
 #
 # Acceptance: login prompt appears within 90s of first serial output
 # (PHASE-2-PHYSICAL-BOOT.md §7.2 RK3588 gate — relaxed for slower eMMC init + edk2-rk35xx POST)
-# Board variant: override with env var SMOLBSD_BOARD (default: rock5b)
+# Board variant: override with env var SMOLFIRE_BOARD (default: rock5b)
 #
 # Exit codes: 0 = pass, 1 = timeout or serial error
 
@@ -25,15 +25,15 @@ set threshold_sec 90
 set timeout [expr {$threshold_sec + 10}]
 
 # Resolve serial device: env var > default
-if {[info exists env(SMOLBSD_SERIAL)]} {
-    set serial_dev $env(SMOLBSD_SERIAL)
+if {[info exists env(SMOLFIRE_SERIAL)]} {
+    set serial_dev $env(SMOLFIRE_SERIAL)
 } else {
     set serial_dev /dev/ttyUSB0
 }
 
 # Resolve board variant for diagnostic output
-if {[info exists env(SMOLBSD_BOARD)]} {
-    set board_variant $env(SMOLBSD_BOARD)
+if {[info exists env(SMOLFIRE_BOARD)]} {
+    set board_variant $env(SMOLFIRE_BOARD)
 } else {
     set board_variant rock5b
 }
@@ -41,7 +41,7 @@ if {[info exists env(SMOLBSD_BOARD)]} {
 # Verify device node exists before spawning
 if {![file exists $serial_dev]} {
     puts stderr "ERROR: serial device $serial_dev not found"
-    puts stderr "Set SMOLBSD_SERIAL to override (e.g. /dev/tty.usbserial-0002)"
+    puts stderr "Set SMOLFIRE_SERIAL to override (e.g. /dev/tty.usbserial-0002)"
     exit 1
 }
 

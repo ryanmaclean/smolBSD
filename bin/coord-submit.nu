@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# bin/coord-submit.nu — submit a task to the smolBSD coordinator
+# bin/coord-submit.nu — submit a task to the smolfire coordinator
 #
 # Usage:
 #   nu bin/coord-submit.nu --task-id "task-0042" --role "builder" --subject "Build kernel" --body '...'
@@ -223,7 +223,7 @@ def cmd-submit [
     let ts        = rfc2822-now
     let dstamp    = asctime-now
 
-    let envelope = $"From coord@smolfire.local ($dstamp)\nFrom: coordinator@smolfire.local\nTo: ($role_addr)\nSubject: [($task_id)] ($subject)\nDate: ($ts)\nMessage-ID: <($task_id).coord@smolfire.local>\nX-Project: smolbsd\nContent-Type: text/toml; charset=utf-8\n\n($body)\n"
+    let envelope = $"From coord@smolfire.local ($dstamp)\nFrom: coordinator@smolfire.local\nTo: ($role_addr)\nSubject: [($task_id)] ($subject)\nDate: ($ts)\nMessage-ID: <($task_id).coord@smolfire.local>\nX-Project: smolfire\nContent-Type: text/toml; charset=utf-8\n\n($body)\n"
 
     if $dry_run {
         print $envelope

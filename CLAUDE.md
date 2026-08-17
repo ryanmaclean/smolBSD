@@ -2,12 +2,14 @@
 
 > **Rename note**: the project renamed smolBSD → **smolfire** ("smolBSD"
 > belongs to the unaffiliated NetBSDfr/smolBSD NetBSD micro-VM project).
-> Done: repo name, spool addressing (`@smolfire.local`), CLI entry
-> (`bin/smolfire.nu`; `bin/smolbsd.nu` is a deprecated shim). Still on the
-> old name until phase 3b (issue #41): `SMOLBSD` kernconfs,
-> `smolbsd-qemu*.conf` release confs + `SMOLBSDCONF`, artifact basenames,
-> `SMOLBSD_*` env vars, helper scripts (`build-smolbsd.nu`,
-> `qemu-smolbsd.nu`, …). Use `smolfire` for anything new.
+> The rename is complete (issue #41): repo name, `@smolfire.local` spool
+> addressing, `bin/smolfire.nu` CLI (old `bin/smolbsd.nu` is a deprecated
+> shim), kernconfs (`SMOLFIRE` = microVM, `SMOLFIRE-VM` = full VM,
+> `SMOLFIRE-PI5`/`-RK3588` = boards), `smolfire-*.conf` release confs,
+> `CLOUDWARE=smolfire` (→ `SMOLFIRECONF`, `smolfire.ufs.qcow2`),
+> `SMOLFIRE_*` env vars, and guest identity (hostname/password
+> `smolfire`). Historical docs, `plans/`, `.planning/`, and self-hosted
+> runner paths (`/home/studio/smolbsd-*`) intentionally keep old names.
 
 ## 1. What this is
 
@@ -23,7 +25,7 @@
 | `var/mail/spool` | The mbox spool (messages between coordinator and agents) |
 | `var/run/coord-state.toml` | Persisted FSM state (survives restarts) |
 | `tests/` | Nu unit and integration tests |
-| `bin/build-smolbsd.nu` | Image build pipeline — see `docs/BUILDING.md`; release image goes via `cloudware-release` + `SMOLBSDCONF` (FIX-9), never `vm-image ... CLOUDWARE_CONF` |
+| `bin/build-smolfire-vm.nu` | Image build pipeline — see `docs/BUILDING.md`; release image goes via `cloudware-release` + `SMOLFIRECONF` (FIX-9), never `vm-image ... CLOUDWARE_CONF` |
 | `docs/UR-BSD-VERIFY.md` | Verified findings + assumptions ledger for the build/image work — read before changing kernconfs, release confs, or build invocations |
 
 ## 3. How to run
@@ -43,7 +45,7 @@ Optional environment variables:
 | `HALT_INTERVAL` | `10` | Seconds to sleep while halted |
 | `STATE_FILE` | `var/run/coord-state.toml` | FSM state file |
 | `SPOOL` | `var/mail/spool` | mbox spool path |
-| `SMOLBSD_CLAUDE_MODEL` | `claude-sonnet-5` | Claude model for subagent dispatch |
+| `SMOLFIRE_CLAUDE_MODEL` | `claude-sonnet-5` | Claude model for subagent dispatch |
 
 Run a single tick manually:
 
@@ -104,7 +106,7 @@ This installs `.git/hooks/pre-push` which scans the spool for public IPs and ins
 
 **Never commit `var/mail/spool`** — it contains live IPs, instance UUIDs, and credential references. It is gitignored, but force-adds (`git add -f`) are blocked by the hook.
 
-**Never commit internal hostnames or private IPs** — use placeholders (`<kvm-host>`, `<internal-ip>`, …) in docs, and env vars (`JUMP_HOST`, `SMOLBSD_SSH_JUMP`, `SMOLBSD_IRC_HOST`, `AMD64_REMOTE`, …) for site-specific values in scripts.
+**Never commit internal hostnames or private IPs** — use placeholders (`<kvm-host>`, `<internal-ip>`, …) in docs, and env vars (`JUMP_HOST`, `SMOLFIRE_SSH_JUMP`, `SMOLFIRE_IRC_HOST`, `AMD64_REMOTE`, …) for site-specific values in scripts.
 
 ## 10. License
 

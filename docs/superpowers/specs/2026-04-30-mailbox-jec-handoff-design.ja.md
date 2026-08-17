@@ -49,13 +49,13 @@ Claude Codeサブエージェントをディスパッチし、どの `Message-ID
 ### 4.1 リクエスト（コーディネーター → エージェント）
 
 ```
-From smolbsd-coord Tue Apr 30 12:50:00 2026
+From smolfire-coord Tue Apr 30 12:50:00 2026
 From: coordinator@smolfire.local
 To: architect@smolfire.local
 Subject: [task-0001] Forge Tiny Baseline — bootstrap FreeBSD amd64 VM
 Date: Tue, 30 Apr 2026 12:50:00 -0000
 Message-ID: <task-0001.coord@smolfire.local>
-X-Project: smolbsd
+X-Project: smolfire
 X-Phase: tinyos/forge-tiny-baseline
 X-JEC-Compression: rtk-v1
 Content-Type: text/toml; charset=utf-8
@@ -87,7 +87,7 @@ budget_tokens        = 80000
 ### 4.2 返信（エージェント → コーディネーター）
 
 ```
-From smolbsd-architect Tue Apr 30 14:10:00 2026
+From smolfire-architect Tue Apr 30 14:10:00 2026
 From: architect@smolfire.local
 To: coordinator@smolfire.local
 Subject: Re: [task-0001] Forge Tiny Baseline — bootstrap FreeBSD amd64 VM
@@ -95,7 +95,7 @@ Date: Tue, 30 Apr 2026 14:10:00 -0000
 Message-ID: <task-0001.architect@smolfire.local>
 In-Reply-To: <task-0001.coord@smolfire.local>
 References: <task-0001.coord@smolfire.local>
-X-Project: smolbsd
+X-Project: smolfire
 X-Verdict: pass
 Content-Type: text/toml; charset=utf-8
 

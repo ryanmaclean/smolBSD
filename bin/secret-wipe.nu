@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# secret-wipe.nu — D1 secret envelope destroyer for smolBSD coordinator
+# secret-wipe.nu — D1 secret envelope destroyer for smolfire coordinator
 #
 # Securely removes all secret envelopes for a given task from
 # var/run/secrets/<task-id>/.  Called by coord-tick after harvesting a reply,

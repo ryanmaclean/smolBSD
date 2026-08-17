@@ -39,7 +39,7 @@ def dispatch-claude [
 
     # Build the prompt: instruct the agent to read the spool for its task
     # and append a reply using the mbox+TOML protocol.
-    let prompt = $"You are a smolBSD subagent with role '($role)'.
+    let prompt = $"You are a smolfire subagent with role '($role)'.
 
 Your task brief \(task_id: ($task_id)\) is in the spool at ($spool).
 Find the message with Message-ID containing '($task_id).coord@smolfire.local', read the TOML body for your instructions, do the work, then append a properly-formatted mbox+TOML reply to ($spool).
@@ -47,7 +47,7 @@ Find the message with Message-ID containing '($task_id).coord@smolfire.local', r
 Brief summary:
 ($brief | str substring ..500)
 
-Reply format: standard smolBSD mbox+TOML envelope with X-Verdict: pass|fail and [[claims]] blocks."
+Reply format: standard smolfire mbox+TOML envelope with X-Verdict: pass|fail and [[claims]] blocks."
 
     # Ensure log dir exists
     if not ($log_dir | path exists) { mkdir $log_dir }
@@ -56,8 +56,8 @@ Reply format: standard smolBSD mbox+TOML envelope with X-Verdict: pass|fail and 
 
     let result = try {
         let claude_bin = $claude
-        # override with SMOLBSD_CLAUDE_MODEL env var
-        let model = $env | get SMOLBSD_CLAUDE_MODEL? | default "claude-sonnet-5"
+        # override with SMOLFIRE_CLAUDE_MODEL env var
+        let model = $env | get SMOLFIRE_CLAUDE_MODEL? | default "claude-sonnet-5"
         let job_id = job spawn {
             ^$claude_bin --print --bare --allowedTools "Write,Bash,Read,Glob,Grep" --max-budget-usd 1.0 --model $model $prompt o> $log_path e>> $log_path
         }
@@ -71,7 +71,7 @@ Reply format: standard smolBSD mbox+TOML envelope with X-Verdict: pass|fail and 
 
 # ── Private: VM execution path ─────────────────────────────────────────────────
 
-# Dispatch a task to a real smolBSD VM (role pattern: vm-*@smolfire.local).
+# Dispatch a task to a real smolfire VM (role pattern: vm-*@smolfire.local).
 # Reads commands from the task TOML body's [commands] run = [...] section.
 # Returns {launched: bool, mode: string, verdict: string, boot_sec: int}
 export def dispatch-vm [
@@ -82,7 +82,7 @@ export def dispatch-vm [
 ] {
     let parsed   = try { $brief | from toml } catch { {} }
     let commands = $parsed | get -o commands.run | default []
-    let image    = $parsed | get -o context_pointers.image_path | default "build/FreeBSD-15-aarch64-smolbsd.qcow2"
+    let image    = $parsed | get -o context_pointers.image_path | default "build/FreeBSD-15-aarch64-smolfire.qcow2"
     let arch     = $parsed | get -o context_pointers.arch | default "arm64"
 
     if ($commands | length) == 0 {
@@ -127,7 +127,7 @@ Subject: Re: [($task_id)] VM execution result
 Date: ($ts)
 Message-ID: <($task_id).vm-agent@smolfire.local>
 In-Reply-To: <($task_id).coord@smolfire.local>
-X-Project: smolbsd
+X-Project: smolfire
 X-Verdict: ($result.verdict)($error_line)
 Content-Type: text/toml; charset=utf-8
 

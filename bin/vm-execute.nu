@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# bin/vm-execute.nu — execute commands inside a smolBSD VM, return reply
+# bin/vm-execute.nu — execute commands inside a smolfire VM, return reply
 #
 # This is the bridge between the coordinator and a real running VM.
 # Boots the qcow2 via QEMU, runs commands via SSH, captures output,
@@ -8,9 +8,9 @@
 #
 # Usage from another module:
 #   use vm-execute.nu [run-vm-task]
-#   let reply = run-vm-task "task-0042" "build/FreeBSD-15-aarch64-smolbsd.qcow2" ["uname -a"]
+#   let reply = run-vm-task "task-0042" "build/FreeBSD-15-aarch64-smolfire.qcow2" ["uname -a"]
 
-# Run a list of commands inside a smolBSD VM and return structured output.
+# Run a list of commands inside a smolfire VM and return structured output.
 # Returns: {verdict: "pass"|"fail", boot_sec: int, outputs: list<{cmd, stdout, stderr, exit_code}>, error?: string}
 export def run-vm-task [
     task_id:    string          # unique task identifier (used for temp file names)
@@ -20,7 +20,7 @@ export def run-vm-task [
     --port:     int    = 2234          # SSH hostfwd port (avoid collisions)
     --timeout:  int    = 90            # boot timeout in seconds
     --user:     string = "root"        # VM SSH user
-    --password: string = "smolbsd"    # VM root password
+    --password: string = "smolfire"    # VM root password
     --use-overlay                      # mount thin overlay (keeps base image clean)
 ] {
     # Locate QEMU binary
@@ -59,7 +59,7 @@ export def run-vm-task [
 
     # Create overlay if requested (protects the base image from writes)
     let actual_image = if $use_overlay {
-        let overlay = $"/tmp/smolbsd-($task_id)-overlay.qcow2"
+        let overlay = $"/tmp/smolfire-($task_id)-overlay.qcow2"
         let r = (^/opt/homebrew/bin/qemu-img create -f qcow2 -F qcow2 -b $abs_image $overlay) | complete
         if $r.exit_code != 0 {
             return {verdict: "fail", boot_sec: 0, outputs: [], error: $"qemu-img overlay failed: ($r.stderr)"}

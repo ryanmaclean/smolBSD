@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# tests/run-tests.nu — smolBSD test suite runner
+# tests/run-tests.nu — smolfire test suite runner
 #
 # Usage:
 #   nu tests/run-tests.nu                    # run all tests
@@ -216,13 +216,13 @@ def main [
             # On x86 KVM host: set AMD64_ACCEL=kvm to run full login gate via time-to-ready.exp.
             let accel = ($env | get AMD64_ACCEL? | default "tcg")
             if $accel == "kvm" {
-                $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready.exp" "build/FreeBSD-15-amd64-smolbsd.qcow2")
+                $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready.exp" "build/FreeBSD-15-amd64-smolfire.qcow2")
             } else {
-                $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready-amd64-tcg.exp" "build/FreeBSD-15-amd64-smolbsd.qcow2" "tcg")
+                $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready-amd64-tcg.exp" "build/FreeBSD-15-amd64-smolfire.qcow2" "tcg")
             }
         }
         if $arch == "all" or $arch == "aarch64" {
-            $results = $results | append (run-e2e-test "aarch64" "tests/time-to-ready-arm64.exp" "build/FreeBSD-15-aarch64-smolbsd.qcow2")
+            $results = $results | append (run-e2e-test "aarch64" "tests/time-to-ready-arm64.exp" "build/FreeBSD-15-aarch64-smolfire.qcow2")
         }
     }
 

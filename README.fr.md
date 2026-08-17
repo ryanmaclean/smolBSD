@@ -94,7 +94,7 @@ ssh -J <hypervisor-host> -p 2222 builder@localhost
 Se connecter en SSH sur <aarch64-builder> et exécuter :
 
 ```sh
-make -j4 -C /usr/src buildworld buildkernel KERNCONF=SMOLBSD
+make -j4 -C /usr/src buildworld buildkernel KERNCONF=SMOLFIRE-VM
 ```
 
 Pour le chemin natif aarch64, aucun indicateur de compilation croisée n'est
@@ -102,7 +102,7 @@ nécessaire. Pour la compilation croisée amd64 depuis l'hôte arm64 :
 
 ```sh
 make -j4 -C /usr/src buildworld buildkernel \
-    KERNCONF=SMOLBSD \
+    KERNCONF=SMOLFIRE-VM \
     TARGET=amd64 \
     TARGET_ARCH=amd64
 ```

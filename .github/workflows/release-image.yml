@@ -1,24 +1,24 @@
 # SPDX-License-Identifier: Apache-2.0
-# release-image.yml — publish a built smolBSD qcow2 as a GitHub Release.
+# release-image.yml — publish a built smolfire qcow2 as a GitHub Release.
 #
 # Closes the newcomer gap called out in README Quickstart: workflow artifacts
 # expire and need a GitHub login; Releases are permanent, anonymous downloads.
 #
-# Flow: dispatch with the run ID of a green "Build smolBSD Image (hosted
+# Flow: dispatch with the run ID of a green "Build smolfire Image (hosted
 # runner)" run (the run whose size + boot gates you trust) and a tag. The
-# workflow downloads that run's smolbsd-amd64 artifact, checksums it, and
+# workflow downloads that run's smolfire-amd64 artifact, checksums it, and
 # publishes qcow2 + sha256 to the Release.
 #
 # Deliberately manual: a release is a human judgement (gates green? size
 # acceptable?), not an automatic side effect of a build.
 
-name: Release smolBSD Image
+name: Release smolfire Image
 
 on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: "Build run ID whose smolbsd-amd64 artifact to publish"
+        description: "Build run ID whose smolfire-amd64 artifact to publish"
         required: true
       tag:
         description: "Release tag (e.g. v0.1.0)"
@@ -61,8 +61,8 @@ jobs:
           fi
           # Confirm the run actually has the artifact before downloading.
           if ! gh api "repos/${{ github.repository }}/actions/runs/${{ inputs.run_id }}/artifacts" \
-               --jq '.artifacts[].name' | grep -qx 'smolbsd-amd64'; then
-            echo "ERROR: run ${{ inputs.run_id }} has no 'smolbsd-amd64' artifact (expired, failed, or wrong run)."
+               --jq '.artifacts[].name' | grep -qx 'smolfire-amd64'; then
+            echo "ERROR: run ${{ inputs.run_id }} has no 'smolfire-amd64' artifact (expired, failed, or wrong run)."
             echo "Recent successful build runs:"
             gh run list --repo "${{ github.repository }}" \
               --workflow build-image-hosted.yml --status success --limit 5 \
@@ -75,7 +75,7 @@ jobs:
       - name: Fetch built image artifact
         uses: actions/download-artifact@v4
         with:
-          name: smolbsd-amd64
+          name: smolfire-amd64
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
 
@@ -83,11 +83,11 @@ jobs:
         run: |
           # Locate rather than assume: upload-artifact archives relative to the
           # least common ancestor of its paths, which could change layout.
-          ART=$(find . -name 'smolbsd-amd64.qcow2' -type f | head -1)
-          test -n "$ART" || { echo "ERROR: artifact has no smolbsd-amd64.qcow2"; find . -maxdepth 3 -type f; exit 1; }
-          mv "$ART" "smolbsd-amd64-${{ inputs.tag }}.qcow2"
-          sha256sum "smolbsd-amd64-${{ inputs.tag }}.qcow2" | tee "smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256"
-          ls -lh smolbsd-amd64-*
+          ART=$(find . -name 'smolfire-amd64.qcow2' -type f | head -1)
+          test -n "$ART" || { echo "ERROR: artifact has no smolfire-amd64.qcow2"; find . -maxdepth 3 -type f; exit 1; }
+          mv "$ART" "smolfire-amd64-${{ inputs.tag }}.qcow2"
+          sha256sum "smolfire-amd64-${{ inputs.tag }}.qcow2" | tee "smolfire-amd64-${{ inputs.tag }}.qcow2.sha256"
+          ls -lh smolfire-amd64-*
 
       - name: Create release with assets
         env:
@@ -97,25 +97,25 @@ jobs:
           # gh tags the default branch HEAD, which may have moved since.
           BUILD_SHA=$(gh api "repos/${{ github.repository }}/actions/runs/${{ inputs.run_id }}" --jq .head_sha)
           echo "Tagging build commit $BUILD_SHA"
-          BYTES=$(wc -c < "smolbsd-amd64-${{ inputs.tag }}.qcow2")
+          BYTES=$(wc -c < "smolfire-amd64-${{ inputs.tag }}.qcow2")
           MIB=$((BYTES / 1048576))
           {
-            echo "smolBSD amd64 qcow2 — built by run ${{ inputs.run_id }} of the hosted pipeline."
+            echo "smolfire amd64 qcow2 — built by run ${{ inputs.run_id }} of the hosted pipeline."
             echo ""
             echo "- Download size: ${MIB} MiB (compressed qcow2 — boots as-is in any qemu; raw-size target: <= 512 MiB)"
-            echo "- Boot: \`qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M -drive file=smolbsd-amd64-${{ inputs.tag }}.qcow2,format=qcow2,if=virtio -nic user,model=virtio-net-pci -nographic\`"
-            echo "- Login: root / smolbsd — **dev image**: change the password on first login;"
+            echo "- Boot: \`qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M -drive file=smolfire-amd64-${{ inputs.tag }}.qcow2,format=qcow2,if=virtio -nic user,model=virtio-net-pci -nographic\`"
+            echo "- Login: root / smolfire — **dev image**: change the password on first login;"
             echo "  never expose it beyond QEMU user-mode networking."
-            echo "- Verify: \`sha256sum -c smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256\`"
+            echo "- Verify: \`sha256sum -c smolfire-amd64-${{ inputs.tag }}.qcow2.sha256\`"
           } > notes.md
           if ! gh release create "${{ inputs.tag }}" \
             --repo "${{ github.repository }}" \
             --target "$BUILD_SHA" \
-            --title "smolBSD ${{ inputs.tag }}" \
+            --title "smolfire ${{ inputs.tag }}" \
             --notes-file notes.md \
             $([ "${{ inputs.prerelease }}" = "true" ] && echo --prerelease) \
-            "smolbsd-amd64-${{ inputs.tag }}.qcow2" \
-            "smolbsd-amd64-${{ inputs.tag }}.qcow2.sha256"; then
+            "smolfire-amd64-${{ inputs.tag }}.qcow2" \
+            "smolfire-amd64-${{ inputs.tag }}.qcow2.sha256"; then
             echo ""
             echo "Release creation failed. If the error above is HTTP 403"
             echo "'Resource not accessible by integration': GITHUB_TOKEN"

@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
 # setup-runner.sh — Register <kvm-host> as a GitHub Actions self-hosted runner
-#                   for ryanmaclean/smolBSD.
+#                   for ryanmaclean/smolfire.
 #
 # Usage (env vars):
 #   GITHUB_RUNNER_TOKEN=<token> sh bin/setup-runner.sh
@@ -28,19 +28,19 @@ RUNNER_ARCHIVE="actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
 RUNNER_URL="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${RUNNER_ARCHIVE}"
 RUNNER_HASH_URL="${RUNNER_URL}.sha256"
 
-REPO_URL="https://github.com/ryanmaclean/smolBSD"
+REPO_URL="https://github.com/ryanmaclean/smolfire"
 
 # ── Parse arguments ────────────────────────────────────────────────────────────
 
 TOKEN="${1:-${GITHUB_RUNNER_TOKEN:-}}"
-NAME="${2:-${RUNNER_NAME:-smolbsd-kvm-amd64}}"
+NAME="${2:-${RUNNER_NAME:-smolfire-kvm-amd64}}"
 LABELS="${3:-${RUNNER_LABELS:-self-hosted,linux,amd64,kvm}}"
 
 if [ -z "$TOKEN" ]; then
   echo "ERROR: GITHUB_RUNNER_TOKEN is required." >&2
   echo "" >&2
   echo "Get a token from:" >&2
-  echo "  https://github.com/ryanmaclean/smolBSD/settings/actions/runners/new" >&2
+  echo "  https://github.com/ryanmaclean/smolfire/settings/actions/runners/new" >&2
   echo "" >&2
   echo "Then run:" >&2
   echo "  GITHUB_RUNNER_TOKEN=<token> sh bin/setup-runner.sh" >&2
@@ -126,7 +126,7 @@ sudo ./svc.sh start
 
 echo "==> Verifying service status ..."
 # Service name format from actions/runner: actions.runner.<owner>-<repo>.<name>
-SVC_NAME="actions.runner.ryanmaclean-smolBSD.${NAME}"
+SVC_NAME="actions.runner.ryanmaclean-smolfire.${NAME}"
 if systemctl is-active --quiet "$SVC_NAME" 2>/dev/null; then
   echo "    Service active: $SVC_NAME"
 else
@@ -140,7 +140,7 @@ fi
 echo ""
 echo "Runner registered."
 echo ""
-echo "View at: https://github.com/ryanmaclean/smolBSD/settings/actions/runners"
+echo "View at: https://github.com/ryanmaclean/smolfire/settings/actions/runners"
 echo ""
 echo "To check logs:  journalctl -u '${SVC_NAME}' -f"
 echo "To stop:        sudo systemctl stop '${SVC_NAME}'"

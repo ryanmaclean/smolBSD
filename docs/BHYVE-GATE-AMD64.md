@@ -29,7 +29,7 @@ kldstat | grep -E 'vmm|nmdm'
 ls -l /dev/vmmctl
 ls /usr/local/share/uefi-firmware/BHYVE_UEFI.fd
 
-# tap0 is MANDATORY — bhyve-smolbsd.nu hardcodes "-s 3,virtio-net,tap0".
+# tap0 is MANDATORY — bhyve-smolfire-vm.nu hardcodes "-s 3,virtio-net,tap0".
 ifconfig tap0 create 2>/dev/null; ifconfig tap0 up
 # Do NOT build bridge0 for the boot gate — it would touch the NIC your SSH
 # session rides on, and the gate needs no guest networking. (Later, for guest
@@ -57,7 +57,7 @@ nu bin/prep-bhyve-image.nu --input /root/FreeBSD-15-amd64-smolbsd.qcow2 --verify
 ## 3. Sanity dry-run
 
 ```sh
-nu bin/bhyve-smolbsd.nu --image /root/FreeBSD-15-amd64-smolbsd.raw --dry-run
+nu bin/bhyve-smolfire-vm.nu --image /root/FreeBSD-15-amd64-smolbsd.raw --dry-run
 # Expect a bhyve command with: virtio-blk,<img>  virtio-net,tap0
 #   com1,/dev/nmdm0A  bootrom,BHYVE_UEFI.fd  -m 512M -c 2
 ```
@@ -103,10 +103,10 @@ a strict ≤30 s claim, read the printed `TIME_TO_LOGIN` yourself.
 
 ```sh
 # Terminal B FIRST (nmdm does not buffer — attach before or within ~2 s of launch):
-cd ~/smolBSD && SMOLBSD_CONSOLE=/dev/nmdm0B expect tests/time-to-ready-bhyve.exp
+cd ~/smolBSD && SMOLFIRE_CONSOLE=/dev/nmdm0B expect tests/time-to-ready-bhyve.exp
 
 # Terminal A:
-cd ~/smolBSD && nu bin/bhyve-smolbsd.nu --image /root/FreeBSD-15-amd64-smolbsd.raw --name smolbsd
+cd ~/smolBSD && nu bin/bhyve-smolfire-vm.nu --image /root/FreeBSD-15-amd64-smolbsd.raw --name smolbsd
 
 # Cleanup if wedged:
 bhyvectl --destroy --vm=smolbsd 2>/dev/null
@@ -129,7 +129,7 @@ nu bin/ci-gate.nu --results-dir /tmp/smolbsd-results
    readiness; on FreeBSD 14/15 the node is `/dev/vmmctl` (`/dev/vmm/` appears
    only after the first VM exists). The hard-error in setup aborts wrongly on
    a fresh host.
-2. `bhyve-smolbsd.nu --hostfwd-ssh` is a dead flag (bhyve has no user NAT) —
+2. `bhyve-smolfire-vm.nu --hostfwd-ssh` is a dead flag (bhyve has no user NAT) —
    which is why the `memory` test step must be skipped on this backend.
 3. `tap0` is hardcoded in the bhyve command builders; no flag to change/drop.
 4. `time-to-ready-bhyve.exp` hardcodes a 60 s threshold vs the documented 30 s

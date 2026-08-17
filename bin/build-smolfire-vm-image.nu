@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# bin/build-smolbsd-image.nu — build a smolBSD amd64 qcow2 image on a Linux host
+# bin/build-smolfire-vm-image.nu — build a smolfire amd64 qcow2 image on a Linux host
 #                              using a FreeBSD QEMU VM as the build environment.
 #
 # Why a nested VM?  `make release` / `make vm-image` requires FreeBSD-native tools
@@ -8,14 +8,14 @@
 # stock FreeBSD VM, inject our configs, build inside it, then SCP the artifact out.
 #
 # Typical call:
-#   nu bin/build-smolbsd-image.nu
-#   nu bin/build-smolbsd-image.nu --dry-run
-#   nu bin/build-smolbsd-image.nu --ssh-port 2242 --output-dir /tmp/artifacts
+#   nu bin/build-smolfire-vm-image.nu
+#   nu bin/build-smolfire-vm-image.nu --dry-run
+#   nu bin/build-smolfire-vm-image.nu --ssh-port 2242 --output-dir /tmp/artifacts
 #
 # Flags:
 #   --dry-run      Print every command without executing anything
 #   --ssh-port     Host port forwarded to build VM :22  (default 2242)
-#   --vm-image     Base FreeBSD qcow2 image path        (default ~/smolbsd-tpm-test/FreeBSD-15.1-STABLE-amd64-ufs.qcow2)
+#   --vm-image     Base FreeBSD qcow2 image path        (default ~/smolfire-tpm-test/FreeBSD-15.1-STABLE-amd64-ufs.qcow2)
 #   --output-dir   Directory to receive the built qcow2 (default .)
 #
 # Prerequisites on the Linux host:
@@ -25,13 +25,13 @@
 #   - OVMF firmware at /usr/share/qemu/OVMF.fd
 #
 # See also:
-#   bin/build-smolbsd.nu          — runs *inside* the FreeBSD VM (native path)
+#   bin/build-smolfire-vm.nu          — runs *inside* the FreeBSD VM (native path)
 #   bin/copy-configs-to-freebsd.sh — copies kernel/release configs into /usr/src
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
 # Emit a timestamped TOML step-log block to stdout.
-# Same convention as qemu-smolbsd.nu and the rest of the smolBSD toolchain.
+# Same convention as qemu-smolfire-vm.nu and the rest of the smolfire toolchain.
 def log-step [step: string, msg: string, extra: record = {}] {
     let ts   = date now | format date "%Y-%m-%dT%H:%M:%SZ"
     let base = {ts: $ts, step: $step, msg: $msg}
@@ -66,7 +66,7 @@ def ssh-run [
     port:    int
     cmd:     string
     dry_run: bool
-    --vm-pass: string = "smolbsd"
+    --vm-pass: string = "smolfire"
 ] {
     let ssh_opts = [
         "-o" "StrictHostKeyChecking=no"
@@ -160,7 +160,7 @@ def create-overlay [base: string, overlay: string, dry_run: bool] {
 # Launch the FreeBSD build VM in the background.
 # Returns the PID of the QEMU process.
 def start-vm [overlay: string, scratch: string, ssh_port: int, dry_run: bool]: nothing -> int {
-    let serial_log = "/tmp/smolbsd-build-serial.log"
+    let serial_log = "/tmp/smolfire-build-serial.log"
 
     log-step "vm-start" "launching FreeBSD build VM" {
         overlay:    $overlay
@@ -250,7 +250,7 @@ def stop-vm [pid: int, dry_run: bool] {
         return
     }
     # Attempt graceful shutdown via SSH first (fastest)
-    let sh_r = (^/usr/bin/env sh -c $"sshpass -p smolbsd ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -p 2242 root@127.0.0.1 'poweroff' 2>/dev/null" | complete)
+    let sh_r = (^/usr/bin/env sh -c $"sshpass -p smolfire ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -p 2242 root@127.0.0.1 'poweroff' 2>/dev/null" | complete)
     ^sleep 5
     # Kill the QEMU process if still running
     let kill_r = (^kill $pid | complete)
@@ -289,11 +289,11 @@ def collect-artifact [port: int, output_dir: string, dry_run: bool]: nothing -> 
     if ($remote_path | str length) == 0 {
         if $dry_run {
             print "[dry-run] remote qcow2 path would be discovered here"
-            let fake_path = $"($output_dir)/smolbsd-amd64.qcow2"
-            print $"[dry-run] sshpass -p smolbsd scp -P ($port) -o StrictHostKeyChecking=no root@127.0.0.1:/usr/obj/.../smolbsd.qcow2 ($fake_path)"
+            let fake_path = $"($output_dir)/smolfire-amd64.qcow2"
+            print $"[dry-run] sshpass -p smolfire scp -P ($port) -o StrictHostKeyChecking=no root@127.0.0.1:/usr/obj/.../smolfire.qcow2 ($fake_path)"
             return $fake_path
         }
-        error make {msg: "Could not find built qcow2 inside the VM — check /tmp/smolbsd-build-serial.log for build errors"}
+        error make {msg: "Could not find built qcow2 inside the VM — check /tmp/smolfire-build-serial.log for build errors"}
     }
 
     log-step "collect" "found built artifact" {remote_path: $remote_path}
@@ -307,7 +307,7 @@ def collect-artifact [port: int, output_dir: string, dry_run: bool]: nothing -> 
     }
 
     let scp_args = [
-        "sshpass" "-p" "smolbsd"
+        "sshpass" "-p" "smolfire"
         "scp"
         "-P" ($port | into string)
         "-o" "StrictHostKeyChecking=no"
@@ -326,14 +326,14 @@ def collect-artifact [port: int, output_dir: string, dry_run: bool]: nothing -> 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-# Build a smolBSD amd64 qcow2 image on a Linux/KVM host via a FreeBSD build VM.
+# Build a smolfire amd64 qcow2 image on a Linux/KVM host via a FreeBSD build VM.
 #
 # The script:
 #   1. Checks host prerequisites (qemu, sshpass, base image, /dev/kvm)
 #   2. Creates a disposable qcow2 overlay of the base VM image
 #   3. Starts the FreeBSD VM with KVM acceleration and SSH on --ssh-port
 #   4. Waits for SSH (polls every 5s, 3-minute timeout)
-#   5. Inside the VM: installs git, clones smolBSD, copies configs, builds
+#   5. Inside the VM: installs git, clones smolfire, copies configs, builds
 #   6. SCPs the produced qcow2 back to --output-dir
 #   7. Stops the VM and logs the artifact path
 #
@@ -341,20 +341,20 @@ def collect-artifact [port: int, output_dir: string, dry_run: bool]: nothing -> 
 def main [
     --dry-run                                                        # print commands; do not execute
     --ssh-port:   int    = 2242                                      # host port forwarded to build VM :22
-    --vm-image:   string = ""                                        # base FreeBSD qcow2 (default: ~/smolbsd-tpm-test/FreeBSD-15.1-STABLE-amd64-ufs.qcow2)
+    --vm-image:   string = ""                                        # base FreeBSD qcow2 (default: ~/smolfire-tpm-test/FreeBSD-15.1-STABLE-amd64-ufs.qcow2)
     --output-dir: string = "."                                       # directory to receive the built artifact
 ] {
     # Resolve default vm-image using $HOME
     let resolved_vm_image = if ($vm_image | str length) > 0 {
         $vm_image
     } else {
-        $"($env.HOME)/smolbsd-tpm-test/FreeBSD-15.1-STABLE-amd64-ufs.qcow2"
+        $"($env.HOME)/smolfire-tpm-test/FreeBSD-15.1-STABLE-amd64-ufs.qcow2"
     }
 
-    let overlay  = "/tmp/smolbsd-build-vm.qcow2"
+    let overlay  = "/tmp/smolfire-build-vm.qcow2"
     let t_start  = date now
 
-    log-step "start" "build-smolbsd-image starting" {
+    log-step "start" "build-smolfire-image starting" {
         dry_run:    $dry_run
         ssh_port:   $ssh_port
         vm_image:   $resolved_vm_image
@@ -370,7 +370,7 @@ def main [
     # VM rootfs (~5 GB) cannot hold it (same fix as build-image.yml's 20 GB
     # scratch and build-image-hosted.yml's 40 GB scratch).
     create-overlay $resolved_vm_image $overlay $dry_run
-    let scratch = "/tmp/smolbsd-build-scratch.qcow2"
+    let scratch = "/tmp/smolfire-build-scratch.qcow2"
     let scratch_r = run-cmd ["qemu-img" "create" "-f" "qcow2" $scratch "40G"] $dry_run
     if $scratch_r.exit_code != 0 {
         error make {msg: $"qemu-img create scratch failed (exit ($scratch_r.exit_code)): ($scratch_r.stderr)"}
@@ -394,14 +394,14 @@ def main [
     vm-step "pkg-update" "env ASSUME_ALWAYS_YES=yes pkg update -q" $ssh_port $dry_run
     vm-step "pkg-git"    "env ASSUME_ALWAYS_YES=yes pkg install -y git" $ssh_port $dry_run
 
-    # 5b. Clone smolBSD repo
-    vm-step "git-clone" "git clone https://github.com/ryanmaclean/smolBSD.git /root/smolBSD" $ssh_port $dry_run
+    # 5b. Clone smolfire repo
+    vm-step "git-clone" "git clone https://github.com/ryanmaclean/smolfire.git /root/smolfire" $ssh_port $dry_run
 
     # 5c. Copy kernel config into the FreeBSD src tree
-    vm-step "copy-kernconf" "cp /root/smolBSD/sys/amd64/conf/SMOLBSD /usr/src/sys/amd64/conf/SMOLBSD" $ssh_port $dry_run
+    vm-step "copy-kernconf" "cp /root/smolfire/sys/amd64/conf/SMOLFIRE-VM /usr/src/sys/amd64/conf/SMOLFIRE-VM" $ssh_port $dry_run
 
     # 5d. Copy cloudware release conf
-    vm-step "copy-conf" "cp /root/smolBSD/release/tools/smolbsd-qemu.conf /usr/src/release/tools/smolbsd-qemu.conf" $ssh_port $dry_run
+    vm-step "copy-conf" "cp /root/smolfire/release/tools/smolfire-qemu.conf /usr/src/release/tools/smolfire-qemu.conf" $ssh_port $dry_run
 
     # 5e. Build world + kernel (long — world ~2-3 h, kernel ~20 min on 8 vCPU KVM)
     # buildworld is REQUIRED: cloudware-release depends on pkgbase-repo, which
@@ -411,18 +411,18 @@ def main [
     log-step "vm-buildworld" "starting world build (this takes ~2-3 h)" {}
     vm-step "buildworld" "make -C /usr/src buildworld -j8" $ssh_port $dry_run
     log-step "vm-buildkernel" "starting kernel build (this takes ~20 min)" {}
-    vm-step "buildkernel" "make -C /usr/src buildkernel KERNCONF=SMOLBSD -j8" $ssh_port $dry_run
+    vm-step "buildkernel" "make -C /usr/src buildkernel KERNCONF=SMOLFIRE-VM -j8" $ssh_port $dry_run
 
     # 5f. Build release VM image (long — ~30 min)
     # FIX-9: use cloudware-release with the real ${TYPE}CONF variable
-    # (SMOLBSDCONF). The old `vm-image ... CLOUDWARE_CONF=` form never sourced
+    # (SMOLFIRECONF). The old `vm-image ... CLOUDWARE_CONF=` form never sourced
     # the conf: CLOUDWARE_CONF is not a release Makefile variable and vm-image
     # is a WITH_VMIMAGES-gated target that passes no -c to mk-vmimage.sh.
     log-step "vm-cloudware-release" "starting make cloudware-release (this takes ~30 min)" {}
     vm-step "cloudware-release" (
-        "make -C /usr/src/release cloudware-release KERNCONF=SMOLBSD " +
-        "WITH_CLOUDWARE=yes CLOUDWARE=smolbsd SMOLBSD_FORMAT=qcow2 SMOLBSD_FSLIST=ufs " +
-        "SMOLBSDCONF=/root/smolBSD/release/tools/smolbsd-qemu.conf VMSIZE=2g SWAPSIZE=128m"
+        "make -C /usr/src/release cloudware-release KERNCONF=SMOLFIRE-VM " +
+        "WITH_CLOUDWARE=yes CLOUDWARE=smolfire SMOLFIRE_FORMAT=qcow2 SMOLFIRE_FSLIST=ufs " +
+        "SMOLFIRECONF=/root/smolfire/release/tools/smolfire-qemu.conf VMSIZE=2g SWAPSIZE=128m"
     ) $ssh_port $dry_run
 
     # ── 6. Collect artifact ─────────────────────────────────────────────────
@@ -437,7 +437,7 @@ def main [
     let m = (($elapsed_secs mod 3600) / 60 | math floor)
     let elapsed_fmt = if $h > 0 { $"($h)h ($m)m" } else { $"($m)m" }
 
-    log-step "done" "build-smolbsd-image complete" {
+    log-step "done" "build-smolfire-image complete" {
         artifact:    $artifact
         elapsed:     $elapsed_fmt
         elapsed_s:   $elapsed_secs

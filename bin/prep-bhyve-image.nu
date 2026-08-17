@@ -6,9 +6,9 @@
 # This script bridges the gap: validate, convert, pad, and verify.
 #
 # Usage:
-#   nu bin/prep-bhyve-image.nu --input FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2
-#   nu bin/prep-bhyve-image.nu --input smolbsd.qcow2 --output smolbsd.raw --force
-#   nu bin/prep-bhyve-image.nu --input smolbsd.qcow2 --verify --min-size-mib 1024
+#   nu bin/prep-bhyve-image.nu --input FreeBSD-15.0-RELEASE-amd64-SMOLFIRE-VM.qcow2
+#   nu bin/prep-bhyve-image.nu --input smolfire.qcow2 --output smolfire.raw --force
+#   nu bin/prep-bhyve-image.nu --input smolfire.qcow2 --verify --min-size-mib 1024
 #
 # See: plans/tinyos/PHASE-3-TPM.md
 
@@ -226,5 +226,5 @@ export def main [
     # Human-readable summary to stderr so it is visible even when stdout is piped
     print -e $"prep-bhyve-image: ($out_path)"
     print -e $"  size: ($stat.size)"
-    print -e $"  ready for: nu bin/bhyve-smolbsd.nu --image ($out_path)"
+    print -e $"  ready for: nu bin/bhyve-smolfire-vm.nu --image ($out_path)"
 }

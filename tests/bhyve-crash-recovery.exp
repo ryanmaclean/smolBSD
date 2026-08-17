@@ -1,16 +1,16 @@
 #!/usr/bin/env expect
 # SPDX-License-Identifier: Apache-2.0
-# bhyve-crash-recovery.exp — smolBSD bhyve crash-recovery gate.
+# bhyve-crash-recovery.exp — smolfire bhyve crash-recovery gate.
 # Materialized from plans/tinyos/PHASE-3-TPM.md §4
-# Authoring chain: planner@smolbsd.local <task-0024.builder@smolbsd.local>
+# Authoring chain: planner@smolfire.local <task-0024.builder@smolfire.local>
 #
 # tests/bhyve-crash-recovery.exp
 #
-# Measures how long smolBSD takes to reach a login prompt after the bhyve
+# Measures how long smolfire takes to reach a login prompt after the bhyve
 # process is killed (simulating an abrupt host-side VM crash or power loss).
 #
 # Design:
-#   Step 1 — Kill the bhyve process for $SMOLBSD_VM_NAME via
+#   Step 1 — Kill the bhyve process for $SMOLFIRE_VM_NAME via
 #             `kill -KILL $(pgrep -f "bhyve.*<vmname>")`.
 #             This simulates a crash without a graceful shutdown.
 #   Step 2 — Record T0 immediately after the kill.
@@ -19,17 +19,17 @@
 #             `bhyvectl --get-lowmem` to confirm the old VM slot is gone,
 #             then sends a SIGUSR1 to the caller-provided relaunch PID or
 #             simply trusts the caller to relaunch before the timeout.
-#             NOTE: If SMOLBSD_RELAUNCH_CMD is set, this script will exec it
+#             NOTE: If SMOLFIRE_RELAUNCH_CMD is set, this script will exec it
 #             in the background before attaching to the console.
-#   Step 4 — Attach to $SMOLBSD_CONSOLE via `cu`, wait for `login:`.
+#   Step 4 — Attach to $SMOLFIRE_CONSOLE via `cu`, wait for `login:`.
 #   Step 5 — Record T1; emit CRASH_RECOVERY_TIME=$((T1-T0))s.
 #
 # Environment variables:
-#   SMOLBSD_VM_NAME     — bhyve VM name (default: smolbsd)
+#   SMOLFIRE_VM_NAME     — bhyve VM name (default: smolfire)
 #                         used as pattern in: pgrep -f "bhyve.*<name>"
-#   SMOLBSD_CONSOLE     — nmdm B-side device (default: /dev/nmdm0B)
-#   SMOLBSD_SERIAL      — alias for SMOLBSD_CONSOLE (physical-board compat)
-#   SMOLBSD_RELAUNCH_CMD — shell command to relaunch bhyve after the kill
+#   SMOLFIRE_CONSOLE     — nmdm B-side device (default: /dev/nmdm0B)
+#   SMOLFIRE_SERIAL      — alias for SMOLFIRE_CONSOLE (physical-board compat)
+#   SMOLFIRE_RELAUNCH_CMD — shell command to relaunch bhyve after the kill
 #                         (optional; if absent the caller must relaunch
 #                         before this script's attach timeout is reached)
 #
@@ -54,23 +54,23 @@ set timeout [expr {$threshold_sec + 20}]
 
 # ── Environment variable resolution ───────────────────────────────────────────
 
-if {[info exists env(SMOLBSD_VM_NAME)]} {
-    set vm_name $env(SMOLBSD_VM_NAME)
+if {[info exists env(SMOLFIRE_VM_NAME)]} {
+    set vm_name $env(SMOLFIRE_VM_NAME)
 } else {
-    set vm_name "smolbsd"
+    set vm_name "smolfire"
 }
 
-if {[info exists env(SMOLBSD_CONSOLE)]} {
-    set console_dev $env(SMOLBSD_CONSOLE)
-} elseif {[info exists env(SMOLBSD_SERIAL)]} {
-    set console_dev $env(SMOLBSD_SERIAL)
+if {[info exists env(SMOLFIRE_CONSOLE)]} {
+    set console_dev $env(SMOLFIRE_CONSOLE)
+} elseif {[info exists env(SMOLFIRE_SERIAL)]} {
+    set console_dev $env(SMOLFIRE_SERIAL)
 } else {
     set console_dev "/dev/nmdm0B"
 }
 
 set relaunch_cmd ""
-if {[info exists env(SMOLBSD_RELAUNCH_CMD)]} {
-    set relaunch_cmd $env(SMOLBSD_RELAUNCH_CMD)
+if {[info exists env(SMOLFIRE_RELAUNCH_CMD)]} {
+    set relaunch_cmd $env(SMOLFIRE_RELAUNCH_CMD)
 }
 
 puts "VM_NAME=$vm_name"
@@ -80,7 +80,7 @@ puts "THRESHOLD=${threshold_sec}s"
 # ── Step 1: find and kill the bhyve process ────────────────────────────────────
 #
 # pgrep -f matches the full command line, so "bhyve.*<vmname>" will match
-# both `bhyve smolbsd` and `bhyve -c 2 -m 512M ... smolbsd` command lines.
+# both `bhyve smolfire` and `bhyve -c 2 -m 512M ... smolfire` command lines.
 # Using SIGKILL (not SIGTERM) to simulate an abrupt crash — no graceful exit.
 
 puts "STEP=kill"
@@ -89,7 +89,7 @@ set pgrep_result [catch {exec pgrep -f "bhyve.*${vm_name}"} pids]
 if {$pgrep_result != 0} {
     puts stderr "ERROR: no bhyve process found matching 'bhyve.*${vm_name}'"
     puts stderr "  Is the VM running?  Check: pgrep -f bhyve"
-    puts stderr "  Override vm name with: SMOLBSD_VM_NAME=<name>"
+    puts stderr "  Override vm name with: SMOLFIRE_VM_NAME=<name>"
     exit 3
 }
 
@@ -137,7 +137,7 @@ if {!$vm_gone} {
 
 # ── Step 3b: optional relaunch ────────────────────────────────────────────────
 #
-# If SMOLBSD_RELAUNCH_CMD is set, execute it in the background now.
+# If SMOLFIRE_RELAUNCH_CMD is set, execute it in the background now.
 # The command is exec'd via /bin/sh -c so that pipes and env vars work.
 # The caller is responsible for ensuring the relaunch command attaches bhyve
 # to the same nmdm device pair.
@@ -151,7 +151,7 @@ if {$relaunch_cmd ne ""} {
     # Brief pause to let bhyve open the nmdm device before cu tries to attach.
     after 500
 } else {
-    puts "INFO: SMOLBSD_RELAUNCH_CMD not set; assuming caller has relaunched bhyve"
+    puts "INFO: SMOLFIRE_RELAUNCH_CMD not set; assuming caller has relaunched bhyve"
 }
 
 # ── Step 4: attach to console and wait for login: ─────────────────────────────

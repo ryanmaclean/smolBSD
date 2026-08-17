@@ -16,7 +16,7 @@
 # Flags:
 #   --plan               Vultr plan ID (default: vbm-6c-32gb for bare metal)
 #   --region             Vultr region ID (default: ewr — New Jersey, good lat for US)
-#   --label              Server label (default: smolbsd-bhyve)
+#   --label              Server label (default: smolfire-bhyve)
 #   --instance-fallback  Use a 4c/8GB optimised cloud instance if bare-metal
 #                        quota is unavailable (VT-x is exposed on Vultr cloud
 #                        instances via KVM, which does support nested bhyve)
@@ -158,7 +158,7 @@ def poll-until-active [
 def main [
     --plan:              string = "vbm-6c-32gb"   # bare-metal plan; overridable
     --region:            string = "ewr"            # New Jersey; has vbm-6c-32gb
-    --label:             string = "smolbsd-bhyve"
+    --label:             string = "smolfire-bhyve"
     --instance-fallback                            # use cloud instance if bare-metal unavailable
     --poll                                         # wait for active + print IP
     --poll-timeout:      int    = 600              # seconds to wait when --poll
@@ -183,14 +183,14 @@ def main [
     # FreeBSD cloud images run user-data via cloud-init on the first boot.
     # The script installs deps, loads kernel modules, and clones the project.
     let userdata = "#!/bin/sh
-# smolBSD bhyve host first-boot setup
+# smolfire bhyve host first-boot setup
 # Installed by vultr-bhyve-provision.nu user-data
-pkg install -y nushell swtpm bhyve-firmware qemu-tools expect git 2>&1 | logger -t smolbsd-setup
-kldload vmm nmdm if_tap if_bridge 2>&1 | logger -t smolbsd-setup
+pkg install -y nushell swtpm bhyve-firmware qemu-tools expect git 2>&1 | logger -t smolfire-setup
+kldload vmm nmdm if_tap if_bridge 2>&1 | logger -t smolfire-setup
 sysrc kld_list+=\"vmm nmdm if_tap if_bridge\"
 # Mark setup complete
-touch /var/run/smolbsd-host-ready
-logger -t smolbsd-setup 'bhyve host first-boot setup complete'
+touch /var/run/smolfire-host-ready
+logger -t smolfire-setup 'bhyve host first-boot setup complete'
 "
 
     if $is_bare_metal {
@@ -209,7 +209,7 @@ logger -t smolbsd-setup 'bhyve host first-boot setup complete'
             hostname:  $label
             ssh_key_ids: $ssh_keys
             user_data: ($userdata | encode base64)
-            tags:      ["smolbsd" "bhyve" "phase-iii"]
+            tags:      ["smolfire" "bhyve" "phase-iii"]
         }
 
         if $dry_run {
@@ -247,7 +247,7 @@ logger -t smolbsd-setup 'bhyve host first-boot setup complete'
             type:           "bare-metal"
             os:             "FreeBSD 15 x64"
             ssh_user:       "root"
-            next_step:      $"ssh root@($final_server | get main_ip? | default $bm_ip) 'nu smolbsd/bin/bhyve-host-setup.nu'"
+            next_step:      $"ssh root@($final_server | get main_ip? | default $bm_ip) 'nu smolfire/bin/bhyve-host-setup.nu'"
             setup_script:   "bin/bhyve-host-setup.nu"
         }
 
@@ -278,7 +278,7 @@ logger -t smolbsd-setup 'bhyve host first-boot setup complete'
             hostname:    $label
             sshkey_id:   $ssh_keys
             user_data:   ($userdata | encode base64)
-            tags:        ["smolbsd" "bhyve" "phase-iii"]
+            tags:        ["smolfire" "bhyve" "phase-iii"]
         }
 
         if $dry_run {
@@ -316,7 +316,7 @@ logger -t smolbsd-setup 'bhyve host first-boot setup complete'
             type:         "cloud-instance-kvm"
             os:           "FreeBSD 15 x64"
             ssh_user:     "root"
-            next_step:    $"ssh root@($final_server | get main_ip? | default $inst_ip) 'nu smolbsd/bin/bhyve-host-setup.nu'"
+            next_step:    $"ssh root@($final_server | get main_ip? | default $inst_ip) 'nu smolfire/bin/bhyve-host-setup.nu'"
             setup_script: "bin/bhyve-host-setup.nu"
         }
 

@@ -6,7 +6,7 @@
 # Creates a primary key, seals a test secret bound to PCR 0 + PCR 7,
 # unseals it, and verifies the plaintext matches.
 #
-# Reports pass/fail in TOML format compatible with the smolBSD claims convention.
+# Reports pass/fail in TOML format compatible with the smolfire claims convention.
 #
 # Usage:
 #   nu tests/tpm-seal-test.nu
@@ -58,7 +58,7 @@ def emit-claims [verdict: string, detail: record] {
         detail:  $detail
     }
     print ""
-    print "# smolBSD TPM seal/unseal result"
+    print "# smolfire TPM seal/unseal result"
     $claims | to toml | print
 }
 
@@ -68,11 +68,11 @@ def emit-claims [verdict: string, detail: record] {
 #
 # --dry-run   print tpm2-tools commands without executing them
 # --tcti      TPM command transmission interface (default: device:/dev/tpm0)
-# --work-dir  scratch directory for key + blob files (default: /tmp/smolbsd-tpm-seal-test)
+# --work-dir  scratch directory for key + blob files (default: /tmp/smolfire-tpm-seal-test)
 export def main [
     --dry-run               # print commands without executing (for hosts without tpm2-tools)
     --tcti:    string = "device:/dev/tpm0"           # TCTI string passed to tpm2-tools
-    --work-dir: string = "/tmp/smolbsd-tpm-seal-test" # scratch dir for keys and blobs
+    --work-dir: string = "/tmp/smolfire-tpm-seal-test" # scratch dir for keys and blobs
 ] {
     # Preflight: skip gracefully when tpm2-tools is not installed.
     if (which tpm2_createprimary | length) == 0 {
@@ -90,7 +90,7 @@ export def main [
         }
     }
 
-    let secret_text = "smolbsd-seal-test"
+    let secret_text = "smolfire-seal-test"
 
     log-step "tpm_seal_test_start" {
         dry_run:  $dry_run

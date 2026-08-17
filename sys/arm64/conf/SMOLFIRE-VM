@@ -1,7 +1,7 @@
 # Materialized from plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md
 # Authoring chain: planner@smolbsd.local <task-0005.planner@smolbsd.local>
 #
-# SMOLBSD — FreeBSD 15 arm64 minimal QEMU-only kernel
+# SMOLFIRE-VM — FreeBSD 15 arm64 minimal QEMU-only kernel
 # Target: headless VM, virtio block + net, UFS root, no physical hardware.
 # Derived from arm64/conf/VIRT (QEMU-optimized baseline).
 #
@@ -14,7 +14,7 @@
 # non-QEMU hardware; then add arm64/QEMU-specific tuning.
 
 cpu ARM64
-ident SMOLBSD
+ident SMOLFIRE-VM
 
 include "std.arm64"
 include "std.dev"
@@ -27,7 +27,7 @@ options FDT                     # Flattened Device Tree support; required for vi
 
 # -----------------------------------------------------------------------
 # Strip physical storage controllers (not needed in QEMU virtio-blk world)
-# Same list as amd64 SMOLBSD; all are dead code in a virt-machine context.
+# Same list as amd64 SMOLFIRE-VM; all are dead code in a virt-machine context.
 # -----------------------------------------------------------------------
 nodevice ahc            # Adaptec SCSI — physical only
 nodevice ahd            # Adaptec Ultra320 — physical only

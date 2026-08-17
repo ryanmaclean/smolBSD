@@ -1,18 +1,18 @@
 #!/usr/bin/env expect
 # Physical board boot gate — Raspberry Pi 5 (BCM2712)
 # Materialized from plans/tinyos/PHASE-2-PHYSICAL-BOOT.md §6-7
-# Authoring chain: planner@smolbsd.local <task-0023.coord@smolbsd.local>
+# Authoring chain: planner@smolfire.local <task-0023.coord@smolfire.local>
 #
 # tests/time-to-ready-pi5.exp
 #
 # Prerequisites:
 #   - CP2102 or similar 3.3V USB-UART adapter connected to Pi 5 debug UART header
-#   - Serial device available at $env(SMOLBSD_SERIAL) or default /dev/ttyUSB0
+#   - Serial device available at $env(SMOLFIRE_SERIAL) or default /dev/ttyUSB0
 #   - Board powered off before running; script powers on via human action or USB relay
-#   - smolbsd-aarch64-pi5.raw written to SD card (tests/sd-write.nu)
+#   - smolfire-aarch64-pi5.raw written to SD card (tests/sd-write.nu)
 #
 # Console: PL011 UART (Pi 5) — 115200 8N1
-# Serial device: override with env var SMOLBSD_SERIAL (e.g. /dev/tty.usbserial-0001)
+# Serial device: override with env var SMOLFIRE_SERIAL (e.g. /dev/tty.usbserial-0001)
 #
 # Acceptance: login prompt appears within 60s of first serial output
 # (PHASE-2-PHYSICAL-BOOT.md §7.2 Pi 5 gate)
@@ -23,8 +23,8 @@ set threshold_sec 60
 set timeout [expr {$threshold_sec + 10}]
 
 # Resolve serial device: env var > default
-if {[info exists env(SMOLBSD_SERIAL)]} {
-    set serial_dev $env(SMOLBSD_SERIAL)
+if {[info exists env(SMOLFIRE_SERIAL)]} {
+    set serial_dev $env(SMOLFIRE_SERIAL)
 } else {
     set serial_dev /dev/ttyUSB0
 }
@@ -32,7 +32,7 @@ if {[info exists env(SMOLBSD_SERIAL)]} {
 # Verify device node exists before spawning
 if {![file exists $serial_dev]} {
     puts stderr "ERROR: serial device $serial_dev not found"
-    puts stderr "Set SMOLBSD_SERIAL to override (e.g. /dev/tty.usbserial-0001)"
+    puts stderr "Set SMOLFIRE_SERIAL to override (e.g. /dev/tty.usbserial-0001)"
     exit 1
 }
 

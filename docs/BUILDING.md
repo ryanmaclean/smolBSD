@@ -21,7 +21,7 @@ Run this first. It checks root, disk space, source tree, kernel config, and
 `/etc/src.conf` without making any changes:
 
 ```sh
-sudo nu bin/build-smolbsd.nu --check
+sudo nu bin/build-smolfire-vm.nu --check
 ```
 
 Fix any reported ERRORs before proceeding. WARNINGs about missing kernel configs
@@ -30,7 +30,7 @@ or `/etc/src.conf` are auto-resolved by the setup phase.
 ## Step 1 — Full build
 
 ```sh
-sudo nu bin/build-smolbsd.nu
+sudo nu bin/build-smolfire-vm.nu
 ```
 
 This runs the complete pipeline in order:
@@ -38,19 +38,19 @@ This runs the complete pipeline in order:
 1. Setup — writes `/etc/src.conf`, sets git `safe.directory`, installs kernel
    configs and release conf into `/usr/src` if missing
 2. `buildworld` (the long step — 1–3 h depending on hardware)
-3. `buildkernel KERNCONF=SMOLBSD`
+3. `buildkernel KERNCONF=SMOLFIRE-VM`
 4. Kernel obj cleanup — **disabled** (FIX-9): `make packages` stages the kernel
    from the objdir the old FIX-8 cleanup used to delete
-5. `make cloudware-release` (CLOUDWARE=smolbsd, SMOLBSDCONF=<conf>) — produces
+5. `make cloudware-release` (CLOUDWARE=smolfire, SMOLFIRECONF=<conf>) — produces
    the qcow2 artifact. FIX-9: the old `make vm-image ... CLOUDWARE_CONF=` form
    never sourced the release conf (CLOUDWARE_CONF is not a real Makefile
    variable and vm-image is WITH_VMIMAGES-gated), so the pkgbase filter,
    size-trim, and sshd enablement were silently skipped.
 
-Build output streams to `/var/tmp/smolbsd-build.log`. Watch progress with:
+Build output streams to `/var/tmp/smolfire-build.log`. Watch progress with:
 
 ```sh
-tail -f /var/tmp/smolbsd-build.log
+tail -f /var/tmp/smolfire-build.log
 ```
 
 ## Step 2 — Where the qcow2 ends up
@@ -58,7 +58,7 @@ tail -f /var/tmp/smolbsd-build.log
 ```
 # cloudware-release writes to the release objdir root, e.g.:
 /usr/obj/usr/src/arm64.aarch64/release/*.ufs.qcow2
-# (legacy vm-image path was .../release/vm/FreeBSD-15*SMOLBSD*.qcow2)
+# (legacy vm-image path was .../release/vm/FreeBSD-15*SMOLFIRE-VM*.qcow2)
 ```
 
 The script prints the exact path, size, sha256, and elapsed time on completion.
@@ -69,7 +69,7 @@ Two CI paths exist; neither needs a human at an SSH prompt:
 
 | Workflow | Runner | What it does |
 |---|---|---|
-| `.github/workflows/build-image-hosted.yml` | **GitHub-hosted** `ubuntu-latest` (x64 runners expose `/dev/kvm`) | Boots a stock FreeBSD 15.0 BASIC-CLOUDINIT VM under KVM, shallow-clones `releng/15.0`, runs `bin/build-smolbsd.nu` inside, then runs the **size gate** and (amd64) the **KVM boot gate** on the runner and uploads the qcow2 as a workflow artifact. Dispatch with `arch: amd64` or `arch: aarch64` (aarch64 is cross-built; its boot gate needs ARM hardware — see `docs/BHYVE-GATE-AMD64.md`). |
+| `.github/workflows/build-image-hosted.yml` | **GitHub-hosted** `ubuntu-latest` (x64 runners expose `/dev/kvm`) | Boots a stock FreeBSD 15.0 BASIC-CLOUDINIT VM under KVM, shallow-clones `releng/15.0`, runs `bin/build-smolfire-vm.nu` inside, then runs the **size gate** and (amd64) the **KVM boot gate** on the runner and uploads the qcow2 as a workflow artifact. Dispatch with `arch: amd64` or `arch: aarch64` (aarch64 is cross-built; its boot gate needs ARM hardware — see `docs/BHYVE-GATE-AMD64.md`). |
 | `.github/workflows/build-image.yml` | self-hosted Linux/KVM runner | The original PATH-B TPM-image pipeline with a pre-staged src tree. |
 
 Hosted-runner caveats: buildworld at `-j4` inside the nested VM takes ~2.5–4 h
@@ -109,13 +109,13 @@ nu bin/sizereport.nu smolbsd-build-vm.log --top 30
 If buildworld already completed and the obj tree is intact:
 
 ```sh
-sudo nu bin/build-smolbsd.nu --skip-buildworld
+sudo nu bin/build-smolfire-vm.nu --skip-buildworld
 ```
 
 If you only want buildworld + buildkernel and not the image yet:
 
 ```sh
-sudo nu bin/build-smolbsd.nu --skip-release
+sudo nu bin/build-smolfire-vm.nu --skip-release
 ```
 
 ## amd64 cross-compile
@@ -123,7 +123,7 @@ sudo nu bin/build-smolbsd.nu --skip-release
 On an aarch64 host, build the amd64 image with:
 
 ```sh
-sudo nu bin/build-smolbsd.nu --arch amd64
+sudo nu bin/build-smolfire-vm.nu --arch amd64
 ```
 
 This sets `TARGET=amd64 TARGET_ARCH=amd64` for all make invocations.
@@ -151,7 +151,7 @@ These are the Phase I lessons that silently break a naive build:
 | Run the release image step as root | Empty pkgbase produced silently |
 | `VMSIZE=2g` | 4g default needs 4+ GiB of free disk |
 | Kernel obj KEPT until after the image step (FIX-9 reverses FIX-8) | `make packages` fails staging the kernel from the deleted objdir |
-| `cloudware-release` + `SMOLBSDCONF=` (FIX-9) | `vm-image ... CLOUDWARE_CONF=` never sources the conf — filter/trim/sshd silently skipped |
+| `cloudware-release` + `SMOLFIRECONF=` (FIX-9) | `vm-image ... CLOUDWARE_CONF=` never sources the conf — filter/trim/sshd silently skipped |
 | `git config safe.directory /usr/src` | Release make fails on git version check |
 | Disk check before starting | Late failure after hours of build time |
 | Gated pipeline (abort on any stage failure) | Release starts after failed buildworld |

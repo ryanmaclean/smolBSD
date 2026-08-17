@@ -1,7 +1,7 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
 # hetzner-bhyve-provision.nu — provision a Hetzner host suitable for
-# running bhyve with real VT-x/AMD-V for the smolBSD Phase-III TPM tests.
+# running bhyve with real VT-x/AMD-V for the smolfire Phase-III TPM tests.
 #
 # Background: Vultr bare-metal rejects FreeBSD 15 on all plans (HTTP 400) and
 # Vultr cloud KVM does not expose hardware virtualisation to guests.  Hetzner
@@ -48,7 +48,7 @@
 #                   robot:  ax41-nvme (default) — used for order catalogue lookup
 #   --location      hcloud: nbg1 (default, Nuremberg) | fsn1 | hel1 | ash | hil
 #                   robot:  NBG1 (default) | FSN1 | HEL1
-#   --label         Server name / label  (default: smolbsd-bhyve)
+#   --label         Server name / label  (default: smolfire-bhyve)
 #   --poll          Wait for server to reach running state and SSH to respond
 #   --poll-timeout  Max seconds to wait  (default: 600)
 #   --dry-run       Print request bodies without sending
@@ -294,20 +294,20 @@ def robot-poll-until-ready [
 # Installs bhyve host prerequisites and marks the host ready.
 def bhyve-userdata [] {
     "#!/bin/sh
-# smolBSD bhyve host first-boot setup
+# smolfire bhyve host first-boot setup
 # Installed by hetzner-bhyve-provision.nu user-data
 # Mirrors the setup in bin/bhyve-host-setup.nu
-pkg install -y nushell swtpm bhyve-firmware qemu-utils expect git 2>&1 | logger -t smolbsd-setup
-kldload vmm nmdm if_tap if_bridge 2>&1 | logger -t smolbsd-setup
+pkg install -y nushell swtpm bhyve-firmware qemu-utils expect git 2>&1 | logger -t smolfire-setup
+kldload vmm nmdm if_tap if_bridge 2>&1 | logger -t smolfire-setup
 sysrc kld_list+=\"vmm nmdm if_tap if_bridge\"
 # Verify VT-x is available (amd64 only)
 if [ -c /dev/vmm ]; then
-    logger -t smolbsd-setup 'VT-x/AMD-V confirmed: /dev/vmm present'
+    logger -t smolfire-setup 'VT-x/AMD-V confirmed: /dev/vmm present'
 else
-    logger -t smolbsd-setup 'WARNING: /dev/vmm not created — bhyve will not work'
+    logger -t smolfire-setup 'WARNING: /dev/vmm not created — bhyve will not work'
 fi
-touch /var/run/smolbsd-host-ready
-logger -t smolbsd-setup 'bhyve host first-boot setup complete'
+touch /var/run/smolfire-host-ready
+logger -t smolfire-setup 'bhyve host first-boot setup complete'
 "
 }
 
@@ -359,7 +359,7 @@ def provision-hcloud [
         image:       ($img_id | into string)
         user_data:   (bhyve-userdata)
         labels: {
-            project: "smolbsd"
+            project: "smolfire"
             purpose: "bhyve-host"
             phase:   "phase-iii"
         }
@@ -416,7 +416,7 @@ def provision-hcloud [
         os:           "FreeBSD (Hetzner Cloud)"
         ssh_user:     "root"
         note:         $"ccx* servers expose AMD-V to guest — /dev/vmm should be present after first boot"
-        next_step:    $"ssh root@($final_ip) 'nu smolbsd/bin/bhyve-host-setup.nu'"
+        next_step:    $"ssh root@($final_ip) 'nu smolfire/bin/bhyve-host-setup.nu'"
         setup_script: "bin/bhyve-host-setup.nu"
     }
 
@@ -453,7 +453,7 @@ def provision-robot [
         log-step "dry-run" "would POST to /order/server/transaction" {
             product_id:   $"(example — query /order/server/product to find ($server_type) in ($location))"
             authorized:   "yes"
-            comment:      "smolbsd-bhyve Phase-III test host"
+            comment:      "smolfire-bhyve Phase-III test host"
             dist:         "FreeBSD-15.0"
             arch:         64
             lang:         "en"
@@ -524,7 +524,7 @@ def provision-robot [
     let order_form = {
         product_id:   $prod_id
         authorized:   "1"
-        comment:      "smolbsd-bhyve Phase-III test host"
+        comment:      "smolfire-bhyve Phase-III test host"
         dist:         "FreeBSD-current"
         arch:         "64"
         lang:         "en"
@@ -591,7 +591,7 @@ def provision-robot [
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
-# Provision a Hetzner host for smolBSD bhyve testing.
+# Provision a Hetzner host for smolfire bhyve testing.
 #
 # Hetzner is the recommended alternative to Vultr after the Vultr FreeBSD-on-
 # bare-metal restriction (HTTP 400 on all plans, task-0030) and KVM no-VT-x
@@ -608,7 +608,7 @@ def main [
     --type:         string = "hcloud"            # hcloud | robot
     --server-type:  string = "ccx23"             # hcloud: ccx23|ccx33|ccx43; robot: ax41-nvme
     --location:     string = "nbg1"              # hcloud: nbg1|fsn1|hel1|ash|hil; robot: NBG1|FSN1|HEL1
-    --label:        string = "smolbsd-bhyve"
+    --label:        string = "smolfire-bhyve"
     --poll                                       # wait for server to reach running/ready state
     --poll-timeout: int    = 600                 # seconds (hcloud); robot uses 1800 for bare-metal
     --dry-run                                    # print request bodies without sending

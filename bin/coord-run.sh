@@ -1,5 +1,5 @@
 #!/bin/sh
-# coord-run.sh — Loop runner for the smolBSD coordinator FSM.
+# coord-run.sh — Loop runner for the smolfire coordinator FSM.
 #
 # Invokes `nu bin/coord-tick.nu` repeatedly, sleeping between ticks.
 # Supports an emergency-stop mechanism via a HALT sentinel file.

@@ -1,22 +1,22 @@
 #!/usr/bin/env expect
 # tests/time-to-ready-amd64-tcg.exp
-# Acceptance test for amd64 smolBSD image.
+# Acceptance test for amd64 smolfire image.
 #
 # On x86 KVM host (Vultr, bare-metal x86):
-#   expect tests/time-to-ready-amd64-tcg.exp build/FreeBSD-15-amd64-smolbsd.qcow2 kvm
+#   expect tests/time-to-ready-amd64-tcg.exp build/FreeBSD-15-amd64-smolfire.qcow2 kvm
 #   Gate: TIME_TO_LOGIN <= 30s
 #
 # On Apple Silicon macOS (TCG only — no HVF for x86 guests):
-#   expect tests/time-to-ready-amd64-tcg.exp build/FreeBSD-15-amd64-smolbsd.qcow2 tcg
+#   expect tests/time-to-ready-amd64-tcg.exp build/FreeBSD-15-amd64-smolfire.qcow2 tcg
 #   Note: x86 TCG on ARM64 is prohibitively slow (>1200s to login).
 #         This mode verifies bootloader reachability only, not time gate.
 #
-# Authoring chain: builder@smolbsd.local <task-0043.builder@smolbsd.local>
+# Authoring chain: builder@smolfire.local <task-0043.builder@smolfire.local>
 
 set qcow2 [lindex $argv 0]
 set mode  [lindex $argv 1]
 
-if {$qcow2 eq ""} { set qcow2 "build/FreeBSD-15-amd64-smolbsd.qcow2" }
+if {$qcow2 eq ""} { set qcow2 "build/FreeBSD-15-amd64-smolfire.qcow2" }
 if {$mode  eq ""} { set mode  "tcg" }
 
 if {$mode eq "kvm"} {

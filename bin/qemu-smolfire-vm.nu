@@ -1,13 +1,13 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# qemu-smolbsd.nu — launch smolBSD inside QEMU with optional swtpm TPM support.
+# qemu-smolfire-vm.nu — launch smolfire inside QEMU with optional swtpm TPM support.
 #
-# Parallel to bin/bhyve-smolbsd.nu but targets QEMU rather than bhyve.
+# Parallel to bin/bhyve-smolfire-vm.nu but targets QEMU rather than bhyve.
 # Works on macOS (HVF acceleration), Linux (KVM), and any host with QEMU (TCG
 # fallback).  TPM is supported on both aarch64 and amd64 via QEMU's tpm-tis-device
 # and tpm-tis backends respectively.
 #
-# Key differences from bhyve-smolbsd.nu:
+# Key differences from bhyve-smolfire-vm.nu:
 #   - Accelerator auto-detected: HVF (macOS) > KVM (Linux) > TCG (fallback)
 #   - No bhyvectl / nmdm — console is -serial stdio or a unix/file path
 #   - TPM works on both arches: tpm-tis-device (aarch64), tpm-tis (amd64)
@@ -31,12 +31,12 @@
 #     --ctrl type=unixio,path=<sock> --daemon
 #
 # Usage:
-#   nu bin/qemu-smolbsd.nu --image FreeBSD-15-arm64-smolbsd.qcow2
-#   nu bin/qemu-smolbsd.nu --image smolbsd-amd64.raw --arch amd64 --tpm
-#   nu bin/qemu-smolbsd.nu --image smolbsd.qcow2 --dry-run
-#   nu bin/qemu-smolbsd.nu --image smolbsd.qcow2 --accel tcg --cpus 4 --mem 512M
+#   nu bin/qemu-smolfire-vm.nu --image FreeBSD-15-arm64-smolfire.qcow2
+#   nu bin/qemu-smolfire-vm.nu --image smolfire-amd64.raw --arch amd64 --tpm
+#   nu bin/qemu-smolfire-vm.nu --image smolfire.qcow2 --dry-run
+#   nu bin/qemu-smolfire-vm.nu --image smolfire.qcow2 --accel tcg --cpus 4 --mem 512M
 #
-# See: bin/bhyve-smolbsd.nu   — bhyve equivalent
+# See: bin/bhyve-smolfire-vm.nu   — bhyve equivalent
 #      bin/swtpm-setup.nu      — swtpm lifecycle helper
 #      tests/time-to-ready-aarch64.exp  — QEMU aarch64 boot gate
 #      plans/tinyos/PHASE-3-TPM.md      — TPM test plan
@@ -44,7 +44,7 @@
 # ── Logging ────────────────────────────────────────────────────────────────────
 
 # Emit a timestamped TOML step log line to stdout.
-# Same convention as bhyve-smolbsd.nu and the rest of the smolBSD toolchain.
+# Same convention as bhyve-smolfire-vm.nu and the rest of the smolfire toolchain.
 def log-step [step: string, msg: string, extra: record = {}] {
     let ts   = date now | format date "%Y-%m-%dT%H:%M:%SZ"
     let base = {ts: $ts, step: $step, msg: $msg}
@@ -376,35 +376,35 @@ def preflight [arch: string, accel: string, bios: string, tpm: bool] {
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-# Launch smolBSD in QEMU with optional swtpm TPM attachment.
+# Launch smolfire in QEMU with optional swtpm TPM attachment.
 #
-# --image      Path to smolBSD qcow2 or raw disk image (required)
+# --image      Path to smolfire qcow2 or raw disk image (required)
 # --arch       Guest architecture: aarch64 (default) or amd64
 # --mem        Guest RAM, e.g. 256M, 512M, 1G (default: 256M)
 # --cpus       Number of virtual CPUs (default: 2)
 # --tpm        Attach an swtpm TPM 2.0 device to the guest
-# --tpm-state  swtpm state directory (default: /var/run/smolbsd-qemu-tpm)
+# --tpm-state  swtpm state directory (default: /var/run/smolfire-qemu-tpm)
 # --hostfwd-ssh  Host port forwarded to guest :22 (default: 2241)
 # --serial     QEMU -serial target: stdio (default), file:/path, unix:/path,server
 # --dry-run    Print the QEMU command line without executing
-# --name       Label used in log output (default: smolbsd-qemu)
+# --name       Label used in log output (default: smolfire-qemu)
 # --accel      Override accelerator: hvf | kvm | tcg (default: auto-detect)
 def main [
-    --image:        string                                       # path to smolBSD qcow2 or raw image
+    --image:        string                                       # path to smolfire qcow2 or raw image
     --arch:         string = "aarch64"                           # aarch64 | amd64
     --mem:          string = "256M"
     --cpus:         int    = 2
     --tpm                                                        # attach swtpm TPM 2.0 device
-    --tpm-state:    string = "/var/run/smolbsd-qemu-tpm"         # swtpm state directory
+    --tpm-state:    string = "/var/run/smolfire-qemu-tpm"         # swtpm state directory
     --hostfwd-ssh:  int    = 2241                                # host port -> guest :22
     --serial:       string = "stdio"                             # stdio | file:/path | unix:/path,server
     --dry-run                                                    # print command; do not run
-    --name:         string = "smolbsd-qemu"                      # label for log output
+    --name:         string = "smolfire-qemu"                      # label for log output
     --accel:        string = ""                                  # "" = auto-detect
 ] {
     # ── Validate ────────────────────────────────────────────────────────────
     if $image == null or ($image | str length) == 0 {
-        error make {msg: "--image is required (path to smolBSD qcow2 or raw image)"}
+        error make {msg: "--image is required (path to smolfire qcow2 or raw image)"}
     }
 
     if not ($image | path exists) {
@@ -428,7 +428,7 @@ def main [
     let bios    = find-bios $arch
     let img_fmt = detect-image-format $image
 
-    log-step "preflight" "qemu-smolbsd starting" {
+    log-step "preflight" "qemu-smolfire starting" {
         image:       $image
         arch:        $arch
         accel:       $accel
@@ -515,7 +515,7 @@ def main [
         stop-swtpm $tpm_state
     }
 
-    log-step "done" "qemu-smolbsd finished" {exit_code: $qemu_exit}
+    log-step "done" "qemu-smolfire finished" {exit_code: $qemu_exit}
 
     if $qemu_exit != 0 {
         exit $qemu_exit

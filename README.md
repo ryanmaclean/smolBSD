@@ -7,9 +7,10 @@
 > Heitor — the NetBSD micro-VM builder (smolbsd.org, FOSDEM 2025/2026) that
 > inspired this project and predates it. This project is **not affiliated**
 > with it; we adopted the name of our microVM flagship, **SMOLFIRE**,
-> project-wide. Build-pipeline identifiers (`SMOLBSD` kernconfs,
-> `smolbsd-qemu*.conf`, artifact names) keep the old name until the final
-> rename phase — see the rename tracking issue (#41).
+> project-wide. Kernconfs: `SMOLFIRE` (microVM one-ELF), `SMOLFIRE-VM`
+> (full VM, formerly `SMOLBSD`), `SMOLFIRE-PI5`/`SMOLFIRE-RK3588` (boards).
+> Guest login is now `root`/`smolfire`; images ≤ 0.4.0 still use the old
+> `smolbsd` password. History (rename phases): issue #41.
 
 ## What it is
 
@@ -45,7 +46,7 @@ Three ways in, depending on what you have:
    [hosted build pipeline](.github/workflows/build-image-hosted.yml) from the
    Actions tab — it builds the qcow2 on a stock GitHub runner and uploads it
    as a workflow artifact (see `docs/BUILDING.md`, "Building in a pipeline").
-   Gate-passing builds can be published via the manual `Release smolBSD Image` workflow —
+   Gate-passing builds can be published via the manual `Release smolfire Image` workflow —
    check [Releases](https://github.com/ryanmaclean/smolfire/releases) for
    prebuilt images.
 2. **Have a FreeBSD 15 host?** Build natively — see **Build** below.
@@ -53,12 +54,12 @@ Three ways in, depending on what you have:
 
    ```sh
    qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M \
-     -drive file=smolbsd.qcow2,format=qcow2,if=virtio \
+     -drive file=smolfire.qcow2,format=qcow2,if=virtio \
      -nic user,model=virtio-net-pci -nographic
    # (-accel hvf on macOS; drop -accel/-cpu for slow TCG anywhere else)
    ```
 
-   Log in as `root` / password `smolbsd`. **Dev images only**: they ship
+   Log in as `root` / password `smolfire`. **Dev images only**: they ship
    `PermitRootLogin yes` + password auth — change the password on first
    login and never expose one beyond QEMU user-mode networking.
 
@@ -66,8 +67,8 @@ Three ways in, depending on what you have:
 
 | Path | What lives there |
 |---|---|
-| `bin/` | Coordinator FSM (`coord-*.nu`, run via `sh bin/coord-run.sh`), image build (`build-smolbsd.nu`), ops (`harvest.sh`, `qemu-smolbsd.nu`, bhyve tooling) |
-| `sys/`, `release/tools/` | SMOLBSD kernel configs and release image confs |
+| `bin/` | Coordinator FSM (`coord-*.nu`, run via `sh bin/coord-run.sh`), image build (`build-smolfire-vm.nu`), ops (`harvest.sh`, `qemu-smolfire-vm.nu`, bhyve tooling) |
+| `sys/`, `release/tools/` | SMOLFIRE kernel configs and release image confs |
 | `tests/` | Nu unit/integration suites + `expect` boot gates (`sh tests/run-all.sh`) |
 | `docs/` | `BUILDING.md` (start here), `UR-BSD.md`/`UR-BSD-VERIFY.md` (size work), `BHYVE-GATE-AMD64.md` |
 | `plans/`, `.planning/` | Phase planning records (historical) |
@@ -79,12 +80,12 @@ Full pipeline lives in `docs/BUILDING.md`. The one-liner from a FreeBSD 15
 aarch64 host with `/usr/src` checked out at `releng/15.0`:
 
 ```sh
-sudo nu bin/build-smolbsd.nu
+sudo nu bin/build-smolfire-vm.nu
 ```
 
-This runs setup, `buildworld`, `buildkernel KERNCONF=SMOLBSD`, kernel obj
+This runs setup, `buildworld`, `buildkernel KERNCONF=SMOLFIRE-VM`, kernel obj
 cleanup, and `make cloudware-release` (the release image step). Output streams
-to `/var/tmp/smolbsd-build.log`.
+to `/var/tmp/smolfire-build.log`.
 Use `--check` for a read-only preflight, `--skip-buildworld` to resume after
 a long build, or `--arch amd64` to cross-compile.
 
@@ -106,7 +107,7 @@ For diagnosing image bloat, mount the rootfs and dump the top directories,
 files, and pkgbase packages by size:
 
 ```sh
-bin/analyze-image.sh path/to/FreeBSD-15-aarch64-smolbsd.qcow2
+bin/analyze-image.sh path/to/FreeBSD-15-aarch64-smolfire.qcow2
 ```
 
 Works on Linux (qemu-nbd) and FreeBSD (mdconfig). Writes a `.size-report.txt`

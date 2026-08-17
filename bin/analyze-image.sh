@@ -6,7 +6,7 @@
 # on a FreeBSD host with mdconfig + mount (no libguestfs needed).
 #
 # Usage:
-#   bin/analyze-image.sh path/to/FreeBSD-15-aarch64-smolbsd.qcow2
+#   bin/analyze-image.sh path/to/FreeBSD-15-aarch64-smolfire.qcow2
 #
 # Reports:
 #   - on-disk allocated size (qemu-img info: actual)
@@ -47,7 +47,7 @@ uname_s=$(uname -s)
 log() { printf '%s\n' "$*" | tee -a "$REPORT"; }
 
 : > "$REPORT"
-log "smolBSD image size analysis"
+log "smolfire image size analysis"
 log "image:  $IMG"
 log "target: <= ${TARGET_MIB} MiB"
 log "host:   $uname_s"
@@ -62,7 +62,7 @@ if command -v qemu-img >/dev/null 2>&1; then
 fi
 
 # ---- mount the rootfs in a portable way -----------------------------------
-MOUNT=$(mktemp -d -t smolbsd-analyze.XXXXXX)
+MOUNT=$(mktemp -d -t smolfire-analyze.XXXXXX)
 # shellcheck disable=SC2317  # called via trap EXIT INT TERM
 cleanup() {
     case "$uname_s" in
@@ -95,7 +95,7 @@ case "$uname_s" in
         ;;
     FreeBSD)
         # Convert qcow2 to raw temp, attach via mdconfig
-        RAW=$(mktemp -t smolbsd-analyze.XXXXXX.raw)
+        RAW=$(mktemp -t smolfire-analyze.XXXXXX.raw)
         qemu-img convert -O raw "$IMG" "$RAW"
         MD=$(sudo mdconfig -a -t vnode -f "$RAW" | sed 's/^md//')
         # rootfs partition — try common gpt names

@@ -1,8 +1,8 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# bhyve-smolbsd.nu — launch smolBSD inside bhyve with optional swtpm
+# bhyve-smolfire-vm.nu — launch smolfire inside bhyve with optional swtpm
 #
-# Boots a smolBSD qcow2 or raw image in bhyve on a FreeBSD 15 host.
+# Boots a smolfire qcow2 or raw image in bhyve on a FreeBSD 15 host.
 # With --tpm, starts an swtpm socket daemon and passes it to bhyve as a
 # virtio-tpm device; the guest sees /dev/tpm0 and can read PCR0 via tpm2-tools.
 # --tpm requires --arch amd64 (arm64 bhyve has no virtio-tpm device).
@@ -15,12 +15,12 @@
 #   - tap0 already created and bridged (ifconfig tap0 create; ifconfig bridge0 addm tap0)
 #
 # amd64 usage:
-#   nu bin/bhyve-smolbsd.nu --image smolbsd-amd64.raw
-#   nu bin/bhyve-smolbsd.nu --image smolbsd-amd64.raw --tpm --dry-run
+#   nu bin/bhyve-smolfire-vm.nu --image smolfire-amd64.raw
+#   nu bin/bhyve-smolfire-vm.nu --image smolfire-amd64.raw --tpm --dry-run
 #
 # arm64 usage:
-#   nu bin/bhyve-smolbsd.nu --image smolbsd-arm64.raw --arch arm64
-#   nu bin/bhyve-smolbsd.nu --image smolbsd-arm64.raw --arch arm64 --dry-run
+#   nu bin/bhyve-smolfire-vm.nu --image smolfire-arm64.raw --arch arm64
+#   nu bin/bhyve-smolfire-vm.nu --image smolfire-arm64.raw --arch arm64 --dry-run
 #
 # CLI differences between architectures (FreeBSD 15 bhyve):
 #
@@ -204,20 +204,20 @@ def preflight-arm64 [] {
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main [
-    --image:       string                                # path to smolBSD qcow2 or raw image
+    --image:       string                                # path to smolfire qcow2 or raw image
     --arch:        string = "amd64"                      # amd64 | arm64 (aarch64)
     --mem:         string = "512M"
     --cpus:        int    = 2
     --tpm                                                # attach swtpm as virtio-tpm (amd64 only)
-    --tpm-state:   string = "/var/run/smolbsd-tpm"       # swtpm state directory
+    --tpm-state:   string = "/var/run/smolfire-tpm"       # swtpm state directory
     --hostfwd-ssh: int    = 2240                         # host port forwarded to guest :22
     --console:     string = "/dev/nmdm0A"                # amd64: bhyve null-modem device (com1)
-    --name:        string = "smolbsd"
+    --name:        string = "smolfire"
     --dry-run                                            # print commands without running
 ] {
     # ── Validate inputs ─────────────────────────────────────────────────────
     if $image == null or $image == "" {
-        error make {msg: "--image is required (path to smolBSD raw or qcow2 image)"}
+        error make {msg: "--image is required (path to smolfire raw or qcow2 image)"}
     }
 
     # Normalise arch: accept "aarch64" as an alias for "arm64".
@@ -236,7 +236,7 @@ def main [
         error make {msg: $"image not found: ($image)"}
     }
 
-    log-step "preflight" "bhyve-smolbsd starting" {
+    log-step "preflight" "bhyve-smolfire starting" {
         image:   $image
         arch:    $arch
         mem:     $mem
@@ -331,7 +331,7 @@ def main [
         stop-swtpm $tpm_state
     }
 
-    log-step "done" "bhyve-smolbsd finished" {exit_code: $bhyve_exit}
+    log-step "done" "bhyve-smolfire finished" {exit_code: $bhyve_exit}
 
     if $bhyve_exit != 0 {
         exit $bhyve_exit

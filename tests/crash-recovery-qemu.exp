@@ -1,12 +1,12 @@
 #!/usr/bin/env expect
 # SPDX-License-Identifier: Apache-2.0
-# crash-recovery-qemu.exp — smolBSD QEMU crash-recovery gate.
+# crash-recovery-qemu.exp — smolfire QEMU crash-recovery gate.
 #
 # Measures the full crash+recovery cycle for a QEMU guest:
 #
 #   Phase 1 — INITIAL BOOT
-#     Spawn QEMU via $SMOLBSD_QEMU_CMD.
-#     Wait for "login:" within $SMOLBSD_TIME_LIMIT seconds.
+#     Spawn QEMU via $SMOLFIRE_QEMU_CMD.
+#     Wait for "login:" within $SMOLFIRE_TIME_LIMIT seconds.
 #
 #   Phase 2 — GRACEFUL SHUTDOWN
 #     Send "shutdown -p now" via the serial console.
@@ -18,17 +18,17 @@
 #   Phase 3 — RECOVERY BOOT
 #     Spawn QEMU again with the same command.
 #     T0 = spawn time.
-#     Wait for "login:" within $SMOLBSD_RECOVERY_LIMIT seconds.
+#     Wait for "login:" within $SMOLFIRE_RECOVERY_LIMIT seconds.
 #     Record RECOVERY_TIME=Ns.
 #     Acceptance: RECOVERY_TIME <= 90s.
 #
 # Environment variables:
-#   SMOLBSD_QEMU_CMD         — full QEMU command (required; same as time-to-ready-qemu.exp)
-#   SMOLBSD_TIME_LIMIT       — initial boot threshold in seconds (default: 30)
-#   SMOLBSD_RECOVERY_LIMIT   — recovery boot threshold in seconds (default: 90)
-#   SMOLBSD_ARCH             — informational; printed in output (default: aarch64)
-#   SMOLBSD_GUEST_USER       — login username for shutdown command (default: root)
-#   SMOLBSD_GUEST_PASSWORD   — guest password, empty string = no password (default: "")
+#   SMOLFIRE_QEMU_CMD         — full QEMU command (required; same as time-to-ready-qemu.exp)
+#   SMOLFIRE_TIME_LIMIT       — initial boot threshold in seconds (default: 30)
+#   SMOLFIRE_RECOVERY_LIMIT   — recovery boot threshold in seconds (default: 90)
+#   SMOLFIRE_ARCH             — informational; printed in output (default: aarch64)
+#   SMOLFIRE_GUEST_USER       — login username for shutdown command (default: root)
+#   SMOLFIRE_GUEST_PASSWORD   — guest password, empty string = no password (default: "")
 #
 # Exit codes:
 #   0 — both boots passed and RECOVERY_TIME <= threshold
@@ -38,20 +38,20 @@
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
-set boot_limit_sec     [expr {[info exists env(SMOLBSD_TIME_LIMIT)]     ? $env(SMOLBSD_TIME_LIMIT)     : 30}]
-set recovery_limit_sec [expr {[info exists env(SMOLBSD_RECOVERY_LIMIT)] ? $env(SMOLBSD_RECOVERY_LIMIT) : 90}]
-set arch               [expr {[info exists env(SMOLBSD_ARCH)]            ? $env(SMOLBSD_ARCH)            : "aarch64"}]
-set guest_user         [expr {[info exists env(SMOLBSD_GUEST_USER)]      ? $env(SMOLBSD_GUEST_USER)      : "root"}]
-set guest_pass         [expr {[info exists env(SMOLBSD_GUEST_PASSWORD)]  ? $env(SMOLBSD_GUEST_PASSWORD)  : "smolbsd"}]
+set boot_limit_sec     [expr {[info exists env(SMOLFIRE_TIME_LIMIT)]     ? $env(SMOLFIRE_TIME_LIMIT)     : 30}]
+set recovery_limit_sec [expr {[info exists env(SMOLFIRE_RECOVERY_LIMIT)] ? $env(SMOLFIRE_RECOVERY_LIMIT) : 90}]
+set arch               [expr {[info exists env(SMOLFIRE_ARCH)]            ? $env(SMOLFIRE_ARCH)            : "aarch64"}]
+set guest_user         [expr {[info exists env(SMOLFIRE_GUEST_USER)]      ? $env(SMOLFIRE_GUEST_USER)      : "root"}]
+set guest_pass         [expr {[info exists env(SMOLFIRE_GUEST_PASSWORD)]  ? $env(SMOLFIRE_GUEST_PASSWORD)  : "smolfire"}]
 
 # Shutdown waits up to 30s for QEMU to exit after the guest poweroff command.
 set shutdown_wait_sec 30
 
-if {![info exists env(SMOLBSD_QEMU_CMD)] || $env(SMOLBSD_QEMU_CMD) eq ""} {
-    puts stderr "ERROR: SMOLBSD_QEMU_CMD is not set — see time-to-ready-qemu.exp for usage"
+if {![info exists env(SMOLFIRE_QEMU_CMD)] || $env(SMOLFIRE_QEMU_CMD) eq ""} {
+    puts stderr "ERROR: SMOLFIRE_QEMU_CMD is not set — see time-to-ready-qemu.exp for usage"
     exit 1
 }
-set qemu_cmd $env(SMOLBSD_QEMU_CMD)
+set qemu_cmd $env(SMOLFIRE_QEMU_CMD)
 
 puts "ARCH=$arch"
 puts "BOOT_LIMIT=${boot_limit_sec}s"
@@ -134,7 +134,7 @@ puts "PHASE=initial_boot_ok (${boot_elapsed}s)"
 # ── Phase 2: log in and shut down cleanly ─────────────────────────────────────
 #
 # We need a shell to run shutdown.  Log in as $guest_user.
-# FreeBSD cloud/smolBSD images typically allow root login at the serial
+# FreeBSD cloud/smolfire images typically allow root login at the serial
 # console without a password prompt (PermitRootLogin yes set by cloud-init
 # or image build).  If a password is configured, $guest_pass is sent.
 

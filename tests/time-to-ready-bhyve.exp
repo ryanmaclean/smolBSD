@@ -1,22 +1,22 @@
 #!/usr/bin/env expect
 # SPDX-License-Identifier: Apache-2.0
-# time-to-ready-bhyve.exp — smolBSD bhyve boot gate: time-to-login.
+# time-to-ready-bhyve.exp — smolfire bhyve boot gate: time-to-login.
 # Materialized from plans/tinyos/PHASE-3-TPM.md §4
-# Authoring chain: planner@smolbsd.local <task-0024.builder@smolbsd.local>
+# Authoring chain: planner@smolfire.local <task-0024.builder@smolfire.local>
 #
 # tests/time-to-ready-bhyve.exp
 #
 # Prerequisites:
-#   - bhyve VM already launched by the caller (bhyve-smolbsd.nu or manually).
+#   - bhyve VM already launched by the caller (bhyve-smolfire-vm.nu or manually).
 #     This script attaches to the console; it does not start bhyve.
 #   - Null-modem device pair created (nmdm(4)):
 #       bhyve -l com1,/dev/nmdm0A ...   # bhyve side
-#     This script connects to the B side: /dev/nmdm0B (or $SMOLBSD_CONSOLE).
+#     This script connects to the B side: /dev/nmdm0B (or $SMOLFIRE_CONSOLE).
 #   - cu(1) available (base system on FreeBSD; package on macOS via homebrew).
 #
 # Console device resolution (first match wins):
-#   1. $SMOLBSD_CONSOLE environment variable
-#   2. $SMOLBSD_SERIAL environment variable (alias accepted for consistency
+#   1. $SMOLFIRE_CONSOLE environment variable
+#   2. $SMOLFIRE_SERIAL environment variable (alias accepted for consistency
 #      with the physical-board scripts)
 #   3. Default: /dev/nmdm0B
 #
@@ -40,10 +40,10 @@ set timeout [expr {$threshold_sec + 15}]
 
 # ── Console device resolution ──────────────────────────────────────────────────
 
-if {[info exists env(SMOLBSD_CONSOLE)]} {
-    set console_dev $env(SMOLBSD_CONSOLE)
-} elseif {[info exists env(SMOLBSD_SERIAL)]} {
-    set console_dev $env(SMOLBSD_SERIAL)
+if {[info exists env(SMOLFIRE_CONSOLE)]} {
+    set console_dev $env(SMOLFIRE_CONSOLE)
+} elseif {[info exists env(SMOLFIRE_SERIAL)]} {
+    set console_dev $env(SMOLFIRE_SERIAL)
 } else {
     set console_dev "/dev/nmdm0B"
 }
@@ -58,7 +58,7 @@ puts "THRESHOLD=${threshold_sec}s"
 if {![file exists $console_dev]} {
     puts stderr "WARN: console device $console_dev not found"
     puts stderr "  On FreeBSD: ensure nmdm.ko is loaded (kldload nmdm)"
-    puts stderr "  Set SMOLBSD_CONSOLE or SMOLBSD_SERIAL to override"
+    puts stderr "  Set SMOLFIRE_CONSOLE or SMOLFIRE_SERIAL to override"
     # Do not exit — let cu fail with a clear error rather than silently.
 }
 

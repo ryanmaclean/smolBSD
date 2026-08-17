@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# coord-tick.nu — smolBSD coordinator tick (actor model, tail-recursive FSM)
+# coord-tick.nu — smolfire coordinator tick (actor model, tail-recursive FSM)
 #
 # Each invocation of `main` is ONE tick of the coordinator actor.
 # State is loaded from --state-file at startup and saved back at exit.
@@ -163,21 +163,21 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
     let msg = $"HALT ($task_id): ($reason)"
     # IRC host is internal infrastructure — never hardcoded in the repo.
     # Unset => fallback is inert ("no-route"), which the design tolerates.
-    let irc_host = $env.SMOLBSD_IRC_HOST? | default ""
+    let irc_host = $env.SMOLFIRE_IRC_HOST? | default ""
     let halt_path = [$root, "var", "mail", $"HALT.($task_id)"] | path join
 
     let result = if $irc_host == "" {
         "no-route"
     } else { try {
         # TLS attempt on 6697 — pipe IRC NICK/USER/PRIVMSG/QUIT sequence
-        let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
+        let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolfire coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
         # out+err> /dev/null: suppress both stdout (s_client banner) and stderr (error msgs)
         let out = $irc_cmds | ^openssl s_client -connect $"($irc_host):6697" -quiet -timeout 10 out+err> /dev/null
         "tls-ok"
     } catch {
         # Plain fallback on 6667
         try {
-            let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
+            let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolfire coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
             let out = $irc_cmds | ^nc -w 5 $irc_host 6667 err> /dev/null
             "plain-ok"
         } catch {
@@ -215,7 +215,7 @@ def spawn-subagent [agent_type: string, task_id: string, spool_path: string, roo
     let prompt_file = [$spawn_dir, $"($task_id).prompt.txt"] | path join
     let log_file    = [$spawn_dir, $"($task_id).log"]        | path join
 
-    let prompt = $"You are a smolBSD subagent of type ($agent_type) handling task ($task_id).
+    let prompt = $"You are a smolfire subagent of type ($agent_type) handling task ($task_id).
 
 1. Read the mbox spool at: ($spool_path)
 2. Find the message whose Message-ID contains \"<($task_id).\" — that is your task envelope.
@@ -237,8 +237,8 @@ Do not modify any other messages in the spool. Append only.
 "
     $prompt | save --force $prompt_file
 
-    # override with SMOLBSD_CLAUDE_MODEL env var
-    let model = $env | get SMOLBSD_CLAUDE_MODEL? | default "claude-sonnet-5"
+    # override with SMOLFIRE_CLAUDE_MODEL env var
+    let model = $env | get SMOLFIRE_CLAUDE_MODEL? | default "claude-sonnet-5"
     # Launch claude as a truly-detached process (survives coord-tick.nu exit).
     # Prompt is passed via stdin redirect to avoid shell quoting fragility.
     let sh_cmd = $"claude --print --bare --allowedTools 'Write,Bash,Read,Glob,Grep' --max-budget-usd 1.0 --model ($model) < '($prompt_file)' >'($log_file)' 2>&1 &"

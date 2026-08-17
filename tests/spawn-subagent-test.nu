@@ -80,7 +80,7 @@ exit 0
     let default_model = (
         open --raw "bin/coord-tick.nu"
         | lines
-        | where {|l| ($l | str contains "default") and ($l | str contains "SMOLBSD_CLAUDE_MODEL")}
+        | where {|l| ($l | str contains "default") and ($l | str contains "SMOLFIRE_CLAUDE_MODEL")}
         | first
         | parse --regex '\"([^"]+)\"$'
         | get capture0

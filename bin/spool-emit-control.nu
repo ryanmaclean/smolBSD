@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# spool-emit-control.nu — emit control messages into the smolBSD mbox spool
+# spool-emit-control.nu — emit control messages into the smolfire mbox spool
 #
 # Supported actions: rotate-key, halt, halt-all, resume
 #

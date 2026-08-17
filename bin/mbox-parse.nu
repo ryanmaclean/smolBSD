@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
-# mbox-parse.nu — mbox+TOML parser module for smolBSD coordinator
+# mbox-parse.nu — mbox+TOML parser module for smolfire coordinator
 #
 # Usage:
 #   use bin/mbox-parse.nu [parse-mbox, extract-toml, msg-id]
 #
 # Each mbox message is delimited by a line starting with "From " (space, not
 # colon).  Bodies are expected to be Content-Type: text/toml; charset=utf-8
-# per the smolBSD mailbox protocol spec §4.
+# per the smolfire mailbox protocol spec §4.
 
 # Split an mbox string into a list of message records.
 # Each record has: from_line, headers (record), body (string).

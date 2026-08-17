@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# coord-escalate.nu — D3 escalation entry point for the smolBSD coordinator
+# coord-escalate.nu — D3 escalation entry point for the smolfire coordinator
 #
 # Appends a structured ESCALATE message to the spool and writes a per-task
 # HALT marker.  Called by coord-tick when the D2 retry table is exhausted or

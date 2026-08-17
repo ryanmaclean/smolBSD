@@ -1,16 +1,16 @@
 # Materialized from plans/tinyos/PHASE-2-PHYSICAL-BOOT.md §8
 # Authoring chain: planner@smolbsd.local <task-0023.builder@smolbsd.local>
 #
-# SMOLBSD-PI5 — FreeBSD 15 arm64 kernel for Raspberry Pi 5 (BCM2712)
+# SMOLFIRE-PI5 — FreeBSD 15 arm64 kernel for Raspberry Pi 5 (BCM2712)
 # Target: headless physical boot, SD card root (UFS), USB-attached GbE,
 #         PL011 serial console, RPi UEFI (pftf Pi5 branch) FDT boot path.
-# Derived from sys/arm64/conf/SMOLBSD (QEMU-only baseline).
+# Derived from sys/arm64/conf/SMOLFIRE-VM (QEMU-only baseline).
 #
 # -----------------------------------------------------------------------
-# KEY DIFFERENCES FROM SMOLBSD (QEMU)
+# KEY DIFFERENCES FROM SMOLFIRE-VM (QEMU)
 # -----------------------------------------------------------------------
 # 1. NO virtio — physical hardware; all virtio_* lines become no-ops but
-#    the nodevice lines from SMOLBSD are retained verbatim (still correct
+#    the nodevice lines from SMOLFIRE-VM are retained verbatim (still correct
 #    on physical: virtio has no hardware to bind on bare metal, but
 #    keeping the nodevice entries prevents the drivers from being compiled
 #    in if std.virt would otherwise pull them).
@@ -39,7 +39,7 @@
 #    - sdhci            : SDHCI generic driver (maps to RPi SDHOST/SDHCI)
 #    - bcm2835_sdhci    : BCM2835-family SDHCI glue (DMA-capable SD host)
 #
-# 5. FDT retained (was already in SMOLBSD for QEMU virt; also required
+# 5. FDT retained (was already in SMOLFIRE-VM for QEMU virt; also required
 #    for Pi 5 physical boot — RPi UEFI passes a BCM2712 DTB to the loader).
 #    No change needed; documented here for clarity.
 #
@@ -55,7 +55,7 @@
 # Maintainer: planner@smolbsd.local
 
 cpu     ARM64
-ident   SMOLBSD-PI5
+ident   SMOLFIRE-PI5
 
 include "std.arm64"
 include "std.dev"
@@ -64,7 +64,7 @@ include "std.virt"
 # -----------------------------------------------------------------------
 # FDT — required for BCM2712 physical boot via RPi UEFI FDT path.
 # RPi UEFI passes bcm2712-rpi-5-b.dtb to loader.efi; the kernel must
-# parse it for device enumeration.  (Was already present in SMOLBSD for
+# parse it for device enumeration.  (Was already present in SMOLFIRE-VM for
 # QEMU virt; retained here with explicit rationale.)
 # -----------------------------------------------------------------------
 options FDT                         # Flattened Device Tree; mandatory for Pi 5
@@ -134,21 +134,21 @@ device  bge                         # Broadcom BCM5706/BCM5714/BCM54xx GbE
 # -----------------------------------------------------------------------
 # UART — PL011 at 0xfe201000 (uart0).
 # Inherited from std.arm64 via the generic uart driver.  Explicit here
-# for documentation; no additional lines needed beyond what SMOLBSD had.
+# for documentation; no additional lines needed beyond what SMOLFIRE-VM had.
 # -----------------------------------------------------------------------
 device  uart                        # Generic UART / PL011 serial console
 
 # -----------------------------------------------------------------------
 # Strip virtio — no VirtIO hardware on physical Pi 5.
-# These nodevice lines are carried from SMOLBSD verbatim.  They are
+# These nodevice lines are carried from SMOLFIRE-VM verbatim.  They are
 # correct on physical: std.virt would otherwise compile these in.
 # -----------------------------------------------------------------------
 # (virtio block / net / balloon are addressed by the nodevice lines below
-#  via the inherited SMOLBSD structure — see comment blocks that follow)
+#  via the inherited SMOLFIRE-VM structure — see comment blocks that follow)
 
 # -----------------------------------------------------------------------
 # Strip physical storage controllers irrelevant to Pi 5
-# (same list as SMOLBSD; none of these controllers exist on BCM2712)
+# (same list as SMOLFIRE-VM; none of these controllers exist on BCM2712)
 # -----------------------------------------------------------------------
 nodevice ahc
 nodevice ahd
@@ -247,7 +247,7 @@ nodevice snd_via8233
 nodevice hyperv
 
 # -----------------------------------------------------------------------
-# Production tuning (same as SMOLBSD)
+# Production tuning (same as SMOLFIRE-VM)
 # -----------------------------------------------------------------------
 makeoptions DEBUG=
 nooptions KDB_UNATTENDED
