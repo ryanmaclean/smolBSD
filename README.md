@@ -12,15 +12,6 @@
 > Guest login is now `root`/`smolfire`; images ≤ 0.4.0 still use the old
 > `smolbsd` password. History (rename phases): issue #41.
 
-> **Renaming in progress — formerly "smolBSD".** That name belongs to
-> [NetBSDfr/smolBSD](https://github.com/NetBSDfr/smolBSD) by Emile "iMil"
-> Heitor — the NetBSD micro-VM builder (smolbsd.org, FOSDEM 2025/2026) that
-> inspired this project and predates it. This project is **not affiliated**
-> with it; we're adopting the name of our microVM flagship, **SMOLFIRE**,
-> project-wide. Internal identifiers (`bin/smolbsd.nu`, `@smolbsd.local`
-> spool addressing, `SMOLBSD` kernconfs) are renamed in a tracked second
-> phase — see the rename tracking issue.
-
 ## What it is
 
 smolfire is a minimal FreeBSD 15 VM (aarch64 primary, amd64 secondary) paired
