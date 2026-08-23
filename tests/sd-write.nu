@@ -1,13 +1,13 @@
 #!/usr/bin/env nu
 # tests/sd-write.nu
-# Write a smolBSD raw image to an SD card with a removable-device safety check.
+# Write a smolfire raw image to an SD card with a removable-device safety check.
 #
 # Materialized from plans/tinyos/PHASE-2-PHYSICAL-BOOT.md §4.2
-# Authoring chain: planner@smolbsd.local <task-0023.coord@smolbsd.local>
+# Authoring chain: planner@smolfire.local <task-0023.coord@smolfire.local>
 #
 # Usage:
-#   nu tests/sd-write.nu --image smolbsd-aarch64-pi5.raw --device /dev/rdisk4
-#   nu tests/sd-write.nu --image smolbsd-aarch64-rk3588.raw --device /dev/rdisk4 --bs 4m
+#   nu tests/sd-write.nu --image smolfire-aarch64-pi5.raw --device /dev/rdisk4
+#   nu tests/sd-write.nu --image smolfire-aarch64-rk3588.raw --device /dev/rdisk4 --bs 4m
 #
 # Safety rules:
 #   - Refuses to write to any device that is not detected as removable

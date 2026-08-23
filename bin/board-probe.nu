@@ -11,7 +11,7 @@
 #   nu bin/board-probe.nu --json       # prints JSON
 #
 # Detection order:
-#   1. /etc/smolbsd/board.conf  (written at image-build time by release/tools/*.conf)
+#   1. /etc/smolfire/board.conf  (written at image-build time by release/tools/*.conf)
 #   2. /proc/device-tree/model  (Linux FDT — useful during cross-validation)
 #   3. sysctl hw.model + kenv smbios.bios.vendor  (FreeBSD fallback)
 #
@@ -25,8 +25,8 @@
 #   }
 #
 # See: plans/tinyos/PHASE-2-PHYSICAL-BOOT.md §3
-#      release/tools/smolbsd-pi5.conf
-#      release/tools/smolbsd-rk3588.conf
+#      release/tools/smolfire-pi5.conf
+#      release/tools/smolfire-rk3588.conf
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -120,18 +120,18 @@ def unknown-record []: nothing -> record {
 }
 
 # ---------------------------------------------------------------------------
-# Path 1: /etc/smolbsd/board.conf  (written by release/tools/*.conf)
+# Path 1: /etc/smolfire/board.conf  (written by release/tools/*.conf)
 # ---------------------------------------------------------------------------
 
-# Probe from /etc/smolbsd/board.conf; returns null if not present.
+# Probe from /etc/smolfire/board.conf; returns null if not present.
 def probe-from-board-conf []: nothing -> any {
-    let path = "/etc/smolbsd/board.conf"
+    let path = "/etc/smolfire/board.conf"
     if not ($path | path exists) { return null }
 
     let conf = parse-shell-conf $path
-    let soc     = $conf | get SMOLBSD_SOC?    | default ""
-    let board   = $conf | get SMOLBSD_BOARD?  | default ""
-    let uart_io = $conf | get SMOLBSD_UART_IO? | default ""
+    let soc     = $conf | get SMOLFIRE_SOC?    | default ""
+    let board   = $conf | get SMOLFIRE_BOARD?  | default ""
+    let uart_io = $conf | get SMOLFIRE_UART_IO? | default ""
 
     # Determine canonical board from SOC field.
     let known_board = match ($soc | str downcase) {

@@ -1,8 +1,8 @@
 #!/usr/bin/env expect
 # SPDX-License-Identifier: Apache-2.0
-# tpm-attest.exp — smolBSD bhyve guest TPM 2.0 attestation test.
+# tpm-attest.exp — smolfire bhyve guest TPM 2.0 attestation test.
 #
-# Connects to the guest console (nmdm null-modem device or $SMOLBSD_CONSOLE),
+# Connects to the guest console (nmdm null-modem device or $SMOLFIRE_CONSOLE),
 # logs in as root, and verifies:
 #   1. /dev/tpm0 character device exists  → TPM_PRESENT
 #   2. tpmctl -G succeeds (FreeBSD base tpmctl) or tpm2_getcap fallback reports
@@ -14,7 +14,7 @@
 #   1 — any check failed or global timeout exceeded
 #
 # Environment:
-#   SMOLBSD_CONSOLE — path to console device (default: /dev/nmdm0B)
+#   SMOLFIRE_CONSOLE — path to console device (default: /dev/nmdm0B)
 #
 # Total timeout: 90s (bhyve boot is slower than QEMU/HVF).
 
@@ -23,8 +23,8 @@
 set timeout 90
 
 # Resolve console path: prefer env var, fall back to /dev/nmdm0B.
-if {[info exists env(SMOLBSD_CONSOLE)]} {
-    set console $env(SMOLBSD_CONSOLE)
+if {[info exists env(SMOLFIRE_CONSOLE)]} {
+    set console $env(SMOLFIRE_CONSOLE)
 } else {
     set console "/dev/nmdm0B"
 }
@@ -52,7 +52,7 @@ expect {
 send "root\r"
 expect {
     -re {[Pp]assword:\s*$} {
-        send "smolbsd\r"
+        send "smolfire\r"
     }
     -re {[#\$]\s*$} {
         # Passwordless root shell — some minimal images skip password prompt.

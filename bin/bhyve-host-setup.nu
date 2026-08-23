@@ -1,7 +1,7 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
 # bhyve-host-setup.nu — configure a fresh FreeBSD 15 amd64 instance as a
-# smolBSD bhyve test host.
+# smolfire bhyve test host.
 #
 # Design notes:
 #   - This script is run via SSH by the operator after the Vultr instance is
@@ -15,7 +15,7 @@
 #     nushell so that this script can be executed.  Everything else is here.
 #
 # Usage (from operator workstation after instance is active):
-#   ssh root@<IP> 'pkg install -y nushell git && git clone https://github.com/... smolbsd && nu smolbsd/bin/bhyve-host-setup.nu'
+#   ssh root@<IP> 'pkg install -y nushell git && git clone https://github.com/... smolfire && nu smolfire/bin/bhyve-host-setup.nu'
 #
 # Or with explicit flags:
 #   nu bin/bhyve-host-setup.nu --remote root@<IP>
@@ -29,9 +29,9 @@
 #   2. Install required packages: swtpm, bhyve-firmware, qemu-tools, expect
 #   3. Load and persist kernel modules: vmm, nmdm, if_tap, if_bridge
 #   4. Create a tap/bridge pair for bhyve guest networking
-#   5. Copy/clone smolBSD bin/ and tests/ to ~/smolbsd/
+#   5. Copy/clone smolfire bin/ and tests/ to ~/smolfire/
 #   6. Run nu bin/run-vm-tests.nu smoke-check (preflight only, --dry-run)
-#   7. Write /var/run/smolbsd-host-ready sentinel
+#   7. Write /var/run/smolfire-host-ready sentinel
 #
 # Prerequisites:
 #   - FreeBSD 15.0 amd64 (bare-metal or KVM guest with VT-x exposed)
@@ -283,12 +283,12 @@ def step-setup-network [] {
     "tap0 + bridge0 ready"
 }
 
-# ── Step 5: clone / sync smolBSD project ──────────────────────────────────────
+# ── Step 5: clone / sync smolfire project ──────────────────────────────────────
 
 def step-sync-project [project_src: string] {
-    log-step "sync" "syncing smolBSD project to ~/smolbsd"
+    log-step "sync" "syncing smolfire project to ~/smolfire"
 
-    let dest = $"($env.HOME)/smolbsd"
+    let dest = $"($env.HOME)/smolfire"
 
     if ($project_src | str length) > 0 {
         # project_src is a local path (when running locally on the bhyve host
@@ -351,7 +351,7 @@ def step-smoke-check [project_dir: string] {
         }
     }
 
-    # Verify BHYVE_UEFI.fd exists (required by bhyve-smolbsd.nu).
+    # Verify BHYVE_UEFI.fd exists (required by bhyve-smolfire-vm.nu).
     let uefi = "/usr/local/share/uefi-firmware/BHYVE_UEFI.fd"
     if not ($uefi | path exists) {
         error make {msg: $"smoke-check: BHYVE_UEFI.fd not found at ($uefi)"}
@@ -372,9 +372,9 @@ def step-smoke-check [project_dir: string] {
 # ── Step 7: write sentinel ─────────────────────────────────────────────────────
 
 def step-write-sentinel [] {
-    let sentinel = "/var/run/smolbsd-host-ready"
+    let sentinel = "/var/run/smolfire-host-ready"
     let ts = date now | format date "%Y-%m-%dT%H:%M:%SZ"
-    $"smolbsd-host-ready: ($ts)\n" | save --force $sentinel
+    $"smolfire-host-ready: ($ts)\n" | save --force $sentinel
     log-ok "sentinel" $"wrote ($sentinel)"
     $sentinel
 }
@@ -387,7 +387,7 @@ def run-remote [remote: string, project_root: string] {
     log-step "remote" $"deploying to ($remote)"
 
     # SCP the entire project (bin/ + tests/ is sufficient).
-    let remote_dir = "/root/smolbsd"
+    let remote_dir = "/root/smolfire"
     must-run ["ssh" "-o" "StrictHostKeyChecking=no" $remote
               $"mkdir -p ($remote_dir)"] "ssh mkdir"
 
@@ -417,18 +417,18 @@ def run-remote [remote: string, project_root: string] {
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
-# Set up a fresh FreeBSD 15 amd64 instance as a smolBSD bhyve test host.
+# Set up a fresh FreeBSD 15 amd64 instance as a smolfire bhyve test host.
 #
 # Run directly on the target host (after SSH in), or use --remote to
 # deploy and execute from your workstation.
 def main [
     --remote:      string = ""   # SSH target (e.g. root@1.2.3.4); runs setup remotely
-    --project-src: string = ""   # local path to smolBSD repo to copy to ~/smolbsd
+    --project-src: string = ""   # local path to smolfire repo to copy to ~/smolfire
     --skip-sync                  # skip project sync (files already on host)
     --skip-network               # skip tap/bridge setup (not needed for slirp/loopback only)
     --skip-smoke                 # skip smoke-check (useful in CI where image is absent)
 ] {
-    log-step "bhyve-host-setup" "smolBSD bhyve host setup starting" {
+    log-step "bhyve-host-setup" "smolfire bhyve host setup starting" {
         remote:       $remote
         skip_sync:    $skip_sync
         skip_network: $skip_network
@@ -471,7 +471,7 @@ def main [
     }
 
     # Step 5: project sync
-    let project_dir = $"($env.HOME)/smolbsd"
+    let project_dir = $"($env.HOME)/smolfire"
     if not $skip_sync {
         let r5 = try { step-sync-project $project_src } catch {|e|
             log-warn "sync" $"non-fatal: ($e.msg)"
@@ -492,14 +492,14 @@ def main [
 
     log-step "bhyve-host-setup" "setup complete" {
         steps_passed: ($results | length)
-        sentinel:     "/var/run/smolbsd-host-ready"
-        next_step:    "nu ~/smolbsd/bin/run-vm-tests.nu --image <smolbsd-amd64.raw> --tpm"
+        sentinel:     "/var/run/smolfire-host-ready"
+        next_step:    "nu ~/smolfire/bin/run-vm-tests.nu --image <smolfire-amd64.raw> --tpm"
     }
 
     print ""
     print "=== BHYVE HOST READY ==="
     print $"SSH in and run:"
-    print $"  nu ~/smolbsd/bin/prep-bhyve-image.nu --input <smolbsd.qcow2>"
-    print $"  nu ~/smolbsd/bin/run-vm-tests.nu --image ~/smolbsd-amd64.raw --tpm --results-file /tmp/smolbsd-run-1.toml"
+    print $"  nu ~/smolfire/bin/prep-bhyve-image.nu --input <smolfire.qcow2>"
+    print $"  nu ~/smolfire/bin/run-vm-tests.nu --image ~/smolfire-amd64.raw --tpm --results-file /tmp/smolfire-run-1.toml"
     print ""
 }

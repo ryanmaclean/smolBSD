@@ -66,14 +66,14 @@ enregistrements structurés pour le traitement en aval.
 
 `var/mail/spool` — un seul fichier mbox RFC 822. Chaque message (requête du
 coordinateur et réponse d'agent) y réside. Les adresses suivent le schéma
-`<rôle>@smolbsd.local`. Le corps TOML transporte la charge utile structurée de
+`<rôle>@smolfire.local`. Le corps TOML transporte la charge utile structurée de
 la tâche.
 
 Exemples de rôles :
-- `coordinator@smolbsd.local`
-- `architect@smolbsd.local`
-- `builder@smolbsd.local`
-- `reviewer@smolbsd.local`
+- `coordinator@smolfire.local`
+- `architect@smolfire.local`
+- `builder@smolfire.local`
+- `reviewer@smolfire.local`
 
 ## Démarrage rapide
 
@@ -94,7 +94,7 @@ ssh -J <hypervisor-host> -p 2222 builder@localhost
 Se connecter en SSH sur <aarch64-builder> et exécuter :
 
 ```sh
-make -j4 -C /usr/src buildworld buildkernel KERNCONF=SMOLBSD
+make -j4 -C /usr/src buildworld buildkernel KERNCONF=SMOLFIRE-VM
 ```
 
 Pour le chemin natif aarch64, aucun indicateur de compilation croisée n'est
@@ -102,7 +102,7 @@ nécessaire. Pour la compilation croisée amd64 depuis l'hôte arm64 :
 
 ```sh
 make -j4 -C /usr/src buildworld buildkernel \
-    KERNCONF=SMOLBSD \
+    KERNCONF=SMOLFIRE-VM \
     TARGET=amd64 \
     TARGET_ARCH=amd64
 ```

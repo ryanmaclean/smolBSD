@@ -12,8 +12,8 @@
 # Exits 0 on pass, 1 on any failure.
 #
 # Usage:
-#   nu tests/tpm-smoke-test.nu --image /path/to/smolbsd.qcow2
-#   nu tests/tpm-smoke-test.nu --image smolbsd.qcow2 --ssh-port 2241 --dry-run
+#   nu tests/tpm-smoke-test.nu --image /path/to/smolfire.qcow2
+#   nu tests/tpm-smoke-test.nu --image smolfire.qcow2 --ssh-port 2241 --dry-run
 #
 # Requirements:
 #   qemu-system-x86_64, swtpm, sshpass
@@ -21,13 +21,13 @@
 #   python3  (stdlib only — for bin/fix-freebsd-vm.py)
 #
 # See: bin/fix-freebsd-vm.py  — first-boot fix script
-#      bin/qemu-smolbsd.nu    — interactive QEMU launcher
+#      bin/qemu-smolfire-vm.nu    — interactive QEMU launcher
 #      bin/swtpm-setup.nu     — swtpm lifecycle helper
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 
 # Emit a timestamped TOML step log line to stdout.
-# Matches the three-argument convention used in bin/qemu-smolbsd.nu.
+# Matches the three-argument convention used in bin/qemu-smolfire-vm.nu.
 def log-step [step: string, msg: string, extra: record = {}] {
     let ts   = date now | format date "%Y-%m-%dT%H:%M:%SZ"
     let base = {ts: $ts, step: $step, msg: $msg}
@@ -423,17 +423,17 @@ def cleanup [swtpm_state: string, dry_run: bool] {
 
 # Run a QEMU+swtpm TPM smoke test against a FreeBSD disk image.
 #
-# --image      Path to the smolBSD qcow2 disk image (required unless --dry-run)
+# --image      Path to the smolfire qcow2 disk image (required unless --dry-run)
 # --arch       Guest architecture; only amd64 is currently supported (default: amd64)
 # --ssh-port   Host port forwarded to guest :22 (default: 2241)
-# --password   Root password set by fix-freebsd-vm.py (default: smolbsd)
+# --password   Root password set by fix-freebsd-vm.py (default: smolfire)
 # --mem        Guest RAM (default: 512M)
 # --dry-run    Print all commands without executing; useful for CI/CD config review
 export def main [
-    --image:    string = ""     # path to smolBSD qcow2 disk image
+    --image:    string = ""     # path to smolfire qcow2 disk image
     --arch:     string = "amd64"
     --ssh-port: int    = 2241   # host port forwarded to guest :22
-    --password: string = "smolbsd"
+    --password: string = "smolfire"
     --mem:      string = "512M"
     --dry-run                   # print commands without executing
 ] {
@@ -454,8 +454,8 @@ export def main [
         "."
     }
     let fix_script   = $repo_root | path join "bin" "fix-freebsd-vm.py"
-    let console_sock = "/tmp/smolbsd-console.sock"
-    let swtpm_state  = "/tmp/smolbsd-swtpm-test"
+    let console_sock = "/tmp/smolfire-console.sock"
+    let swtpm_state  = "/tmp/smolfire-swtpm-test"
 
     # ── Preflight ────────────────────────────────────────────────────────────
     let bins = preflight $image $arch $dry_run
@@ -464,7 +464,7 @@ export def main [
     let swtpm_sock = start-swtpm $bins.swtpm_bin $swtpm_state $dry_run
 
     # ── Start QEMU ───────────────────────────────────────────────────────────
-    let qemu_log  = "/tmp/smolbsd-qemu.log"
+    let qemu_log  = "/tmp/smolfire-qemu.log"
     let qemu_args = build-qemu-cmd $bins.qemu_bin $image $bins.bios $swtpm_sock $console_sock $ssh_port $mem
     let qemu_pid  = start-qemu $qemu_args $dry_run $qemu_log
 
@@ -540,7 +540,7 @@ export def main [
 
     # ── Final TOML report ─────────────────────────────────────────────────────
     print ""
-    print "# smolBSD TPM smoke test result"
+    print "# smolfire TPM smoke test result"
     print "[tpm_test]"
     $test_result | to toml | print
 

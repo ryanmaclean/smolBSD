@@ -53,7 +53,7 @@ exit 0
     # Seed an outbound request — this triggers idle → harvesting → dispatching.
     # Recipient local-part `builder` so derived agent_type = "builder".
     let body = "task_id = \"t-spawn\"\ncommand = \"echo hello\""
-    let msg = make-msg "coordinator@smolbsd.local" "builder@smolbsd.local" "<req.spawn.001@host>" $body
+    let msg = make-msg "coordinator@smolfire.local" "builder@smolfire.local" "<req.spawn.001@host>" $body
     write-spool $spool_abs $msg
 
     # Run tick with the stub dir prepended to PATH.
@@ -80,7 +80,7 @@ exit 0
     let default_model = (
         open --raw "bin/coord-tick.nu"
         | lines
-        | where {|l| ($l | str contains "default") and ($l | str contains "SMOLBSD_CLAUDE_MODEL")}
+        | where {|l| ($l | str contains "default") and ($l | str contains "SMOLFIRE_CLAUDE_MODEL")}
         | first
         | parse --regex '\"([^"]+)\"$'
         | get capture0
@@ -124,7 +124,7 @@ do {
     let safe_path = ($filtered | prepend $empty_dir)
 
     let body = "task_id = \"t-no-claude\""
-    let msg = make-msg "coordinator@smolbsd.local" "builder@smolbsd.local" "<req.no-claude.001@host>" $body
+    let msg = make-msg "coordinator@smolfire.local" "builder@smolfire.local" "<req.no-claude.001@host>" $body
     write-spool $spool_abs $msg
 
     # Confirm precondition: claude is NOT on the safe_path. If it is, skip this test.

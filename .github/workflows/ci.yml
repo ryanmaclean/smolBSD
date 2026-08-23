@@ -112,8 +112,8 @@ jobs:
           shellcheck bin/coord-run.sh tests/run-all.sh \
                      bin/analyze-image.sh bin/harvest.sh
           shellcheck --shell=sh \
-                     release/tools/smolbsd-qemu.conf \
-                     release/tools/smolbsd-qemu-aarch64.conf
+                     release/tools/smolfire-qemu.conf \
+                     release/tools/smolfire-qemu-aarch64.conf
 
   # ── Release config hook smoke-test ───────────────────────────────────────────
   conf-hook-test:
@@ -166,8 +166,8 @@ jobs:
           chmod()     { :; }
           export -f pw ssh-keygen chown chmod
           # Source and exercise the amd64 config
-          # shellcheck source=release/tools/smolbsd-qemu.conf
-          . release/tools/smolbsd-qemu.conf
+          # shellcheck source=release/tools/smolfire-qemu.conf
+          . release/tools/smolfire-qemu.conf
           vm_extra_pre_umount
           # Assert expected dirs are gone
           fail=0
@@ -204,8 +204,8 @@ jobs:
           fi
           # Safety guard: empty DESTDIR must abort
           export DESTDIR=""
-          # shellcheck source=release/tools/smolbsd-qemu.conf
-          . release/tools/smolbsd-qemu.conf
+          # shellcheck source=release/tools/smolfire-qemu.conf
+          . release/tools/smolfire-qemu.conf
           if vm_extra_pre_umount 2>/dev/null; then
             echo "FAIL: empty DESTDIR guard did not fire" >&2; fail=1
           else

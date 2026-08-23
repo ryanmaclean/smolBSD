@@ -1,9 +1,9 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# swtpm-setup.nu — host-side swtpm lifecycle management for smolBSD bhyve guests.
+# swtpm-setup.nu — host-side swtpm lifecycle management for smolfire bhyve guests.
 #
 # Manages a software TPM 2.0 daemon (security/swtpm FreeBSD port) that exposes a
-# Unix socket consumed by the bhyve launch script (bin/bhyve-smolbsd.nu).
+# Unix socket consumed by the bhyve launch script (bin/bhyve-smolfire-vm.nu).
 #
 # Actions:
 #   start   — create state dir, launch swtpm daemon, verify socket appears within 3s
@@ -237,15 +237,15 @@ def action-reset [paths: record] {
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-# Manage the smolBSD swtpm (software TPM 2.0) daemon for bhyve guests.
+# Manage the smolfire swtpm (software TPM 2.0) daemon for bhyve guests.
 #
 # --action     start | stop | status | reset
-# --state-dir  directory for TPM state files and pid  (default: /var/run/smolbsd-tpm)
+# --state-dir  directory for TPM state files and pid  (default: /var/run/smolfire-tpm)
 # --socket     Unix socket path  (default: <state-dir>/swtpm.sock)
 # --pid-file   pid file path     (default: <state-dir>/swtpm.pid)
 export def main [
     --action:    string = "status"               # start | stop | status | reset
-    --state-dir: string = "/var/run/smolbsd-tpm" # directory for TPM state + pid
+    --state-dir: string = "/var/run/smolfire-tpm" # directory for TPM state + pid
     --socket:    string = ""                      # defaults to <state-dir>/swtpm.sock
     --pid-file:  string = ""                      # defaults to <state-dir>/swtpm.pid
 ] {

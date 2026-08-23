@@ -26,17 +26,17 @@
 - **トポロジー**：単一の共有スプール、`To:` ヘッダーでアドレス指定。1ファイル == システム状態全体。
 - **パス**：`/Users/studio/smolBSD/var/mail/spool`（`/var/mail/` のミラー；スプール自体が新規クローン後も生き残るプロジェクト状態の一部となるよう、ツリー内に配置 — これが本質です）。
 - **並行性**：コーディネーターのみが追記します。サブエージェントは `To:` でフィルタリングして読み取り、追記することで返信を**発行**します。コーディネーターは次のループで収集します。現段階ではロックは不要；複数のライターが現れたときに再検討します。
-- **スレッド**：`Message-ID` + `In-Reply-To`、クラシックメールとまったく同じ。返信は常に `To: coordinator@smolbsd.local` に送られます。
+- **スレッド**：`Message-ID` + `In-Reply-To`、クラシックメールとまったく同じ。返信は常に `To: coordinator@smolfire.local` に送られます。
 
 ## 3. アドレッシング規約
 
 ```
-<役割>@smolbsd.local        # コーディネーターが解決するロールベースの仮想アドレス
-coordinator@smolbsd.local   # オーケストレーターの受信箱
-architect@smolbsd.local
-builder@smolbsd.local
-reviewer@smolbsd.local
-researcher@smolbsd.local
+<役割>@smolfire.local        # コーディネーターが解決するロールベースの仮想アドレス
+coordinator@smolfire.local   # オーケストレーターの受信箱
+architect@smolfire.local
+builder@smolfire.local
+reviewer@smolfire.local
+researcher@smolfire.local
 ```
 
 プロトタイプフェーズでは、「アドレス」は仮想的なものです — コーディネーターが
@@ -49,13 +49,13 @@ Claude Codeサブエージェントをディスパッチし、どの `Message-ID
 ### 4.1 リクエスト（コーディネーター → エージェント）
 
 ```
-From smolbsd-coord Tue Apr 30 12:50:00 2026
-From: coordinator@smolbsd.local
-To: architect@smolbsd.local
+From smolfire-coord Tue Apr 30 12:50:00 2026
+From: coordinator@smolfire.local
+To: architect@smolfire.local
 Subject: [task-0001] Forge Tiny Baseline — bootstrap FreeBSD amd64 VM
 Date: Tue, 30 Apr 2026 12:50:00 -0000
-Message-ID: <task-0001.coord@smolbsd.local>
-X-Project: smolbsd
+Message-ID: <task-0001.coord@smolfire.local>
+X-Project: smolfire
 X-Phase: tinyos/forge-tiny-baseline
 X-JEC-Compression: rtk-v1
 Content-Type: text/toml; charset=utf-8
@@ -75,7 +75,7 @@ prior_msgids = []
 must_pass = ["VM boots to login prompt unattended", ...]
 
 [reply_contract]
-output_to            = "coordinator@smolbsd.local"
+output_to            = "coordinator@smolfire.local"
 output_format        = "mbox+toml-v1"
 attestation_required = true
 skills_recommended   = ["freebsd", "qemu-fleet", "freebsd-build-vm"]
@@ -87,15 +87,15 @@ budget_tokens        = 80000
 ### 4.2 返信（エージェント → コーディネーター）
 
 ```
-From smolbsd-architect Tue Apr 30 14:10:00 2026
-From: architect@smolbsd.local
-To: coordinator@smolbsd.local
+From smolfire-architect Tue Apr 30 14:10:00 2026
+From: architect@smolfire.local
+To: coordinator@smolfire.local
 Subject: Re: [task-0001] Forge Tiny Baseline — bootstrap FreeBSD amd64 VM
 Date: Tue, 30 Apr 2026 14:10:00 -0000
-Message-ID: <task-0001.architect@smolbsd.local>
-In-Reply-To: <task-0001.coord@smolbsd.local>
-References: <task-0001.coord@smolbsd.local>
-X-Project: smolbsd
+Message-ID: <task-0001.architect@smolfire.local>
+In-Reply-To: <task-0001.coord@smolfire.local>
+References: <task-0001.coord@smolfire.local>
+X-Project: smolfire
 X-Verdict: pass
 Content-Type: text/toml; charset=utf-8
 
@@ -163,7 +163,7 @@ RTKを必須としません** — RTKが存在しない場合は生の出力に�
 │             │     (Read, Bash via RTK, Edit, ...)
 │             │
 │             │  5. 返信mboxを追記、宛先は
-│             │     To: coordinator@smolbsd.local  ┌──────────────────┐
+│             │     To: coordinator@smolfire.local  ┌──────────────────┐
 │             │ ────────────────────────────────► │ var/mail/spool   │
 └─────────────┘                                    └──────────────────┘
        │ 6. エージェント終了                              │
@@ -189,13 +189,13 @@ RTKを必須としません** — RTKが存在しない場合は生の出力に�
 
 | 役割            | アドレス                       | バッキングサブエージェントタイプ              | 必要ツール（書き込み？）         |
 |-----------------|-------------------------------|------------------------------------|----------------------------------|
-| coordinator     | `coordinator@smolbsd.local`   | （このOpus 4.7 1Mセッション）         | Read+Write+Edit+Bash             |
-| architect       | `architect@smolbsd.local`     | `feature-dev:code-architect`（RO）**または** `general-purpose`（RW） | `tools_required` フィールドに依存 — §17参照 |
-| builder         | `builder@smolbsd.local`       | `general-purpose` + freebsdスキル  | Read+Write+Edit+Bash             |
-| reviewer        | `reviewer@smolbsd.local`      | `pr-review-toolkit:code-reviewer`  | ほぼRead専用                      |
-| researcher      | `researcher@smolbsd.local`    | `general-purpose` + Explore        | Read専用で可                     |
-| security        | `security@smolbsd.local`      | `general-purpose` + redactスキル   | Read+Bash（Writeは `var/run/secrets/` 配下のエンベロープのみ） |
-| ops             | `ops@smolbsd.local`           | `general-purpose` + fleet-ircスキル | Read+Write+Bash                  |
+| coordinator     | `coordinator@smolfire.local`   | （このOpus 4.7 1Mセッション）         | Read+Write+Edit+Bash             |
+| architect       | `architect@smolfire.local`     | `feature-dev:code-architect`（RO）**または** `general-purpose`（RW） | `tools_required` フィールドに依存 — §17参照 |
+| builder         | `builder@smolfire.local`       | `general-purpose` + freebsdスキル  | Read+Write+Edit+Bash             |
+| reviewer        | `reviewer@smolfire.local`      | `pr-review-toolkit:code-reviewer`  | ほぼRead専用                      |
+| researcher      | `researcher@smolfire.local`    | `general-purpose` + Explore        | Read専用で可                     |
+| security        | `security@smolfire.local`      | `general-purpose` + redactスキル   | Read+Bash（Writeは `var/run/secrets/` 配下のエンベロープのみ） |
+| ops             | `ops@smolfire.local`           | `general-purpose` + fleet-ircスキル | Read+Write+Bash                  |
 
 ## 9. 引き継ぎ後も生き残る状態
 
@@ -215,9 +215,9 @@ RTKを必須としません** — RTKが存在しない場合は生の出力に�
 
 | §  | 課題                | 担当     | 返信msgid（正準記録）                    | ステータス |
 |----|---------------------|----------|------------------------------------------|--------|
-| 11 | シークレット取り扱い | security | `<design-d1.security@smolbsd.local>`（spool L441–711） | v1.1で統合 |
-| 12 | リトライポリシー     | reviewer | `<design-d2.reviewer@smolbsd.local>`（spool L712–1057） | v1.1で統合 |
-| 13 | エスカレーションチャネル | ops  | `<design-d3.ops@smolbsd.local>`（spool L215–440） | v1.1で統合 |
+| 11 | シークレット取り扱い | security | `<design-d1.security@smolfire.local>`（spool L441–711） | v1.1で統合 |
+| 12 | リトライポリシー     | reviewer | `<design-d2.reviewer@smolfire.local>`（spool L712–1057） | v1.1で統合 |
+| 13 | エスカレーションチャネル | ops  | `<design-d3.ops@smolfire.local>`（spool L215–440） | v1.1で統合 |
 
 返信の全文はスプールにあります。以下のセクションは要約です；矛盾がある場合は、
 スプール内の返信が正準です。
@@ -334,7 +334,7 @@ scope       = ["gitea.local:3000/api/v1/repos/*"]   # 参考情報
 - `prior_attempt_count` — 1または2
 - `format_violation` — パーサーエラー（`category=malformed` の場合）
 - `probe_disagreement` — fleet-evalプローブ出力（`category=pass+probe-failed` の場合）
-- リトライごとに新しいMessage-ID：`<task-XXX.coord.r{N}@smolbsd.local>`
+- リトライごとに新しいMessage-ID：`<task-XXX.coord.r{N}@smolfire.local>`
 - `X-Attempt: <N>` ヘッダー（1始まり；コーディネーター状態はスプールのみから再構築可能）
 - `no-reply` の場合のみ：`budget_tokens` はリトライごとに倍増、上限200000
 
@@ -357,7 +357,7 @@ scope       = ["gitea.local:3000/api/v1/repos/*"]   # 参考情報
 
 ## 13. エスカレーションチャネル（D3より）
 
-**プライマリ**：`user@smolbsd.local` 宛のスプール内メッセージ + `var/mail/HALT`
+**プライマリ**：`user@smolfire.local` 宛のスプール内メッセージ + `var/mail/HALT`
 マーカーファイル。スプール*こそが*基盤です — 再利用すれば新しいツールのコストは
 ゼロで、正しくスレッド化され、新規クローン後も生き残り、ユーザーは標準のmboxツール
 （`mailx`、`less`、`grep`）を既に持っています。
@@ -375,11 +375,11 @@ scope       = ["gitea.local:3000/api/v1/repos/*"]   # 参考情報
 **HALTメッセージの形：**
 
 ```
-From: coordinator@smolbsd.local
-To: user@smolbsd.local
+From: coordinator@smolfire.local
+To: user@smolfire.local
 Subject: [HALT] <task-id> — <one-line cause>
-Message-ID: <halt-<task-id>.coord@smolbsd.local>
-In-Reply-To: <task-id.coord@smolbsd.local>
+Message-ID: <halt-<task-id>.coord@smolfire.local>
+In-Reply-To: <task-id.coord@smolfire.local>
 References: <all retry msgids, space-separated>
 X-Priority: 1
 X-Halt-Reason: retry-exhausted | claim-verification-failed | malformed-reply

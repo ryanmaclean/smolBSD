@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# bin/build-smolbsd.nu — reproducible smolBSD build pipeline
+# bin/build-smolfire-vm.nu — reproducible smolfire build pipeline
 #
 # Encodes all lessons from Phase I builds (2026-04-30 to 2026-05-07).
 # Run as root (or with sudo) on a FreeBSD aarch64 or amd64 host.
@@ -10,36 +10,36 @@
 #           Without it: freebsd.cf install fails, cascades through 8 make levels.
 #   FIX-2: the release image stage must run as root — release chroot requires it;
 #           running as builder produces empty pkgbase silently.
-#   FIX-3: VMSIZE=2g — sparse image works for smolBSD; 4g needs ~4G disk free.
+#   FIX-3: VMSIZE=2g — sparse image works for smolfire; 4g needs ~4G disk free.
 #   FIX-4: WITHOUT_DEPEND_FILES=yes — prevents bad substitution from bsd.dep.mk
 #           in LLVM builds.
 #   FIX-5: Disk check before starting — buildworld needs ~50GB in /usr/obj.
 #   FIX-6: Pipeline gating — release must not start if buildworld failed.
 #   FIX-7: git safe.directory — release make checks git; must be set before release.
 #   FIX-8: Kernel obj cleanup after buildworld — DISABLED by FIX-9 (see Stage 3).
-#   FIX-9: release image via cloudware-release + SMOLBSDCONF — the old
+#   FIX-9: release image via cloudware-release + SMOLFIRECONF — the old
 #           'vm-image ... CLOUDWARE_CONF=' invocation never sourced the conf
 #           (see docs/UR-BSD-VERIFY.md Finding 3).
 #   FIX-10: pkgbase filter replaced by an explicit leaf-package list in the
 #           release confs (see docs/UR-BSD-VERIFY.md Finding 4).
 #
 # Usage:
-#   sudo nu bin/build-smolbsd.nu                    # full pipeline
-#   sudo nu bin/build-smolbsd.nu --skip-buildworld  # release only (obj already built)
-#   sudo nu bin/build-smolbsd.nu --arch aarch64     # explicit arch
-#   sudo nu bin/build-smolbsd.nu --check            # preflight checks only
+#   sudo nu bin/build-smolfire-vm.nu                    # full pipeline
+#   sudo nu bin/build-smolfire-vm.nu --skip-buildworld  # release only (obj already built)
+#   sudo nu bin/build-smolfire-vm.nu --arch aarch64     # explicit arch
+#   sudo nu bin/build-smolfire-vm.nu --check            # preflight checks only
 
 export def main [
     --arch: string = ""              # aarch64 | amd64 (auto-detect if empty)
     --src: string = "/usr/src"       # FreeBSD source tree
     --obj: string = "/usr/obj"       # obj directory
-    --kernconf: string = "SMOLBSD"   # kernel config name
+    --kernconf: string = "SMOLFIRE-VM"   # kernel config name
     --vmsize: string = "2g"          # qcow2 sparse size (FIX-3: 2g not 4g)
     --jobs: int = 0                  # parallelism (0 = nproc)
     --skip-buildworld                # skip to release (obj already populated)
     --skip-release                   # buildworld+kernel only, no release image
     --check                          # preflight only, no build
-    --log: string = "/var/tmp/smolbsd-build.log"
+    --log: string = "/var/tmp/smolfire-build.log"
 ] {
     let t_start = (date now)
 
@@ -72,13 +72,13 @@ export def main [
     # --- Resolve conf paths ---
     let kernconf_path = $"($src)/sys/($arch_freebsd)/conf/($kernconf)"
     let conf_name = if $arch_target == "aarch64" {
-        "smolbsd-qemu-aarch64.conf"
+        "smolfire-qemu-aarch64.conf"
     } else {
-        "smolbsd-qemu.conf"
+        "smolfire-qemu.conf"
     }
     let release_conf = $"($src)/release/tools/($conf_name)"
 
-    print $"smolBSD build pipeline starting — arch: ($arch_target)  jobs: ($nj)"
+    print $"smolfire build pipeline starting — arch: ($arch_target)  jobs: ($nj)"
     print $"  src:      ($src)"
     print $"  obj:      ($obj)"
     print $"  kernconf: ($kernconf)"
@@ -124,7 +124,7 @@ export def main [
     # FIX-8 freed space by deleting ${obj}/.../sys/${kernconf} before the old
     # (no-op) vm-image stage. The cloudware-release stage depends on
     # pkgbase-repo -> `make -C /usr/src packages`, whose stagekernel step
-    # reads exactly that objdir (distributekernel: cd ${KRNLOBJDIR}/SMOLBSD).
+    # reads exactly that objdir (distributekernel: cd ${KRNLOBJDIR}/SMOLFIRE-VM).
     # Deleting it here fails the release stage hours in. Clean up AFTER the
     # image is built if disk pressure demands it.
     # =========================================================================
@@ -185,7 +185,7 @@ def preflight [
     # CHECK: running as root (FIX-2)
     let euid = (^id -u | str trim | into int)
     if $euid != 0 {
-        $errors = ($errors | append "Not running as root. release chroot requires root. Run: sudo nu bin/build-smolbsd.nu")
+        $errors = ($errors | append "Not running as root. release chroot requires root. Run: sudo nu bin/build-smolfire-vm.nu")
     } else {
         print "  [ok] running as root"
     }
@@ -295,7 +295,7 @@ def setup [src: string] {
         let missing = ($required_keys | where { |k| not ($existing | str contains ($k | split row "=" | first)) })
         if ($missing | length) > 0 {
             print $"  Appending ($missing | length) missing key(s) to ($src_conf)"
-            "\n# Added by build-smolbsd.nu\n" + ($missing | str join "\n") + "\n" | save --append $src_conf
+            "\n# Added by build-smolfire-vm.nu\n" + ($missing | str join "\n") + "\n" | save --append $src_conf
         } else {
             print $"  ($src_conf) already complete"
         }
@@ -311,7 +311,7 @@ def setup [src: string] {
     # (NB: '2>/dev/null' is bash, not nu — a literal arg to the external
     # command. It made git exit 128 here on every scripted run; see run #2
     # of the hosted pipeline. Dead repo_root binding removed with it.)
-    # We're in the smolBSD repo — kernel configs are checked in here
+    # We're in the smolfire repo — kernel configs are checked in here
     let script_dir = ($env.CURRENT_FILE? | default "" | path dirname)
     # Resolve relative to the script location
     let repo_dir = if ($script_dir | str length) > 0 {
@@ -323,15 +323,15 @@ def setup [src: string] {
     for arch_pair in [["arm64" "aarch64"] ["amd64" "amd64"]] {
         let af = ($arch_pair | get 0)
         let at = ($arch_pair | get 1)
-        let kconf_src = $"($repo_dir)/sys/($af)/conf/SMOLBSD"
-        let kconf_dst = $"($src)/sys/($af)/conf/SMOLBSD"
+        let kconf_src = $"($repo_dir)/sys/($af)/conf/SMOLFIRE-VM"
+        let kconf_dst = $"($src)/sys/($af)/conf/SMOLFIRE-VM"
         if ($kconf_src | path exists) and not ($kconf_dst | path exists) {
-            print $"  Installing sys/($af)/conf/SMOLBSD into src tree"
+            print $"  Installing sys/($af)/conf/SMOLFIRE-VM into src tree"
             ^cp $kconf_src $kconf_dst
         }
     }
 
-    for conf_pair in [["smolbsd-qemu.conf" ""] ["smolbsd-qemu-aarch64.conf" ""]] {
+    for conf_pair in [["smolfire-qemu.conf" ""] ["smolfire-qemu-aarch64.conf" ""]] {
         let cname = ($conf_pair | get 0)
         let csrc = $"($repo_dir)/release/tools/($cname)"
         let cdst = $"($src)/release/tools/($cname)"
@@ -405,7 +405,7 @@ def cleanup_kernel_obj [
     print "==> Stage 3: Kernel obj cleanup (FIX-8 — disabled by FIX-9)"
 
     # Path pattern: /usr/obj/usr/src/<arch>.<arch_target>/sys/KERNCONF
-    # e.g. /usr/obj/usr/src/arm64.aarch64/sys/SMOLBSD
+    # e.g. /usr/obj/usr/src/arm64.aarch64/sys/SMOLFIRE-VM
     let obj_path = $"($obj)/usr/src/($arch_freebsd).($arch_target)/sys/($kernconf)"
     if ($obj_path | path exists) {
         print $"  Removing ($obj_path)"
@@ -461,11 +461,11 @@ def build_vm_image [
     # FIX-9: CLOUDWARE_CONF is not a variable the release Makefiles read, and
     # the plain vm-image target never sources a conf (it is also gated behind
     # WITH_VMIMAGES — without it the recipe is a no-op touch). The only path
-    # that sources smolbsd-qemu*.conf — and thus runs the pkgbase filter, the
+    # that sources smolfire-qemu*.conf — and thus runs the pkgbase filter, the
     # size-trim, and sshd enablement — is the cloudware machinery with the
-    # real per-type variable ${TYPE}CONF (SMOLBSDCONF for CLOUDWARE=smolbsd).
+    # real per-type variable ${TYPE}CONF (SMOLFIRECONF for CLOUDWARE=smolfire).
     # Proven by prior self-hosted CI builds (.planning/phases/03-*, build-image.yml):
-    # cloudware-release generates the cw-smolbsd-ufs-qcow2 target.
+    # cloudware-release generates the cw-smolfire-ufs-qcow2 target.
     # NOTE: pkgbase is the DEFAULT on releng/15.0 (NOPKGBASE=yes opts out into
     # installworld); WITH_PKGBASE was never a release Makefile variable. The
     # cw target depends on pkgbase-repo, which runs `make -C /usr/src packages`
@@ -473,10 +473,10 @@ def build_vm_image [
     let make_args = (base_make_args $arch_freebsd $arch_target) ++ [
         $"KERNCONF=($kernconf)"
         "WITH_CLOUDWARE=yes"
-        "CLOUDWARE=smolbsd"
-        $"SMOLBSDCONF=($release_conf)"
-        "SMOLBSD_FORMAT=qcow2"
-        "SMOLBSD_FSLIST=ufs"
+        "CLOUDWARE=smolfire"
+        $"SMOLFIRECONF=($release_conf)"
+        "SMOLFIRE_FORMAT=qcow2"
+        "SMOLFIRE_FSLIST=ufs"
         $"VMSIZE=($vmsize)"          # FIX-3: 2g not 4g (conf respects caller)
         "SWAPSIZE=128m"              # Makefile.vm defaults to 1g and always sets
                                      # the env, so the conf's fallback never fires
@@ -552,7 +552,7 @@ def run_or_fail [label: string cmd_args: list<string> _log: string] {
 def find_qcow2 [obj: string arch_freebsd: string arch_target: string] {
     # Standard FreeBSD release output paths.
     # cloudware-release (FIX-9) writes to the release objdir root (e.g.
-    # vm.ufs.qcow2 / smolbsd.ufs.qcow2); legacy vm-image wrote under release/vm/.
+    # vm.ufs.qcow2 / smolfire.ufs.qcow2); legacy vm-image wrote under release/vm/.
     let candidates = [
         $"($obj)/($arch_freebsd).($arch_target)/usr/src/release"
         $"($obj)/usr/src/($arch_freebsd).($arch_target)/release"
@@ -608,7 +608,7 @@ def print_summary [arch: string kernconf: string qcow2: string elapsed_secs: int
 
     print ""
     print "╔══════════════════════════════════════════╗"
-    print "║  smolBSD Build Complete                  ║"
+    print "║  smolfire Build Complete                  ║"
     print "╠══════════════════════════════════════════╣"
     print $"║  arch:    ($arch | fill -w 32)║"
     print $"║  kernel:  ($kernconf | fill -w 32)║"

@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# smolbsd-test-report.nu — formatted summary of all TOML result files in a results dir.
+# smolfire-test-report.nu — formatted summary of all TOML result files in a results dir.
 #
 # Reads every *.toml file written by bin/run-vm-tests.nu from --results-dir,
 # then prints:
@@ -8,11 +8,11 @@
 #   2. A per-step breakdown table for each run (name, result, duration_ms, detail)
 #
 # Usage:
-#   nu tests/smolbsd-test-report.nu
-#   nu tests/smolbsd-test-report.nu --results-dir /tmp/smolbsd-results
-#   nu tests/smolbsd-test-report.nu --results-dir /tmp/r --summary-only
-#   nu tests/smolbsd-test-report.nu --results-dir /tmp/r --run 3   # single run detail
-#   nu tests/smolbsd-test-report.nu --results-dir /tmp/r --json    # machine-readable output
+#   nu tests/smolfire-test-report.nu
+#   nu tests/smolfire-test-report.nu --results-dir /tmp/smolfire-results
+#   nu tests/smolfire-test-report.nu --results-dir /tmp/r --summary-only
+#   nu tests/smolfire-test-report.nu --results-dir /tmp/r --run 3   # single run detail
+#   nu tests/smolfire-test-report.nu --results-dir /tmp/r --json    # machine-readable output
 #
 # Exit codes:
 #   0  at least one result file found and parsed
@@ -139,7 +139,7 @@ def print-step-table [n: int, r: record] {
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main [
-    --results-dir: string = "/tmp/smolbsd-results",  # directory containing *.toml result files
+    --results-dir: string = "/tmp/smolfire-results",  # directory containing *.toml result files
     --summary-only,                                   # print only the summary table, no step detail
     --run: int = 0,                                   # print detail for run N only (0 = all)
     --json,                                           # emit JSON instead of formatted text
@@ -180,7 +180,7 @@ def main [
     let pass_runs  = $loaded | where overall == "pass" | length
     let fail_runs  = $loaded | where overall == "fail" | length
 
-    print $"smolBSD VM Test Report — ($results_dir)"
+    print $"smolfire VM Test Report — ($results_dir)"
     print $"($total) runs - ($pass_runs) passed - ($fail_runs) failed"
     print ""
     print-summary-header

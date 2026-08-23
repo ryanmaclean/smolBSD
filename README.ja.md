@@ -61,13 +61,13 @@ jj new                                # 新しい変更を開く
 
 `var/mail/spool` — 単一のRFC 822 mboxファイル。すべてのメッセージ（コーディネーターの
 リクエストとエージェントの返信）がここに格納されます。アドレスは
-`<役割>@smolbsd.local` の形式に従います。TOML本文が構造化タスクのペイロードを運びます。
+`<役割>@smolfire.local` の形式に従います。TOML本文が構造化タスクのペイロードを運びます。
 
 役割の例：
-- `coordinator@smolbsd.local`
-- `architect@smolbsd.local`
-- `builder@smolbsd.local`
-- `reviewer@smolbsd.local`
+- `coordinator@smolfire.local`
+- `architect@smolfire.local`
+- `builder@smolfire.local`
+- `reviewer@smolfire.local`
 
 ## クイックスタート
 
@@ -88,7 +88,7 @@ ssh -J <hypervisor-host> -p 2222 builder@localhost
 <aarch64-builder> に SSH 接続して実行：
 
 ```sh
-make -j4 -C /usr/src buildworld buildkernel KERNCONF=SMOLBSD
+make -j4 -C /usr/src buildworld buildkernel KERNCONF=SMOLFIRE-VM
 ```
 
 aarch64 ネイティブパスではクロスコンパイルフラグは不要です。arm64 ホストからの
@@ -96,7 +96,7 @@ amd64 クロスコンパイルの場合：
 
 ```sh
 make -j4 -C /usr/src buildworld buildkernel \
-    KERNCONF=SMOLBSD \
+    KERNCONF=SMOLFIRE-VM \
     TARGET=amd64 \
     TARGET_ARCH=amd64
 ```

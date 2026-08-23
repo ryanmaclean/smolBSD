@@ -12,8 +12,8 @@
 #
 # Usage:
 #   nu bin/qcow2-to-physical.nu \
-#       --input  FreeBSD-15.0-RELEASE-aarch64-SMOLBSD.qcow2 \
-#       --output smolbsd-aarch64-pi5.raw \
+#       --input  FreeBSD-15.0-RELEASE-aarch64-SMOLFIRE-VM.qcow2 \
+#       --output smolfire-aarch64-pi5.raw \
 #       --board  pi5
 #
 # Prerequisites (must be present on FreeBSD build host):

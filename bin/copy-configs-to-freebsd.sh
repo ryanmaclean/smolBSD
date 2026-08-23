@@ -1,19 +1,19 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
-# bin/copy-configs-to-freebsd.sh — copy smolBSD kernel and release configs into a
+# bin/copy-configs-to-freebsd.sh — copy smolfire kernel and release configs into a
 #                                  FreeBSD source tree.
 #
 # Usage:
-#   sh bin/copy-configs-to-freebsd.sh [freebsd-src-root] [smolbsd-repo-root]
+#   sh bin/copy-configs-to-freebsd.sh [freebsd-src-root] [smolfire-repo-root]
 #
 # Arguments:
 #   $1  FreeBSD src root  (default: /usr/src)
-#   $2  smolBSD repo root (default: directory containing this script / ..)
+#   $2  smolfire repo root (default: directory containing this script / ..)
 #
 # Files copied:
-#   sys/amd64/conf/SMOLBSD              -> $1/sys/amd64/conf/SMOLBSD
-#   release/tools/smolbsd-qemu.conf     -> $1/release/tools/smolbsd-qemu.conf
-#   release/tools/smolbsd-qemu-aarch64.conf -> $1/release/tools/smolbsd-qemu-aarch64.conf
+#   sys/amd64/conf/SMOLFIRE-VM              -> $1/sys/amd64/conf/SMOLFIRE-VM
+#   release/tools/smolfire-qemu.conf     -> $1/release/tools/smolfire-qemu.conf
+#   release/tools/smolfire-qemu-aarch64.conf -> $1/release/tools/smolfire-qemu-aarch64.conf
 #
 # Exit codes:
 #   0  — all files copied successfully
@@ -26,13 +26,13 @@ set -e
 # $1: FreeBSD src root (default /usr/src)
 FBSD_SRC="${1:-/usr/src}"
 
-# $2: smolBSD repo root.  Default: two levels above this script
+# $2: smolfire repo root.  Default: two levels above this script
 #     bin/copy-configs-to-freebsd.sh  ->  dirname -> bin/  ->  dirname -> ./
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="${2:-$(dirname "$SCRIPT_DIR")}"
 
 echo "FreeBSD src root : ${FBSD_SRC}"
-echo "smolBSD repo root: ${REPO_ROOT}"
+echo "smolfire repo root: ${REPO_ROOT}"
 echo ""
 
 # ── Validation ────────────────────────────────────────────────────────────────
@@ -70,9 +70,9 @@ copy_file() {
 
 MISSING=0
 
-copy_file "sys/amd64/conf/SMOLBSD"
-copy_file "release/tools/smolbsd-qemu.conf"
-copy_file "release/tools/smolbsd-qemu-aarch64.conf"
+copy_file "sys/amd64/conf/SMOLFIRE-VM"
+copy_file "release/tools/smolfire-qemu.conf"
+copy_file "release/tools/smolfire-qemu-aarch64.conf"
 
 echo ""
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# secret-materialize.nu — D1 secret envelope writer for smolBSD coordinator
+# secret-materialize.nu — D1 secret envelope writer for smolfire coordinator
 #
 # Writes a secret value to an out-of-band envelope file at
 # var/run/secrets/<task-id>/<key> (mode 0600) with a .meta.toml sidecar

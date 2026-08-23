@@ -1,6 +1,6 @@
 #!/usr/bin/env expect
 # Materialized from plans/tinyos/PHASE-1-AARCH64-TINY-BASELINE.md §8.2
-# Authoring chain: planner@smolbsd.local <task-0009.builder@smolbsd.local>
+# Authoring chain: planner@smolfire.local <task-0009.builder@smolfire.local>
 #
 # tests/time-to-ready-aarch64.exp
 # Expected: PASS on <hypervisor-host> (Apple Silicon, HVF = native-ISA acceleration)
@@ -12,7 +12,7 @@ spawn /opt/homebrew/bin/qemu-system-aarch64 \
   -cpu host \
   -bios /opt/homebrew/share/qemu/edk2-aarch64-code.fd \
   -m 256M -smp 2 \
-  -drive file=FreeBSD-15-arm64-smolbsd.qcow2,format=qcow2,if=virtio \
+  -drive file=FreeBSD-15-arm64-smolfire.qcow2,format=qcow2,if=virtio \
   -nic user,model=virtio-net-pci,hostfwd=tcp::2231-:22 \
   -serial stdio -nographic
 expect {

@@ -1,21 +1,21 @@
 # Materialized from plans/tinyos/PHASE-2-PHYSICAL-BOOT.md §8
 # Authoring chain: planner@smolbsd.local <task-0023.builder@smolbsd.local>
 #
-# SMOLBSD-RK3588 — FreeBSD 15 arm64 kernel for RK3588 (ROCK 5B reference)
+# SMOLFIRE-RK3588 — FreeBSD 15 arm64 kernel for RK3588 (ROCK 5B reference)
 # Target: headless physical boot, eMMC/SD root (UFS), PCIe NVMe optional,
 #         RTL8125BG 2.5GbE via PCIe, UART2 serial console,
 #         edk2-rk35xx UEFI (preferred) or u-boot EFI fallback.
-# Derived from sys/arm64/conf/SMOLBSD (QEMU-only baseline).
+# Derived from sys/arm64/conf/SMOLFIRE-VM (QEMU-only baseline).
 #
 # Reference board: Radxa ROCK 5B (RK3588, 8/16 GiB LPDDR5).
 # Other RK3588 boards (Orange Pi 5 Plus, Khadas Edge2) use the same SoC
 # and driver set; only DTB and UART base address differ.
 #
 # -----------------------------------------------------------------------
-# KEY DIFFERENCES FROM SMOLBSD (QEMU)
+# KEY DIFFERENCES FROM SMOLFIRE-VM (QEMU)
 # -----------------------------------------------------------------------
 # 1. NO virtio — physical hardware.  All nodevice virtio_* lines from
-#    SMOLBSD are retained (prevents std.virt from compiling them in).
+#    SMOLFIRE-VM are retained (prevents std.virt from compiling them in).
 #
 # 2. RK3588 SoC drivers added:
 #    - rk_gpio, rk_pinctrl  : Rockchip GPIO and pin-mux controller
@@ -69,7 +69,7 @@
 # Maintainer: planner@smolbsd.local
 
 cpu     ARM64
-ident   SMOLBSD-RK3588
+ident   SMOLFIRE-RK3588
 
 include "std.arm64"
 include "std.dev"
@@ -158,7 +158,7 @@ device  uart                        # Generic UART driver (PL011-compatible)
 
 # -----------------------------------------------------------------------
 # Strip virtio — no VirtIO hardware on physical RK3588.
-# Carried from SMOLBSD; prevents std.virt from compiling these in.
+# Carried from SMOLFIRE-VM; prevents std.virt from compiling these in.
 # -----------------------------------------------------------------------
 nodevice vtnet                      # VirtIO NIC — no virtio on physical RK3588
 
@@ -273,7 +273,7 @@ nodevice snd_via8233
 nodevice hyperv
 
 # -----------------------------------------------------------------------
-# Production tuning (same as SMOLBSD)
+# Production tuning (same as SMOLFIRE-VM)
 # -----------------------------------------------------------------------
 makeoptions DEBUG=
 nooptions KDB_UNATTENDED

@@ -2,15 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # bin/sizereport.nu — turn the SIZEREPORT lines from a build log into tables.
 #
-# The release confs (release/tools/smolbsd-qemu*.conf) print a SIZEREPORT
+# The release confs (release/tools/smolfire-qemu*.conf) print a SIZEREPORT
 # block at the end of vm_extra_pre_umount: rootfs total, directories to
 # depth 2, the 30 largest files, and installed packages by size. That lands
-# in the in-VM make log, which CI ships out as smolbsd-build-vm.log. This
+# in the in-VM make log, which CI ships out as smolfire-build-vm.log. This
 # script parses those lines back into ranked tables so a diet round starts
 # from data, not guesses.
 #
 # Usage: nu bin/sizereport.nu [<log>] [--top N]
-#   <log>  build log to parse (default: smolbsd-build-vm.log)
+#   <log>  build log to parse (default: smolfire-build-vm.log)
 #   --top  rows per table (default: 15)
 #
 # Exit 0 = report printed, 1 = log exists but has no SIZEREPORT lines
@@ -41,7 +41,7 @@ def rows [body: list<string>] {
 }
 
 def main [
-    log: string = "smolbsd-build-vm.log"   # build log to parse
+    log: string = "smolfire-build-vm.log"   # build log to parse
     --top: int = 15                        # rows per table
 ] {
     if not ($log | path exists) {

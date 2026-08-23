@@ -1,14 +1,14 @@
 #!/usr/bin/env expect
 # Materialized from plans/tinyos/PHASE-1-FORGE-TINY-BASELINE.md §8.2
-# Authoring chain: architect@smolbsd.local <task-0001.architect@smolbsd.local>
-#                  builder@smolbsd.local   <task-0002.builder@smolbsd.local>
+# Authoring chain: architect@smolfire.local <task-0001.architect@smolfire.local>
+#                  builder@smolfire.local   <task-0002.builder@smolfire.local>
 #
 # tests/time-to-ready.exp
 set timeout 120
 set t0 [clock seconds]
 spawn qemu-system-x86_64 \
   -M q35 -accel kvm -cpu host -m 256M -smp 2 \
-  -drive file=FreeBSD-15-amd64-smolbsd.qcow2,format=qcow2,if=virtio \
+  -drive file=FreeBSD-15-amd64-smolfire.qcow2,format=qcow2,if=virtio \
   -nic user,model=virtio-net-pci,hostfwd=tcp::2230-:22 \
   -serial stdio -nographic
 expect {

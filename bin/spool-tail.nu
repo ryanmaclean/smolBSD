@@ -83,7 +83,7 @@ def print-message [msg: record, idx: int] {
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
-# View messages in the smolBSD coordinator mbox spool.
+# View messages in the smolfire coordinator mbox spool.
 def main [
     --spool: string = "var/mail/spool"   # path to the mbox spool file
     --last: int = 0                       # show last N messages in full (0 = summary table)

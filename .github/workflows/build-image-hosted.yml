@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# build-image-hosted.yml — Build the smolBSD image on a GitHub-HOSTED runner.
+# build-image-hosted.yml — Build the smolfire image on a GitHub-HOSTED runner.
 #
 # No self-hosted infrastructure required: standard GitHub Linux x64 runners
 # expose /dev/kvm (nested virtualization), so we boot a stock FreeBSD
@@ -15,7 +15,7 @@
 # Legs:
 #   amd64   — full: build + size gate + KVM boot gate.
 #   aarch64 — cross-built from the same amd64 FreeBSD VM (TARGET/TARGET_ARCH
-#             handled by bin/build-smolbsd.nu base_make_args). Size gate only:
+#             handled by bin/build-smolfire-vm.nu base_make_args). Size gate only:
 #             an aarch64 boot gate needs HVF/bhyve ARM hardware; TCG on x64
 #             is >480s (see docs/PHASE-1-RESULTS.md) and would always fail.
 #
@@ -24,7 +24,7 @@
 # options are a larger runner (more cores), a ccache'd obj tree, or the
 # self-hosted pipeline.
 
-name: Build smolBSD Image (hosted runner)
+name: Build smolfire Image (hosted runner)
 
 on:
   workflow_dispatch:
@@ -37,6 +37,9 @@ on:
       vmsize:
         description: "Image VMSIZE (sparse)"
         default: "2g"
+  # (Rename phase-3b temporary push trigger retired after run #9 went green:
+  #  smolfire.ufs.qcow2 built via CLOUDWARE=smolfire + KERNCONF=SMOLFIRE-VM,
+  #  size gate and KVM boot gate passed with the new root password.)
   # (Round-4 temporary push trigger retired after the round-2 diet build
   # went green — raw 66.6 MiB, compressed 26.6 MiB, 9s boot, run
   # 30375142187. Pre-merge validation without dispatch rights: re-add a
@@ -44,7 +47,7 @@ on:
   #   gh workflow run build-image-hosted.yml --ref <branch>)
 
 env:
-  WORK: /mnt/smolbsd-ci
+  WORK: /mnt/smolfire-ci
   SSH_PORT: "2252"
   SRC_BRANCH: releng/15.0
   BASE_URL: https://download.freebsd.org/releases/VM-IMAGES/15.0-RELEASE/amd64/Latest
@@ -52,7 +55,7 @@ env:
 
 jobs:
   build:
-    name: Build smolBSD ${{ inputs.arch || 'amd64' }} qcow2
+    name: Build smolfire ${{ inputs.arch || 'amd64' }} qcow2
     runs-on: ubuntu-latest
     timeout-minutes: 350
     defaults:
@@ -99,7 +102,7 @@ jobs:
           set -e
           cd "$WORK"
           ssh-keygen -t ed25519 -N '' -f ci_key -q
-          printf 'instance-id: smolbsd-ci\nlocal-hostname: smolbsd-build\n' > meta-data
+          printf 'instance-id: smolfire-ci\nlocal-hostname: smolfire-build\n' > meta-data
           {
             echo '#cloud-config'
             echo 'users:'
@@ -160,8 +163,8 @@ jobs:
                 env ASSUME_ALWAYS_YES=yes pkg install -y git nushell'
           # Shallow clone keeps this ~10x smaller/faster than a full checkout.
           $SSH "git clone --depth 1 -b $SRC_BRANCH https://git.freebsd.org/src.git /usr/src"
-          # Ship the smolBSD repo (kernconfs, release confs, build pipeline).
-          tar -C "$GITHUB_WORKSPACE" -cf - . | $SSH 'mkdir -p /root/smolBSD && tar -C /root/smolBSD -xf -'
+          # Ship the smolfire repo (kernconfs, release confs, build pipeline).
+          tar -C "$GITHUB_WORKSPACE" -cf - . | $SSH 'mkdir -p /root/smolfire && tar -C /root/smolfire -xf -'
 
       - name: Build (world + kernel + cloudware-release) inside VM
         env:
@@ -175,36 +178,36 @@ jobs:
           # code: run #3 built the image, then died in post-build artifact
           # location (a nu bug) and the qcow2 was lost with the ephemeral VM.
           BUILD_RC=0
-          $SSH "cd /root/smolBSD && nu bin/build-smolbsd.nu \
+          $SSH "cd /root/smolfire && nu bin/build-smolfire-vm.nu \
                   --arch '${{ inputs.arch || 'amd64' }}' --vmsize '$VMSIZE_INPUT'" \
             2>&1 | tee build.log || BUILD_RC=$?
           # Locate the artifact (FIX-9: cloudware-release writes
-          # <objdir>/usr/src/release/smolbsd.ufs.qcow2)
+          # <objdir>/usr/src/release/smolfire.ufs.qcow2)
           # Always pull the in-VM make log out — the real error lives there
           # and dies with the ephemeral VM otherwise (runs #3/#4 lesson).
           scp -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -P "$SSH_PORT" root@127.0.0.1:/var/tmp/smolbsd-build.log \
-              "$WORK/smolbsd-build-vm.log" || true
-          ART=$($SSH "find /usr/obj -name smolbsd.ufs.qcow2 2>/dev/null | head -1")
+              -P "$SSH_PORT" root@127.0.0.1:/var/tmp/smolfire-build.log \
+              "$WORK/smolfire-build-vm.log" || true
+          ART=$($SSH "find /usr/obj -name smolfire.ufs.qcow2 2>/dev/null | head -1")
           [ -n "$ART" ] || ART=$($SSH "find /usr/obj -name '*.ufs.qcow2' 2>/dev/null | head -1")
           if [ -z "$ART" ]; then
             echo "ERROR: no qcow2 artifact found in /usr/obj (build rc=$BUILD_RC)"
             echo "==== tail of in-VM make log ===="
-            tail -n 150 "$WORK/smolbsd-build-vm.log" || true
+            tail -n 150 "$WORK/smolfire-build-vm.log" || true
             exit 1
           fi
           [ "$BUILD_RC" -eq 0 ] || echo "WARNING: build script exited rc=$BUILD_RC after producing the artifact - check build.log"
           echo "artifact=$ART"
           scp -i ci_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -P "$SSH_PORT" "root@127.0.0.1:$ART" \
-              "$WORK/smolbsd-${{ inputs.arch || 'amd64' }}.qcow2"
-          ls -lh "$WORK/smolbsd-${{ inputs.arch || 'amd64' }}.qcow2"
+              "$WORK/smolfire-${{ inputs.arch || 'amd64' }}.qcow2"
+          ls -lh "$WORK/smolfire-${{ inputs.arch || 'amd64' }}.qcow2"
 
       - name: Compress qcow2 (in place)
         run: |
           set -e
           ARCH="${{ inputs.arch || 'amd64' }}"
-          RAW="$WORK/smolbsd-${ARCH}.qcow2"
+          RAW="$WORK/smolfire-${ARCH}.qcow2"
           RAW_BYTES=$(wc -c < "$RAW")
           # Per-cluster zlib compression: read-transparent to every qemu that
           # can open qcow2. Deliberately NOT zstd (-o compression_type=zstd),
@@ -234,7 +237,7 @@ jobs:
         id: size
         continue-on-error: true   # deferred: enforced after the boot gate below
         run: |
-          BYTES=$(wc -c < "$WORK/smolbsd-${{ inputs.arch || 'amd64' }}.qcow2")
+          BYTES=$(wc -c < "$WORK/smolfire-${{ inputs.arch || 'amd64' }}.qcow2")
           LIMIT=536870912
           echo "artifact: $BYTES bytes; limit: $LIMIT bytes"
           if [ "$BYTES" -le "$LIMIT" ]; then
@@ -255,7 +258,7 @@ jobs:
             set timeout 60
             set t0 [clock seconds]
             spawn qemu-system-x86_64 -M q35 -accel kvm -cpu host -m 512M -smp 2 \
-              -drive file='"$WORK"'/smolbsd-amd64.qcow2,format=qcow2,if=virtio,snapshot=on \
+              -drive file='"$WORK"'/smolfire-amd64.qcow2,format=qcow2,if=virtio,snapshot=on \
               -nic user,model=virtio-net-pci -display none -serial mon:stdio
             expect {
               "login:"        { puts "\nTIME_TO_LOGIN=[expr [clock seconds]-$t0]s\nVERDICT=pass"; exit 0 }
@@ -275,13 +278,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smolbsd-${{ inputs.arch || 'amd64' }}
+          name: smolfire-${{ inputs.arch || 'amd64' }}
           if-no-files-found: warn
           path: |
-            /mnt/smolbsd-ci/smolbsd-*.qcow2
-            /mnt/smolbsd-ci/build.log
-            /mnt/smolbsd-ci/smolbsd-build-vm.log
-            /mnt/smolbsd-ci/serial.log
+            /mnt/smolfire-ci/smolfire-*.qcow2
+            /mnt/smolfire-ci/build.log
+            /mnt/smolfire-ci/smolfire-build-vm.log
+            /mnt/smolfire-ci/serial.log
 
       - name: Teardown VM
         if: always()

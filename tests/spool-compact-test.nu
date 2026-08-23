@@ -30,10 +30,10 @@ def make-temp-dir [] {
 
 # Build a minimal well-formed mbox message with a unique integer index.
 def make-msg [idx: int] {
-    let id = $"<msg.($idx).test@smolbsd.local>"
-    $"From agent@smolbsd.local Wed Jan  1 00:00:00 2026
-From: agent@smolbsd.local
-To: coordinator@smolbsd.local
+    let id = $"<msg.($idx).test@smolfire.local>"
+    $"From agent@smolfire.local Wed Jan  1 00:00:00 2026
+From: agent@smolfire.local
+To: coordinator@smolfire.local
 Message-ID: ($id)
 Content-Type: text/toml; charset=utf-8
 
@@ -44,10 +44,10 @@ verdict = \"pass\"
 
 # Build a duplicate of message idx — same Message-ID, different body.
 def make-dup-msg [idx: int] {
-    let id = $"<msg.($idx).test@smolbsd.local>"
-    $"From agent@smolbsd.local Wed Jan  1 00:01:00 2026
-From: agent@smolbsd.local
-To: coordinator@smolbsd.local
+    let id = $"<msg.($idx).test@smolfire.local>"
+    $"From agent@smolfire.local Wed Jan  1 00:01:00 2026
+From: agent@smolfire.local
+To: coordinator@smolfire.local
 Message-ID: ($id)
 Content-Type: text/toml; charset=utf-8
 
@@ -153,7 +153,7 @@ assert ($ids | any {|id| $id | str contains "msg.5."}) "msg 5 present"
 # Verify first occurrence is kept (task_id = "task-2", not "task-2-dup")
 let content1 = open --raw $t1_spool
 let msgs1 = parse-mbox $content1
-let msg2 = $msgs1 | where {|m| (msg-id $m) == "<msg.2.test@smolbsd.local>"} | first
+let msg2 = $msgs1 | where {|m| (msg-id $m) == "<msg.2.test@smolfire.local>"} | first
 assert ($msg2.body | str contains "task-2\"") "first occurrence of msg 2 kept"
 assert (not ($msg2.body | str contains "task-2-dup")) "duplicate body not kept"
 
@@ -183,9 +183,9 @@ assert equal (count-spool $t2_spool) 20 "spool has 20 messages after trim"
 let ids2 = spool-ids $t2_spool
 assert ($ids2 | any {|id| $id | str contains "msg.50."}) "msg 50 kept (newest)"
 assert ($ids2 | any {|id| $id | str contains "msg.31."}) "msg 31 kept (boundary)"
-let msg1_present = $ids2 | any {|id| $id == "<msg.1.test@smolbsd.local>"}
+let msg1_present = $ids2 | any {|id| $id == "<msg.1.test@smolfire.local>"}
 assert (not $msg1_present) "msg 1 dropped (oldest)"
-let msg30_present = $ids2 | any {|id| $id == "<msg.30.test@smolbsd.local>"}
+let msg30_present = $ids2 | any {|id| $id == "<msg.30.test@smolfire.local>"}
 assert (not $msg30_present) "msg 30 dropped (just below boundary)"
 
 print "  PASS"

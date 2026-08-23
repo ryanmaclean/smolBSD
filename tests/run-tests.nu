@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# tests/run-tests.nu — smolBSD test suite runner
+# tests/run-tests.nu — smolfire test suite runner
 #
 # Usage:
 #   nu tests/run-tests.nu                    # run all tests
@@ -15,11 +15,11 @@ use coord-vm-e2e-tests.nu [run-coord-vm-e2e-tests]
 
 # Minimal two-message mbox fixture used by unit tests.
 const FIXTURE_MBOX = "From agent1 Mon May  4 10:00:00 2026
-From: agent1@smolbsd.local
-To: coordinator@smolbsd.local
+From: agent1@smolfire.local
+To: coordinator@smolfire.local
 Subject: [task-unit-1] fixture message one
 Date: Mon, 4 May 2026 10:00:00 -0000
-Message-ID: <unit-1.agent1@smolbsd.local>
+Message-ID: <unit-1.agent1@smolfire.local>
 Content-Type: text/toml; charset=utf-8
 
 task_id = \"unit-1\"
@@ -29,11 +29,11 @@ verdict  = \"pass\"
 detail = \"first fixture message\"
 
 From agent2 Mon May  4 10:00:01 2026
-From: agent2@smolbsd.local
-To: coordinator@smolbsd.local
+From: agent2@smolfire.local
+To: coordinator@smolfire.local
 Subject: [task-unit-2] fixture message two
 Date: Mon, 4 May 2026 10:00:01 -0000
-Message-ID: <unit-2.agent2@smolbsd.local>
+Message-ID: <unit-2.agent2@smolfire.local>
 Content-Type: text/toml; charset=utf-8
 
 task_id = \"unit-2\"
@@ -67,10 +67,10 @@ def run-unit-tests [] {
         let msgs = parse-mbox $FIXTURE_MBOX
         let first = $msgs | first
         let id = msg-id $first
-        if $id == "<unit-1.agent1@smolbsd.local>" {
+        if $id == "<unit-1.agent1@smolfire.local>" {
             {name: "msg-id: first message", status: "pass", detail: $"got ($id)"}
         } else {
-            {name: "msg-id: first message", status: "fail", detail: $"expected <unit-1.agent1@smolbsd.local>, got ($id)"}
+            {name: "msg-id: first message", status: "fail", detail: $"expected <unit-1.agent1@smolfire.local>, got ($id)"}
         }
     } catch {|err|
         {name: "msg-id: first message", status: "fail", detail: $"exception: ($err.msg)"}
@@ -82,10 +82,10 @@ def run-unit-tests [] {
         let msgs = parse-mbox $FIXTURE_MBOX
         let second = $msgs | last
         let id = msg-id $second
-        if $id == "<unit-2.agent2@smolbsd.local>" {
+        if $id == "<unit-2.agent2@smolfire.local>" {
             {name: "msg-id: second message", status: "pass", detail: $"got ($id)"}
         } else {
-            {name: "msg-id: second message", status: "fail", detail: $"expected <unit-2.agent2@smolbsd.local>, got ($id)"}
+            {name: "msg-id: second message", status: "fail", detail: $"expected <unit-2.agent2@smolfire.local>, got ($id)"}
         }
     } catch {|err|
         {name: "msg-id: second message", status: "fail", detail: $"exception: ($err.msg)"}
@@ -216,13 +216,13 @@ def main [
             # On x86 KVM host: set AMD64_ACCEL=kvm to run full login gate via time-to-ready.exp.
             let accel = ($env | get AMD64_ACCEL? | default "tcg")
             if $accel == "kvm" {
-                $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready.exp" "build/FreeBSD-15-amd64-smolbsd.qcow2")
+                $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready.exp" "build/FreeBSD-15-amd64-smolfire.qcow2")
             } else {
-                $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready-amd64-tcg.exp" "build/FreeBSD-15-amd64-smolbsd.qcow2" "tcg")
+                $results = $results | append (run-e2e-test "amd64" "tests/time-to-ready-amd64-tcg.exp" "build/FreeBSD-15-amd64-smolfire.qcow2" "tcg")
             }
         }
         if $arch == "all" or $arch == "aarch64" {
-            $results = $results | append (run-e2e-test "aarch64" "tests/time-to-ready-arm64.exp" "build/FreeBSD-15-aarch64-smolbsd.qcow2")
+            $results = $results | append (run-e2e-test "aarch64" "tests/time-to-ready-arm64.exp" "build/FreeBSD-15-aarch64-smolfire.qcow2")
         }
     }
 

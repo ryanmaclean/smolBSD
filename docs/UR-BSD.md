@@ -27,10 +27,10 @@ Prior art worth knowing:
 Analysis of the build inputs (not yet a mounted-image audit — run
 `bin/analyze-image.sh` on the next artifact to confirm proportions):
 
-1. **`VMSIZE=4g` override.** Both `release/tools/smolbsd-qemu*.conf`
+1. **`VMSIZE=4g` override.** Both `release/tools/smolfire-qemu*.conf`
    unconditionally exported `VMSIZE=4g` / `SWAPSIZE=512m`. Because
    `mk-vmimage.sh` sources the conf *after* parsing `-s`, this silently
-   defeated the pipeline's `VMSIZE=2g` (FIX-3 in `bin/build-smolbsd.nu`) —
+   defeated the pipeline's `VMSIZE=2g` (FIX-3 in `bin/build-smolfire-vm.nu`) —
    matching the "virtual 4 GiB sparse / 3551 MB rootfs" layout recorded in
    PHASE-1-RESULTS.
 2. **Full kernel module set.** Neither SMOLBSD kernconf set
@@ -48,9 +48,9 @@ Analysis of the build inputs (not yet a mounted-image audit — run
 
 | File | Change |
 |---|---|
-| `sys/arm64/conf/SMOLBSD`, `sys/amd64/conf/SMOLBSD` | `MODULES_OVERRIDE="tmpfs nullfs fdescfs procfs"` — only modules the VM can load; everything else is compiled in |
-| `release/tools/smolbsd-qemu-aarch64.conf`, `smolbsd-qemu.conf` | `VMSIZE`/`SWAPSIZE` now respect the caller (`${VMSIZE:-2g}`); pkgbase filter replaced by an explicit leaf-package list (FIX-10 — see UR-BSD-VERIFY.md Finding 4); size-trim extended (firmware, rescue, clang runtime, share/* leftovers, etcupdate db) |
-| `bin/build-smolbsd-image.nu` | in-VM release step now `cloudware-release` + `SMOLBSDCONF=` with `VMSIZE=2g` (was `vm-image ... CLOUDWARE_CONF=` at 4g — see FIX-9 in UR-BSD-VERIFY.md) |
+| `sys/arm64/conf/SMOLFIRE-VM`, `sys/amd64/conf/SMOLFIRE-VM` | `MODULES_OVERRIDE="tmpfs nullfs fdescfs procfs"` — only modules the VM can load; everything else is compiled in |
+| `release/tools/smolfire-qemu-aarch64.conf`, `smolfire-qemu.conf` | `VMSIZE`/`SWAPSIZE` now respect the caller (`${VMSIZE:-2g}`); pkgbase filter replaced by an explicit leaf-package list (FIX-10 — see UR-BSD-VERIFY.md Finding 4); size-trim extended (firmware, rescue, clang runtime, share/* leftovers, etcupdate db) |
+| `bin/build-smolfire-vm-image.nu` | in-VM release step now `cloudware-release` + `SMOLFIRECONF=` with `VMSIZE=2g` (was `vm-image ... CLOUDWARE_CONF=` at 4g — see FIX-9 in UR-BSD-VERIFY.md) |
 
 Notes on safety:
 
@@ -62,8 +62,8 @@ Notes on safety:
   `grep -v` could never exclude set dependencies. The failure mode is now
   fail-closed — a listed-but-missing package breaks `pkg install` visibly,
   and an omitted one drops functionality; see UR-BSD-VERIFY.md Finding 4.
-- The physical-board configs (`SMOLBSD-PI5`, `SMOLBSD-RK3588`,
-  `smolbsd-pi5.conf`, `smolbsd-rk3588.conf`) are deliberately untouched —
+- The physical-board configs (`SMOLFIRE-PI5`, `SMOLFIRE-RK3588`,
+  `smolfire-pi5.conf`, `smolfire-rk3588.conf`) are deliberately untouched —
   boards need real driver modules and firmware.
 
 ## What's next (in descending value)

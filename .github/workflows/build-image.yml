@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-# build-image.yml — Build smolBSD amd64 TPM image on <kvm-host>.
+# build-image.yml — Build smolfire amd64 TPM image on <kvm-host>.
 # Outputs: /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2
 #          /home/studio/smolbsd-ci/smolbsd-amd64-tpm.qcow2.sha256
 #
 # Trigger manually (workflow_dispatch) or automatically when the SMOLBSD kernel
-# config or smolbsd-qemu.conf changes.
+# config or smolfire-qemu.conf changes.
 #
 # After a successful build, run tpm-vm-test.yml to validate T1-T6.
 #
@@ -24,15 +24,15 @@
 # returns. NOPKGBASE=yes is fine and intentional here: verified against
 # releng/15.0 vmimage.subr, it only switches the BASE install to installworld.
 
-name: Build smolBSD TPM Image
+name: Build smolfire TPM Image
 
 on:
   workflow_dispatch:
   push:
     branches: [main]   # branch pushes must not queue runs on the (often offline) self-hosted runner
     paths:
-      - sys/amd64/conf/SMOLBSD
-      - release/tools/smolbsd-qemu.conf
+      - sys/amd64/conf/SMOLFIRE-VM
+      - release/tools/smolfire-qemu.conf
 
 env:
   FREEBSD_SRC:  /home/studio/bsd-build/src/freebsd-src
@@ -42,7 +42,7 @@ env:
 
 jobs:
   build:
-    name: Build smolBSD amd64 TPM qcow2
+    name: Build smolfire amd64 TPM qcow2
     runs-on: [self-hosted, linux, amd64, kvm]
     timeout-minutes: 180
 
@@ -64,16 +64,16 @@ jobs:
 
       - name: Copy SMOLBSD configs into freebsd-src
         run: |
-          # KERNCONF=SMOLBSD requires sys/amd64/conf/SMOLBSD in the src tree
-          cp -v sys/amd64/conf/SMOLBSD \
-            "$FREEBSD_SRC/sys/amd64/conf/SMOLBSD"
+          # KERNCONF=SMOLFIRE-VM requires sys/amd64/conf/SMOLFIRE-VM in the src tree
+          cp -v sys/amd64/conf/SMOLFIRE-VM \
+            "$FREEBSD_SRC/sys/amd64/conf/SMOLFIRE-VM"
 
-          # cloudware-release needs smolbsd-qemu.conf in release/tools/
-          cp -v release/tools/smolbsd-qemu.conf \
-            "$FREEBSD_SRC/release/tools/smolbsd-qemu.conf"
+          # cloudware-release needs smolfire-qemu.conf in release/tools/
+          cp -v release/tools/smolfire-qemu.conf \
+            "$FREEBSD_SRC/release/tools/smolfire-qemu.conf"
 
           # Verify copies: device tpm must be present in kernel config
-          grep "device tpm" "$FREEBSD_SRC/sys/amd64/conf/SMOLBSD" || {
+          grep "device tpm" "$FREEBSD_SRC/sys/amd64/conf/SMOLFIRE-VM" || {
             echo "ERROR: 'device tpm' not found in SMOLBSD kernel config"
             exit 1
           }
@@ -84,7 +84,7 @@ jobs:
       - name: Create output directory
         run: mkdir -p "$OUTPUT_DIR"
 
-      - name: Build smolBSD amd64 TPM image (PATH B — inside FreeBSD VM)
+      - name: Build smolfire amd64 TPM image (PATH B — inside FreeBSD VM)
         run: |
           set -eo pipefail
 
@@ -100,8 +100,8 @@ jobs:
           # /usr/obj/<arch>/usr/src/release) — discovered with find below.
 
           FBSD_IMAGE="/home/studio/smolbsd-tpm-test/FreeBSD-15.1-STABLE-amd64-ufs.qcow2"
-          SCRATCH_DISK="/tmp/smolbsd-build-scratch-$$.qcow2"
-          BUILD_VM_PID_FILE="/tmp/smolbsd-build-vm-$$.pid"
+          SCRATCH_DISK="/tmp/smolfire-build-scratch-$$.qcow2"
+          BUILD_VM_PID_FILE="/tmp/smolfire-build-vm-$$.pid"
           BUILD_SSH_PORT=2242
 
           # Sanity-check the stock FreeBSD image is present.
@@ -148,8 +148,8 @@ jobs:
             -nic "user,model=virtio-net-pci,hostfwd=tcp::${BUILD_SSH_PORT}-:22" \
             -nographic \
             -monitor none \
-            -serial file:/tmp/smolbsd-build-serial.log \
-            > /tmp/smolbsd-build-vm.log 2>&1 &
+            -serial file:/tmp/smolfire-build-serial.log \
+            > /tmp/smolfire-build-vm.log 2>&1 &
           echo $! > "$BUILD_VM_PID_FILE"
           echo "Build VM PID: $(cat $BUILD_VM_PID_FILE)"
 
@@ -167,7 +167,7 @@ jobs:
             fi
             if [ "$i" -eq 120 ]; then
               echo "ERROR: build VM SSH did not respond within 120s"
-              tail -30 /tmp/smolbsd-build-serial.log || true
+              tail -30 /tmp/smolfire-build-serial.log || true
               exit 1
             fi
             sleep 1
@@ -178,11 +178,11 @@ jobs:
           #   1. Partition and mount the scratch disk as /build
           #   2. Symlink /usr/obj -> /build/obj  (redirects MAKEOBJDIRPREFIX)
           #   3. Mount the 9p hostsrc share at /usr/src
-          #   4. Copy smolBSD configs into the src tree (already done by host
+          #   4. Copy smolfire configs into the src tree (already done by host
           #      pre-build steps, visible via the 9p share)
-          #   5. buildworld + buildkernel KERNCONF=SMOLBSD
-          #   6. cloudware-release KERNCONF=SMOLBSD CLOUDWARE=smolbsd
-          #      SMOLBSD_FORMAT=qcow2 SMOLBSD_FSLIST=ufs
+          #   5. buildworld + buildkernel KERNCONF=SMOLFIRE-VM
+          #   6. cloudware-release KERNCONF=SMOLFIRE-VM CLOUDWARE=smolfire
+          #      SMOLFIRE_FORMAT=qcow2 SMOLFIRE_FSLIST=ufs
           #      MK_DEBUG_FILES=no MK_TESTS=no MK_LIB32=no
           #      NOPKGBASE=yes (uses installworld, not pkgbase repos)
           #      NOTE: tpm2-tools no longer baked in (D-02 retired; installed at test time)
@@ -217,11 +217,11 @@ jobs:
           mkdir -p /usr/src
           mount -t virtfs -o trans=virtio hostsrc /usr/src
           echo "9p hostsrc mounted at /usr/src"
-          ls /usr/src/sys/amd64/conf/SMOLBSD || {
-            echo "ERROR: SMOLBSD kernel config not visible at /usr/src/sys/amd64/conf/SMOLBSD"
+          ls /usr/src/sys/amd64/conf/SMOLFIRE-VM || {
+            echo "ERROR: SMOLBSD kernel config not visible at /usr/src/sys/amd64/conf/SMOLFIRE-VM"
             exit 1
           }
-          grep "device tpm" /usr/src/sys/amd64/conf/SMOLBSD || {
+          grep "device tpm" /usr/src/sys/amd64/conf/SMOLFIRE-VM || {
             echo "ERROR: device tpm missing from SMOLBSD kernel config"
             exit 1
           }
@@ -234,43 +234,43 @@ jobs:
             TARGET=amd64 TARGET_ARCH=amd64 \
             MK_DEBUG_FILES=no MK_TESTS=no MK_LIB32=no \
             -j${ncpu} \
-            2>&1 | tee /tmp/smolbsd-buildworld.log
+            2>&1 | tee /tmp/smolfire-buildworld.log
 
-          # 5. buildkernel KERNCONF=SMOLBSD
-          echo "Building kernel KERNCONF=SMOLBSD with -j${ncpu} ..."
+          # 5. buildkernel KERNCONF=SMOLFIRE-VM
+          echo "Building kernel KERNCONF=SMOLFIRE-VM with -j${ncpu} ..."
           make -C /usr/src buildkernel \
-            KERNCONF=SMOLBSD \
+            KERNCONF=SMOLFIRE-VM \
             TARGET=amd64 TARGET_ARCH=amd64 \
             MK_DEBUG_FILES=no MK_TESTS=no \
             -j${ncpu} \
-            2>&1 | tee /tmp/smolbsd-buildkernel.log
+            2>&1 | tee /tmp/smolfire-buildkernel.log
 
-          # 6. cloudware-release — generates cw-smolbsd-ufs-qcow2 target.
+          # 6. cloudware-release — generates cw-smolfire-ufs-qcow2 target.
           #    SMOLBSD is not a predefined cloudware type in Makefile.vm so
-          #    SMOLBSD_FORMAT and SMOLBSD_FSLIST must be set explicitly.
+          #    SMOLFIRE_FORMAT and SMOLFIRE_FSLIST must be set explicitly.
           #    NOPKGBASE=yes uses installworld rather than pkgbase repos.
           #    tpm2-tools no longer baked in (D-02 retired; installed at test time).
           set -o pipefail
           echo "Running cloudware-release ..."
           make -C /usr/src/release cloudware-release \
-            KERNCONF=SMOLBSD \
+            KERNCONF=SMOLFIRE-VM \
             WITH_CLOUDWARE=yes \
-            CLOUDWARE=smolbsd \
-            SMOLBSDCONF=/usr/src/release/tools/smolbsd-qemu.conf \
-            SMOLBSD_FORMAT=qcow2 \
-            SMOLBSD_FSLIST=ufs \
+            CLOUDWARE=smolfire \
+            SMOLFIRECONF=/usr/src/release/tools/smolfire-qemu.conf \
+            SMOLFIRE_FORMAT=qcow2 \
+            SMOLFIRE_FSLIST=ufs \
             VMSIZE=4g \
             TARGET=amd64 TARGET_ARCH=amd64 \
             MK_DEBUG_FILES=no MK_KERNEL_SYMBOLS=no MK_TESTS=no MK_LIB32=no \
             NOPKGBASE=yes \
-            2>&1 | tee /tmp/smolbsd-cloudware.log
+            2>&1 | tee /tmp/smolfire-cloudware.log
 
           echo "Build complete"
           # Objdir layout differs between trees (unified: /usr/obj/usr/src/<arch>/release,
           # legacy: /usr/obj/<arch>/usr/src/release) — find it instead of hardcoding.
           find /usr/obj -name "*.ufs.qcow2" -exec ls -lh {} + | grep . \
             || { echo "ERROR: no *.ufs.qcow2 produced"; exit 1; }
-          ' 2>&1 | tee /tmp/smolbsd-build.log
+          ' 2>&1 | tee /tmp/smolfire-build.log
 
           # --- scp the qcow2 artifact from the VM back to the host ---
           echo "Copying artifact from build VM ..."
@@ -306,7 +306,7 @@ jobs:
           if [ ! -f "$OUTPUT_IMAGE" ]; then
             echo "ERROR: no qcow2 artifact found at $OUTPUT_IMAGE"
             echo "--- last 80 lines of build log ---"
-            tail -80 /tmp/smolbsd-build.log || true
+            tail -80 /tmp/smolfire-build.log || true
             exit 1
           fi
           echo "Artifact present: $(ls -lh $OUTPUT_IMAGE)"
@@ -340,10 +340,10 @@ jobs:
 
           # Build metadata record for cache invalidation and audit
           {
-            echo "KERNCONF=SMOLBSD"
+            echo "KERNCONF=SMOLFIRE-VM"
             echo "VMSIZE=4g"
-            echo "SMOLBSD_FORMAT=qcow2"
-            echo "SMOLBSD_FSLIST=ufs"
+            echo "SMOLFIRE_FORMAT=qcow2"
+            echo "SMOLFIRE_FSLIST=ufs"
             echo "built: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
             git rev-parse HEAD
           } > "$OUTPUT_DIR/BUILD-INFO.txt"
@@ -354,9 +354,9 @@ jobs:
       - name: Upload build log on failure
         if: failure()
         run: |
-          echo "=== smolbsd-build.log (last 150 lines) ==="
-          tail -150 /tmp/smolbsd-build.log || true
-          echo "=== smolbsd-build-serial.log (last 50 lines) ==="
-          tail -50 /tmp/smolbsd-build-serial.log || true
-          echo "=== smolbsd-cloudware.log (last 80 lines, if present) ==="
-          tail -80 /tmp/smolbsd-cloudware.log || true
+          echo "=== smolfire-build.log (last 150 lines) ==="
+          tail -150 /tmp/smolfire-build.log || true
+          echo "=== smolfire-build-serial.log (last 50 lines) ==="
+          tail -50 /tmp/smolfire-build-serial.log || true
+          echo "=== smolfire-cloudware.log (last 80 lines, if present) ==="
+          tail -80 /tmp/smolfire-cloudware.log || true

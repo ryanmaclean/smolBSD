@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# bin/coord-submit.nu — submit a task to the smolBSD coordinator
+# bin/coord-submit.nu — submit a task to the smolfire coordinator
 #
 # Usage:
 #   nu bin/coord-submit.nu --task-id "task-0042" --role "builder" --subject "Build kernel" --body '...'
@@ -24,7 +24,7 @@ def max-task-number [spool: string] {
         $messages
         | each {|m|
             let id = msg-id $m
-            # Match <task-NNNN.anything@smolbsd.local>
+            # Match <task-NNNN.anything@smolfire.local>
             if ($id | str starts-with "<task-") {
                 let inner = $id | str substring 1..($id | str length | $in - 2)  # strip < >
                 let parts = $inner | split row "."
@@ -219,11 +219,11 @@ def cmd-submit [
         error make {msg: $"task ($task_id) already in spool"}
     }
 
-    let role_addr = $"($role)@smolbsd.local"
+    let role_addr = $"($role)@smolfire.local"
     let ts        = rfc2822-now
     let dstamp    = asctime-now
 
-    let envelope = $"From coord@smolbsd.local ($dstamp)\nFrom: coordinator@smolbsd.local\nTo: ($role_addr)\nSubject: [($task_id)] ($subject)\nDate: ($ts)\nMessage-ID: <($task_id).coord@smolbsd.local>\nX-Project: smolbsd\nContent-Type: text/toml; charset=utf-8\n\n($body)\n"
+    let envelope = $"From coord@smolfire.local ($dstamp)\nFrom: coordinator@smolfire.local\nTo: ($role_addr)\nSubject: [($task_id)] ($subject)\nDate: ($ts)\nMessage-ID: <($task_id).coord@smolfire.local>\nX-Project: smolfire\nContent-Type: text/toml; charset=utf-8\n\n($body)\n"
 
     if $dry_run {
         print $envelope

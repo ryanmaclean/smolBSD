@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# harvest-build.nu — poll <aarch64-builder> for smolBSD build completion and harvest
+# harvest-build.nu — poll <aarch64-builder> for smolfire build completion and harvest
 # the resulting qcow2 artifact to <hypervisor-host>.
 #
 # Usage:
@@ -12,11 +12,11 @@
 # The build is launched by bin/smolbuild-amd64.sh inside a screen session on
 # <aarch64-builder> (fb-vm-24, reached via ssh -J <hypervisor-host> -p 2222 builder@localhost).
 # This script monitors that session, waits for the artifact, then SCPs it to
-# <hypervisor-host>:~/smolbsd-artifacts/ and appends a task-0038 result to
+# <hypervisor-host>:~/smolfire-artifacts/ and appends a task-0038 result to
 # var/mail/spool.
 #
 # Artifact search order (both paths checked each poll):
-#   1. /tmp/smolbsd-amd64-out/*.qcow2                    (copied there by build script on finish)
+#   1. /tmp/smolfire-amd64-out/*.qcow2                    (copied there by build script on finish)
 #   2. /usr/obj/amd64.amd64/usr/src/release/**/*.qcow2   (make release OBJDIR output)
 #
 # See: bin/smolbuild-amd64.sh (build script on <aarch64-builder>)
@@ -86,7 +86,7 @@ def find-artifact [
     # For amd64: /usr/obj/amd64.amd64/usr/src/release/
     # vm-image subdir: /usr/obj/amd64.amd64/usr/src/release/vm/
     # Use a single semicolon-separated sh -c string to avoid Nushell escape issues.
-    let search_cmd = "sh -c 'f=$(ls /tmp/smolbsd-amd64-out/*.qcow2 2>/dev/null | head -1); [ -n \"$f\" ] && echo \"$f\" && exit 0; f=$(find /usr/obj/amd64.amd64/usr/src/release -name *.qcow2 2>/dev/null | head -1); [ -n \"$f\" ] && echo \"$f\" && exit 0; echo'"
+    let search_cmd = "sh -c 'f=$(ls /tmp/smolfire-amd64-out/*.qcow2 2>/dev/null | head -1); [ -n \"$f\" ] && echo \"$f\" && exit 0; f=$(find /usr/obj/amd64.amd64/usr/src/release -name *.qcow2 2>/dev/null | head -1); [ -n \"$f\" ] && echo \"$f\" && exit 0; echo'"
     let r = ssh-builder $jump $port $target $search_cmd $dry_run
     if $dry_run { return "" }
     $r.stdout | str trim
@@ -158,14 +158,14 @@ def append-spool [
     let ts    = date now | format date "%a %b %d %H:%M:%S %Y"
     let ts_iso = date now | format date "%Y-%m-%dT%H:%M:%SZ"
 
-    let body = $"From smolbsd-runner ($ts)
-From: runner@smolbsd.local
-To: coordinator@smolbsd.local
-Subject: [task-0038] smolBSD amd64 SMOLBSD-kernel build harvest — ($verdict)
+    let body = $"From smolfire-runner ($ts)
+From: runner@smolfire.local
+To: coordinator@smolfire.local
+Subject: [task-0038] smolfire amd64 SMOLFIRE-VM-kernel build harvest — ($verdict)
 Date: ($ts_iso)
-Message-ID: <task-0038.runner@smolbsd.local>
-In-Reply-To: <task-0037.runner@smolbsd.local>
-X-Project: smolbsd
+Message-ID: <task-0038.runner@smolfire.local>
+In-Reply-To: <task-0037.runner@smolfire.local>
+X-Project: smolfire
 X-Phase: tinyos/phase-iii
 X-Verdict: ($verdict)
 X-Attempt: 1
@@ -224,13 +224,13 @@ def do-poll [
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-# Poll <aarch64-builder> for smolBSD amd64 build completion and harvest the artifact.
+# Poll <aarch64-builder> for smolfire amd64 build completion and harvest the artifact.
 #
 # --screen-session  Screen session name to monitor (default: smolbuild-amd64)
 # --log-file        Build log path on <aarch64-builder> (default: /tmp/smolbuild-amd64.log)
 # --poll-interval   Seconds between polls (default: 120)
 # --max-polls       Maximum number of polls before giving up (default: 60 = 2 h)
-# --dest-dir        Local destination for harvested artifact (default: ~/smolbsd-artifacts)
+# --dest-dir        Local destination for harvested artifact (default: ~/smolfire-artifacts)
 # --ssh-target      SSH login for <aarch64-builder> (default: builder@localhost)
 # --ssh-jump        SSH jump host (default: <hypervisor-host>)
 # --ssh-port        SSH port for <aarch64-builder> (default: 2222)
@@ -241,16 +241,16 @@ def main [
     --log-file:       string = "/tmp/smolbuild-amd64.log"
     --poll-interval:  int    = 120
     --max-polls:      int    = 60
-    --dest-dir:       string = "~/smolbsd-artifacts"
+    --dest-dir:       string = "~/smolfire-artifacts"
     --ssh-target:     string = "builder@localhost"
-    --ssh-jump:       string = ""        # jump host; falls back to $SMOLBSD_SSH_JUMP
+    --ssh-jump:       string = ""        # jump host; falls back to $SMOLFIRE_SSH_JUMP
     --ssh-port:       int    = 2222
     --dry-run
     --check-now
 ] {
-    # Jump host is site-specific: --ssh-jump, or $SMOLBSD_SSH_JUMP, or none
+    # Jump host is site-specific: --ssh-jump, or $SMOLFIRE_SSH_JUMP, or none
     # (empty means connect directly, no -J).
-    let ssh_jump = if $ssh_jump != "" { $ssh_jump } else { $env.SMOLBSD_SSH_JUMP? | default "" }
+    let ssh_jump = if $ssh_jump != "" { $ssh_jump } else { $env.SMOLFIRE_SSH_JUMP? | default "" }
     log-step "harvest-build" "starting" {
         session:  $screen_session
         log:      $log_file

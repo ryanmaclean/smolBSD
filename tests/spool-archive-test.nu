@@ -30,10 +30,10 @@ def make-temp-dir [] {
 
 # Build a minimal well-formed mbox message with a unique integer index.
 def make-msg [idx: int] {
-    let id = $"<msg.($idx).test@smolbsd.local>"
-    $"From agent@smolbsd.local Wed Jan  1 00:00:00 2026
-From: agent@smolbsd.local
-To: coordinator@smolbsd.local
+    let id = $"<msg.($idx).test@smolfire.local>"
+    $"From agent@smolfire.local Wed Jan  1 00:00:00 2026
+From: agent@smolfire.local
+To: coordinator@smolfire.local
 Message-ID: ($id)
 Content-Type: text/toml; charset=utf-8
 
@@ -81,7 +81,7 @@ def write-state [path: string, pending_id: string] {
         last_tick_at:       "2026-01-01T00:00:00Z"
         pending_request_id: $pending_id
         pending_task_id:    "task-pending"
-        pending_to_addr:    "agent@smolbsd.local"
+        pending_to_addr:    "agent@smolfire.local"
         dispatched_at:      "2026-01-01T00:00:00Z"
         attempt_counts:     {}
         halted_tasks:       []
@@ -154,7 +154,7 @@ assert ($active_ids  | any {|id| $id | str contains "msg.101."}) "msg 101 in act
 assert ($archive_ids | any {|id| $id | str contains "msg.1."})   "msg 1 in archive"
 assert ($archive_ids | any {|id| $id | str contains "msg.100."}) "msg 100 in archive"
 # msg 1 must NOT be in active spool
-let msg1_in_active = $active_ids | any {|id| $id == "<msg.1.test@smolbsd.local>"}
+let msg1_in_active = $active_ids | any {|id| $id == "<msg.1.test@smolfire.local>"}
 assert (not $msg1_in_active) "msg 1 not in active"
 
 print "  PASS"
@@ -215,7 +215,7 @@ seed-spool $t4_spool 150
 
 # Make the FSM state claim that message #5 (which would be in the archive set)
 # is the pending request in flight.
-let protected_id = "<msg.5.test@smolbsd.local>"
+let protected_id = "<msg.5.test@smolfire.local>"
 write-state $t4_state $protected_id
 
 let r4 = run-archive $t4 --threshold 50
@@ -241,7 +241,7 @@ seed-spool $t5_spool 150
 
 # Message #140 would be in the keep set (newest 100, i.e. 51–150).
 # So the archive should proceed without blocking.
-let safe_id = "<msg.140.test@smolbsd.local>"
+let safe_id = "<msg.140.test@smolfire.local>"
 write-state $t5_state $safe_id
 
 let r5 = run-archive $t5 --threshold 100

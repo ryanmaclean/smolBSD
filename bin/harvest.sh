@@ -24,15 +24,15 @@ ARTIFACTS_DIR="${ARTIFACTS_DIR:-$ROOT/var/artifacts}"
 REPORT="$ARTIFACTS_DIR/harvest-report.txt"
 
 # FIX-9: cloudware-release writes the artifact to the release objdir root as
-# ${CLOUDWARE:tl}.${FS}.${FMT} — smolbsd.ufs.qcow2 on releng/15.0 (verified in
+# ${CLOUDWARE:tl}.${FS}.${FMT} — smolfire.ufs.qcow2 on releng/15.0 (verified in
 # Makefile.vm). Default paths use the unified objdir layout
 # (/usr/obj/usr/src/<arch>/release — src.sys.obj.mk MK_UNIFIED_OBJDIR=yes).
 # Defaults are overridable per-run: AMD64_REMOTE=... sh bin/harvest.sh
-AMD64_REMOTE="${AMD64_REMOTE:-root@REDACTED-VULTR-IP:/usr/obj/usr/src/amd64.amd64/release/smolbsd.ufs.qcow2}"
-AARCH64_REMOTE="${AARCH64_REMOTE:-builder@localhost:/usr/obj/usr/src/arm64.aarch64/release/smolbsd.ufs.qcow2}"
+AMD64_REMOTE="${AMD64_REMOTE:-root@REDACTED-VULTR-IP:/usr/obj/usr/src/amd64.amd64/release/smolfire.ufs.qcow2}"
+AARCH64_REMOTE="${AARCH64_REMOTE:-builder@localhost:/usr/obj/usr/src/arm64.aarch64/release/smolfire.ufs.qcow2}"
 
-AMD64_IMAGE="$ARTIFACTS_DIR/FreeBSD-15.0-RELEASE-amd64-SMOLBSD.qcow2"
-AARCH64_IMAGE="$ARTIFACTS_DIR/FreeBSD-15.0-RELEASE-arm64-SMOLBSD.qcow2"
+AMD64_IMAGE="$ARTIFACTS_DIR/FreeBSD-15.0-RELEASE-amd64-SMOLFIRE-VM.qcow2"
+AARCH64_IMAGE="$ARTIFACTS_DIR/FreeBSD-15.0-RELEASE-arm64-SMOLFIRE-VM.qcow2"
 
 # 512 MiB in bytes
 SIZE_LIMIT=536870912
@@ -106,7 +106,7 @@ check_boot() {
 mkdir -p "$ARTIFACTS_DIR"
 : > "$REPORT"
 
-report "smolBSD Harvest Report"
+report "smolfire Harvest Report"
 report "Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 report "============================================================"
 report ""

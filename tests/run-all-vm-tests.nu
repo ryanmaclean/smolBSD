@@ -10,11 +10,11 @@
 # failures before the gate would have opened, without looping forever.
 #
 # Usage:
-#   nu tests/run-all-vm-tests.nu --image smolbsd-amd64.raw
-#   nu tests/run-all-vm-tests.nu --image smolbsd-amd64.raw --tpm
-#   nu tests/run-all-vm-tests.nu --image smolbsd-amd64.raw \
+#   nu tests/run-all-vm-tests.nu --image smolfire-amd64.raw
+#   nu tests/run-all-vm-tests.nu --image smolfire-amd64.raw --tpm
+#   nu tests/run-all-vm-tests.nu --image smolfire-amd64.raw \
 #       --results-dir /tmp/ci --required-passes 3 --gap-seconds 30
-#   nu tests/run-all-vm-tests.nu --image smolbsd-amd64.raw \
+#   nu tests/run-all-vm-tests.nu --image smolfire-amd64.raw \
 #       --remote <aarch64-builder>.example.com --tpm
 #
 # Exit codes:
@@ -66,7 +66,7 @@ def print-run-summary [n: int, overall: string, duration_s: int] {
 # ── remote dispatch ────────────────────────────────────────────────────────────
 
 # Re-invoke this script on a remote host via SSH.  The remote must have nu and
-# the smolBSD repo checked out at the same path, or at least the bin/ and
+# the smolfire repo checked out at the same path, or at least the bin/ and
 # tests/ tree reachable from the working directory.
 def run-remote [
     host: string,
@@ -103,10 +103,10 @@ def run-remote [
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main [
-    --image: string,                          # path to smolBSD raw image on the bhyve host
+    --image: string,                          # path to smolfire raw image on the bhyve host
     --arch: string = "amd64",                 # target arch (informational; passed to run-vm-tests if supported)
     --tpm,                                    # attach swtpm to bhyve guest
-    --results-dir: string = "/tmp/smolbsd-results",  # where TOML result files accumulate
+    --results-dir: string = "/tmp/smolfire-results",  # where TOML result files accumulate
     --required-passes: int = 3,               # consecutive passes required to open the gate
     --remote: string = "",                    # if set, SSH to this host and run the loop there
     --gap-seconds: int = 30,                  # pause between runs (lets bhyve fully release resources)
@@ -119,7 +119,7 @@ def main [
 
     # ── 1. validate ───────────────────────────────────────────────────────────
     if ($image | str length) == 0 {
-        error make {msg: "--image is required (path to smolBSD raw image)"}
+        error make {msg: "--image is required (path to smolfire raw image)"}
     }
     if not ($image | path exists) {
         error make {msg: $"Image not found: ($image)"}

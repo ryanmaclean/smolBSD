@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# bin/demo-round-trip.nu — smolBSD thesis demonstration
+# bin/demo-round-trip.nu — smolfire thesis demonstration
 #
 # Proves: project state transfers between Claude agent teams
 # using the BSD mailbox (mbox+TOML) paradigm.
@@ -11,13 +11,13 @@
 #   nu bin/demo-round-trip.nu --arch arm64 # specify arch (default: arm64)
 
 def main [
-    --live                                          # boot a real smolBSD VM for the agent task
+    --live                                          # boot a real smolfire VM for the agent task
     --arch: string = "arm64"                        # arm64 | amd64
     --spool: string = "var/run/demo-spool"          # demo uses its own spool (not production)
     --state: string = "var/run/demo-state.toml"     # demo FSM state (isolated from production)
 ] {
     print "╔══════════════════════════════════════════════════════╗"
-    print "║  smolBSD — Thesis Demo: Mailbox State Transfer       ║"
+    print "║  smolfire — Thesis Demo: Mailbox State Transfer       ║"
     print "║  BSD mbox+TOML · Actor FSM · JEC · Agent Handoff     ║"
     print "╚══════════════════════════════════════════════════════╝"
     print ""
@@ -41,7 +41,7 @@ def main [
 
     let task_toml = $"task_id = \"($task_id)\"
 role    = \"builder\"
-objective = \"Boot smolBSD VM and collect system identity\"
+objective = \"Boot smolfire VM and collect system identity\"
 
 [commands]
 run         = [\"uname -a\", \"sysctl kern.version\", \"df -h /\"]
@@ -52,25 +52,25 @@ must_contain = \"FreeBSD\"
 max_boot_sec = 30
 
 [reply_contract]
-output_to            = \"coordinator@smolbsd.local\"
+output_to            = \"coordinator@smolfire.local\"
 output_format        = \"mbox+toml-v1\"
 attestation_required = true
 tools_required       = [\"Bash\"]
 
 [context_pointers]
-image_path = \"build/FreeBSD-15-($arch)-smolbsd.qcow2\"
+image_path = \"build/FreeBSD-15-($arch)-smolfire.qcow2\"
 arch       = \"($arch)\"
 spec       = \"docs/superpowers/specs/2026-04-30-mailbox-jec-handoff-design.md\"
 "
 
     # mbox envelope — From_ line (no colon) is the mbox separator per RFC 4155
-    let envelope = $"From coord@smolbsd.local ($dstamp)
-From: coordinator@smolbsd.local
-To: builder@smolbsd.local
-Subject: [($task_id)] Boot smolBSD and collect system identity
+    let envelope = $"From coord@smolfire.local ($dstamp)
+From: coordinator@smolfire.local
+To: builder@smolfire.local
+Subject: [($task_id)] Boot smolfire and collect system identity
 Date: ($ts)
-Message-ID: <($task_id).coord@smolbsd.local>
-X-Project: smolbsd
+Message-ID: <($task_id).coord@smolfire.local>
+X-Project: smolfire
 X-Phase: tinyos/thesis-demo
 Content-Type: text/toml; charset=utf-8
 
@@ -79,7 +79,7 @@ Content-Type: text/toml; charset=utf-8
 
     $envelope | save --force $abs_spool
     print $"  task ($task_id) written to ($spool)"
-    print $"  Message-ID: <($task_id).coord@smolbsd.local>"
+    print $"  Message-ID: <($task_id).coord@smolfire.local>"
 
     # ── Step 2: Builder agent reads task and executes ────────────────────────
     print ""
@@ -87,7 +87,7 @@ Content-Type: text/toml; charset=utf-8
 
     # Map arm64 -> aarch64 for the qcow2 filename convention
     let file_arch = if $arch == "arm64" { "aarch64" } else { $arch }
-    let image_path = [$root, $"build/FreeBSD-15-($file_arch)-smolbsd.qcow2"] | path join
+    let image_path = [$root, $"build/FreeBSD-15-($file_arch)-smolfire.qcow2"] | path join
     let result = if $live and ($image_path | path exists) {
         print $"  live mode: booting ($image_path)"
         run-live-agent $arch $image_path
@@ -119,22 +119,22 @@ df_root      = ($result.df_root | to json)
 boot_sec     = ($result.boot_sec)
 
 [[claims]]
-subject  = \"smolBSD contains FreeBSD\"
+subject  = \"smolfire contains FreeBSD\"
 expected = \"uname output contains 'FreeBSD'\"
 probe    = \"uname -a\"
 evidence = ($result.uname | to json)
 verdict  = \"($result.verdict)\"
 "
 
-    let reply_envelope = $"From builder@smolbsd.local ($reply_dstamp)
-From: builder@smolbsd.local
-To: coordinator@smolbsd.local
-Subject: Re: [($task_id)] Boot smolBSD and collect system identity
+    let reply_envelope = $"From builder@smolfire.local ($reply_dstamp)
+From: builder@smolfire.local
+To: coordinator@smolfire.local
+Subject: Re: [($task_id)] Boot smolfire and collect system identity
 Date: ($reply_ts)
-Message-ID: <($task_id).builder@smolbsd.local>
-In-Reply-To: <($task_id).coord@smolbsd.local>
-References: <($task_id).coord@smolbsd.local>
-X-Project: smolbsd
+Message-ID: <($task_id).builder@smolfire.local>
+In-Reply-To: <($task_id).coord@smolfire.local>
+References: <($task_id).coord@smolfire.local>
+X-Project: smolfire
 X-Verdict: ($result.verdict)
 Content-Type: text/toml; charset=utf-8
 
@@ -143,7 +143,7 @@ Content-Type: text/toml; charset=utf-8
 
     $reply_envelope | save --append $abs_spool
     print $"  reply appended — verdict: ($result.verdict)"
-    print $"  Message-ID: <($task_id).builder@smolbsd.local>"
+    print $"  Message-ID: <($task_id).builder@smolfire.local>"
 
     # ── Step 4: Coordinator harvests via coord-tick ──────────────────────────
     print ""
@@ -185,15 +185,15 @@ Content-Type: text/toml; charset=utf-8
     print "╔══════════════════════════════════════════════════════╗"
     print "║  PROOF OF STATE TRANSFER                             ║"
     print "╠══════════════════════════════════════════════════════╣"
-    print $"║  task written:    <($task_id).coord@smolbsd.local>"
+    print $"║  task written:    <($task_id).coord@smolfire.local>"
     print $"║  agent executed:  ($result.mode)"
-    print $"║  reply received:  <($task_id).builder@smolbsd.local>"
+    print $"║  reply received:  <($task_id).builder@smolfire.local>"
     print $"║  FSM ticks:       ($tick_count)"
     print $"║  FSM final state: ($fsm_landed)"
     print $"║  verdict:         ($result.verdict)"
     print "╠══════════════════════════════════════════════════════╣"
     print "║  CLAIM BLOCK (would be fleet-eval verified in P2)    ║"
-    print $"║    subject:  smolBSD contains FreeBSD"
+    print $"║    subject:  smolfire contains FreeBSD"
     print $"║    probe:    uname -a"
     print $"║    evidence: ($result.uname | str substring 0..48)"
     print $"║    verdict:  ($result.verdict)"
@@ -207,15 +207,15 @@ Content-Type: text/toml; charset=utf-8
 
 # ── Mock agent ───────────────────────────────────────────────────────────────
 
-# Simulate what a real smolBSD VM would return when booted and queried.
+# Simulate what a real smolfire VM would return when booted and queried.
 # No VM, no SSH, no network required.
 def run-mock-agent [task_id: string, arch: string] {
     let uname_arch = if $arch == "arm64" { "aarch64" } else { "amd64" }
     {
         mode:         "mock"
         verdict:      "pass"
-        uname:        $"FreeBSD smolbsd 15.0-RELEASE FreeBSD 15.0-RELEASE #0 SMOLBSD: ($uname_arch)"
-        kern_version: "FreeBSD 15.0-RELEASE #0 SMOLBSD"
+        uname:        $"FreeBSD smolfire 15.0-RELEASE FreeBSD 15.0-RELEASE #0 SMOLFIRE-VM: ($uname_arch)"
+        kern_version: "FreeBSD 15.0-RELEASE #0 SMOLFIRE-VM"
         df_root:      "/dev/vtbd0p2  1048576  262144  786432  25%  /"
         boot_sec:     0
     }
@@ -223,7 +223,7 @@ def run-mock-agent [task_id: string, arch: string] {
 
 # ── Live agent ───────────────────────────────────────────────────────────────
 
-# Boot the real smolBSD qcow2 via vm-execute.nu, return output in demo format.
+# Boot the real smolfire qcow2 via vm-execute.nu, return output in demo format.
 def run-live-agent [arch: string, image_path: string] {
     use vm-execute.nu [run-vm-task]
 

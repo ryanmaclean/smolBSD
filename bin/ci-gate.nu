@@ -8,10 +8,10 @@
 #
 # Usage:
 #   nu bin/ci-gate.nu
-#   nu bin/ci-gate.nu --results-dir /tmp/smolbsd-results
-#   nu bin/ci-gate.nu --results-dir /tmp/smolbsd-results --required 3
-#   nu bin/ci-gate.nu --run --image smolbsd-amd64.raw --tpm
-#   nu bin/ci-gate.nu --run --image smolbsd-amd64.raw --results-dir /tmp/r
+#   nu bin/ci-gate.nu --results-dir /tmp/smolfire-results
+#   nu bin/ci-gate.nu --results-dir /tmp/smolfire-results --required 3
+#   nu bin/ci-gate.nu --run --image smolfire-amd64.raw --tpm
+#   nu bin/ci-gate.nu --run --image smolfire-amd64.raw --results-dir /tmp/r
 #
 # Exit codes:
 #   0  gate=open  (>= required consecutive passes)
@@ -85,7 +85,7 @@ def evaluate-gate [results_dir: string, required: int] {
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main [
-    --results-dir: string = "/tmp/smolbsd-results",  # dir holding *.toml result files
+    --results-dir: string = "/tmp/smolfire-results",  # dir holding *.toml result files
     --required: int = 3,                              # consecutive passes needed for gate=open
     --run,                                            # invoke run-vm-tests.nu first, then re-evaluate
     # pass-through flags for run-vm-tests.nu (only used with --run):

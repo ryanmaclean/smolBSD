@@ -1,6 +1,6 @@
-From coordinator@smolbsd.local Thu Jul 17 00:00:00 2026
+From coordinator@smolfire.local Thu Jul 17 00:00:00 2026
 Subject: task-0001 status
-Message-ID: <task-0001.fixture@smolbsd.local>
+Message-ID: <task-0001.fixture@smolfire.local>
 
 verdict = "pass"
 note = "fixture spool with nothing sensitive in it"

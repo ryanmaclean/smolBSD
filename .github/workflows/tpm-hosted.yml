@@ -7,13 +7,13 @@
 # of a runner-local path.
 #
 # Triggers:
-#   - workflow_run: automatically after each successful "Build smolBSD Image
+#   - workflow_run: automatically after each successful "Build smolfire Image
 #     (hosted runner)" run (active once this file is on the default branch).
 #   - workflow_dispatch: manual, with the build run ID to fetch the artifact
 #     from.
 #
 # amd64 only: QEMU's tpm-tis works there; aarch64's tpm-tis-device never
-# yields /dev/tpm0 in the guest (see sys/arm64/conf/SMOLBSD notes).
+# yields /dev/tpm0 in the guest (see sys/arm64/conf/SMOLFIRE-VM notes).
 #
 # Gates (docs: .github/workflows/tpm-vm-test.yml header, Phase 3):
 #   T1: swtpm control socket appears within 3s
@@ -29,10 +29,10 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: "Build run ID to fetch the smolbsd-amd64 artifact from"
+        description: "Build run ID to fetch the smolfire-amd64 artifact from"
         required: true
   workflow_run:
-    workflows: ["Build smolBSD Image (hosted runner)"]
+    workflows: ["Build smolfire Image (hosted runner)"]
     types: [completed]
 
 env:
@@ -73,16 +73,16 @@ jobs:
       - name: Fetch built image artifact
         uses: actions/download-artifact@v4
         with:
-          name: smolbsd-amd64
+          name: smolfire-amd64
           run-id: ${{ inputs.run_id || github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
       - name: T1 — swtpm socket
         run: |
           ls -lh
-          ART=$(find . -name 'smolbsd-amd64.qcow2' -type f | head -1)
-          test -n "$ART" || { echo "ERROR: artifact has no smolbsd-amd64.qcow2 (build may predate the artifact naming)"; find . -maxdepth 3 -type f; exit 1; }
-          [ "$ART" = "./smolbsd-amd64.qcow2" ] || mv "$ART" smolbsd-amd64.qcow2
+          ART=$(find . -name 'smolfire-amd64.qcow2' -type f | head -1)
+          test -n "$ART" || { echo "ERROR: artifact has no smolfire-amd64.qcow2 (build may predate the artifact naming)"; find . -maxdepth 3 -type f; exit 1; }
+          [ "$ART" = "./smolfire-amd64.qcow2" ] || mv "$ART" smolfire-amd64.qcow2
           mkdir -p /tmp/tpmstate
           # swtpm's pid option is '--pid file=<path>' (not '--pid-file <path>'
           # — that typo made swtpm print usage and exit 1, which was this
@@ -101,7 +101,7 @@ jobs:
         run: |
           qemu-system-x86_64 \
             -M q35 -accel kvm -cpu host -m 1G \
-            -drive file=smolbsd-amd64.qcow2,format=qcow2,if=virtio,snapshot=on \
+            -drive file=smolfire-amd64.qcow2,format=qcow2,if=virtio,snapshot=on \
             -chardev "socket,id=chrtpm,path=/tmp/swtpm.sock" \
             -tpmdev emulator,id=tpm0,chardev=chrtpm \
             -device tpm-tis,tpmdev=tpm0 \
@@ -109,9 +109,9 @@ jobs:
             -display none -daemonize \
             -serial file:/tmp/serial.log \
             -pidfile /tmp/vm.pid
-          echo "Waiting for guest SSH (root/smolbsd password auth) ..."
+          echo "Waiting for guest SSH (root/smolfire password auth) ..."
           for i in $(seq 1 60); do
-            if sshpass -p smolbsd ssh -o StrictHostKeyChecking=no \
+            if sshpass -p smolfire ssh -o StrictHostKeyChecking=no \
                  -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 \
                  -o PreferredAuthentications=password \
                  -p "$SSH_PORT" root@127.0.0.1 'echo GUEST_UP'; then
@@ -134,7 +134,7 @@ jobs:
                    -o PreferredAuthentications=password -o ServerAliveInterval=15
                    -p "$SSH_PORT" root@127.0.0.1)
           # Transition guard: artifacts from pre-eviction builds still have it.
-          if sshpass -p smolbsd ssh "${SSHOPTS[@]}" 'command -v tpm2_pcrread' >/dev/null 2>&1; then
+          if sshpass -p smolfire ssh "${SSHOPTS[@]}" 'command -v tpm2_pcrread' >/dev/null 2>&1; then
             echo "tpm2-tools already present (pre-eviction artifact) — skipping install"
             exit 0
           fi
@@ -143,7 +143,7 @@ jobs:
           # never ran in the DESTDIR chroot; idempotent, ~1s.
           # IGNORE_OSVERSION: repo packages may be built on a newer 15.x than
           # the image's FreeBSD_version.
-          if ! timeout 420 sshpass -p smolbsd ssh "${SSHOPTS[@]}" '
+          if ! timeout 420 sshpass -p smolfire ssh "${SSHOPTS[@]}" '
                 set -e
                 certctl rehash || true
                 env ASSUME_ALWAYS_YES=yes IGNORE_OSVERSION=yes /usr/sbin/pkg bootstrap
@@ -159,7 +159,7 @@ jobs:
       - name: T2-T6 — in-guest TPM checks
         run: |
           SSH() {
-            sshpass -p smolbsd ssh -o StrictHostKeyChecking=no \
+            sshpass -p smolfire ssh -o StrictHostKeyChecking=no \
               -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=password \
               -p "$SSH_PORT" root@127.0.0.1 "$@"
           }
@@ -194,7 +194,7 @@ jobs:
           if SSH 'set -e
               d=$(mktemp -d)
               cd "$d"
-              echo smolbsd-seal-test > secret.txt
+              echo smolfire-seal-test > secret.txt
               tpm2_createprimary -C o -g sha256 -G ecc -c primary.ctx -Q
               tpm2_flushcontext -t
               tpm2_createpolicy --policy-pcr -l sha256:0,7 -L policy.pcr -Q
@@ -213,7 +213,7 @@ jobs:
           # T6: PCR 23 changes after extend
           if SSH 'set -e
               a=$(tpm2_pcrread sha256:23)
-              tpm2_pcrextend "23:sha256=$(printf smolbsd | sha256sum | cut -d" " -f1)"
+              tpm2_pcrextend "23:sha256=$(printf smolfire | sha256sum | cut -d" " -f1)"
               b=$(tpm2_pcrread sha256:23)
               [ "$a" != "$b" ]'; then
             echo "T6 PASS: PCR 23 changed after extend"

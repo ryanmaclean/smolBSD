@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# coord-tick.nu — smolBSD coordinator tick (actor model, tail-recursive FSM)
+# coord-tick.nu — smolfire coordinator tick (actor model, tail-recursive FSM)
 #
 # Each invocation of `main` is ONE tick of the coordinator actor.
 # State is loaded from --state-file at startup and saved back at exit.
@@ -99,7 +99,7 @@ def write-halt-marker [root: string, task_id: string, reason: string, verdict: s
         halted_at:  (date now | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%SZ")
         reason:     $reason
         attempts:   $attempts
-        halt_msgid: $"<halt-($task_id).coord@smolbsd.local>"
+        halt_msgid: $"<halt-($task_id).coord@smolfire.local>"
         resume_tag: $"resume-($task_id)"
     } | to toml | save --force $halt_path
     $halt_path
@@ -108,16 +108,16 @@ def write-halt-marker [root: string, task_id: string, reason: string, verdict: s
 # Append a spec-compliant HALT mbox message to the spool.
 def append-halt-message [spool: string, task_id: string, reason: string, verdict: string, attempts: int, proposed_actions: list<string>] {
     let ts        = date now | format date "%Y%m%d%H%M%S"
-    let halt_msgid = $"<halt-($task_id).coord@smolbsd.local>"
+    let halt_msgid = $"<halt-($task_id).coord@smolfire.local>"
     let resume_tag = $"resume-($task_id)"
     let x_halt_reason = match $reason {
         "retry-exhausted"  => "retry-exhausted"
         "no-unblocker"     => "claim-verification-failed"
         _                  => $reason
     }
-    let mbox_msg = $"From coordinator@smolbsd.local ($ts)
-From: coordinator@smolbsd.local
-To: user@smolbsd.local
+    let mbox_msg = $"From coordinator@smolfire.local ($ts)
+From: coordinator@smolfire.local
+To: user@smolfire.local
 Subject: [HALT] ($task_id) — ($reason)
 Message-ID: ($halt_msgid)
 X-Halt-Reason: ($x_halt_reason)
@@ -163,21 +163,21 @@ def try-irc-dm [task_id: string, reason: string, root: string] {
     let msg = $"HALT ($task_id): ($reason)"
     # IRC host is internal infrastructure — never hardcoded in the repo.
     # Unset => fallback is inert ("no-route"), which the design tolerates.
-    let irc_host = $env.SMOLBSD_IRC_HOST? | default ""
+    let irc_host = $env.SMOLFIRE_IRC_HOST? | default ""
     let halt_path = [$root, "var", "mail", $"HALT.($task_id)"] | path join
 
     let result = if $irc_host == "" {
         "no-route"
     } else { try {
         # TLS attempt on 6697 — pipe IRC NICK/USER/PRIVMSG/QUIT sequence
-        let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
+        let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolfire coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
         # out+err> /dev/null: suppress both stdout (s_client banner) and stderr (error msgs)
         let out = $irc_cmds | ^openssl s_client -connect $"($irc_host):6697" -quiet -timeout 10 out+err> /dev/null
         "tls-ok"
     } catch {
         # Plain fallback on 6667
         try {
-            let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolBSD coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
+            let irc_cmds = $"NICK coord-bot\r\nUSER coord-bot 0 * :smolfire coord\r\nPRIVMSG ryan :($msg)\r\nQUIT\r\n"
             let out = $irc_cmds | ^nc -w 5 $irc_host 6667 err> /dev/null
             "plain-ok"
         } catch {
@@ -215,14 +215,14 @@ def spawn-subagent [agent_type: string, task_id: string, spool_path: string, roo
     let prompt_file = [$spawn_dir, $"($task_id).prompt.txt"] | path join
     let log_file    = [$spawn_dir, $"($task_id).log"]        | path join
 
-    let prompt = $"You are a smolBSD subagent of type ($agent_type) handling task ($task_id).
+    let prompt = $"You are a smolfire subagent of type ($agent_type) handling task ($task_id).
 
 1. Read the mbox spool at: ($spool_path)
 2. Find the message whose Message-ID contains \"<($task_id).\" — that is your task envelope.
 3. Parse its TOML body and execute the value of the `command` field as a shell command.
 4. Append a reply to the spool (($spool_path)) with these headers:
-   - From: ($agent_type)@smolbsd.local
-   - To: coordinator@smolbsd.local
+   - From: ($agent_type)@smolfire.local
+   - To: coordinator@smolfire.local
    - In-Reply-To: <the original Message-ID>
    - X-Verdict: pass | fail   \(pass iff exit_code == 0\)
    - Content-Type: text/toml; charset=utf-8
@@ -237,8 +237,8 @@ Do not modify any other messages in the spool. Append only.
 "
     $prompt | save --force $prompt_file
 
-    # override with SMOLBSD_CLAUDE_MODEL env var
-    let model = $env | get SMOLBSD_CLAUDE_MODEL? | default "claude-sonnet-5"
+    # override with SMOLFIRE_CLAUDE_MODEL env var
+    let model = $env | get SMOLFIRE_CLAUDE_MODEL? | default "claude-sonnet-5"
     # Launch claude as a truly-detached process (survives coord-tick.nu exit).
     # Prompt is passed via stdin redirect to avoid shell quoting fragility.
     let sh_cmd = $"claude --print --bare --allowedTools 'Write,Bash,Read,Glob,Grep' --max-budget-usd 1.0 --model ($model) < '($prompt_file)' >'($log_file)' 2>&1 &"
@@ -362,7 +362,7 @@ def state-harvesting [state: record, spool: string, root: string, remaining: int
             let task_id   = $payload | get "task_id"? | default "unknown"
 
             # Determine whether this is a coord→agent request or agent→coord reply.
-            let direction = if $to_addr == "coordinator@smolbsd.local" { "reply" } else { "request" }
+            let direction = if $to_addr == "coordinator@smolfire.local" { "reply" } else { "request" }
 
             log-event "harvest_message" {
                 message_id: $id
@@ -588,10 +588,10 @@ def state-waiting [state: record, spool: string, root: string, remaining: int] {
                 }
                 # Inject a synthetic fail reply into the spool so the next harvest triggers retry
                 let ts = date now | format date "%Y%m%d%H%M%S"
-                let synth_id = $"<timeout.($state.pending_task_id).($ts)@smolbsd.local>"
-                let synth_msg = $"From coordinator@smolbsd.local ($ts)
-From: coordinator@smolbsd.local
-To: coordinator@smolbsd.local
+                let synth_id = $"<timeout.($state.pending_task_id).($ts)@smolfire.local>"
+                let synth_msg = $"From coordinator@smolfire.local ($ts)
+From: coordinator@smolfire.local
+To: coordinator@smolfire.local
 Message-ID: ($synth_id)
 In-Reply-To: ($state.pending_request_id)
 Content-Type: text/toml; charset=utf-8
@@ -616,9 +616,9 @@ def state-dispatching [state: record, spool: string, root: string, remaining: in
     let attempt_n    = $state.attempt_counts | get -o $task_id | default 0
     let next_attempt = $attempt_n + 1
     let ts           = date now | format date "%Y%m%d%H%M%S"
-    let msg_id       = $"<coord.($state.tick_count).r($next_attempt).($ts)@smolbsd.local>"
-    let to_addr      = if $state.pending_to_addr != "" { $state.pending_to_addr } else { $"($task_id)@smolbsd.local" }
-    let from_addr    = "coordinator@smolbsd.local"
+    let msg_id       = $"<coord.($state.tick_count).r($next_attempt).($ts)@smolfire.local>"
+    let to_addr      = if $state.pending_to_addr != "" { $state.pending_to_addr } else { $"($task_id)@smolfire.local" }
+    let from_addr    = "coordinator@smolfire.local"
 
     let mbox_msg = $"From ($from_addr) ($ts)
 From: ($from_addr)

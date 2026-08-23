@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # SPDX-License-Identifier: Apache-2.0
-# bin/setup-hooks.nu — install git hooks for smolBSD
+# bin/setup-hooks.nu — install git hooks for smolfire
 #
 # Run once after cloning:
 #   nu bin/setup-hooks.nu

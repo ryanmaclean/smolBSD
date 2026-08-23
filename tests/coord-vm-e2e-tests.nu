@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # tests/coord-vm-e2e-tests.nu — end-to-end test: coord dispatches to real VM and harvests reply
 #
-# This suite boots a real smolBSD VM, submits a task through the coordinator
+# This suite boots a real smolfire VM, submits a task through the coordinator
 # FSM, and asserts that the reply is correctly harvested back into state.
 #
 # Prerequisites (all checked at runtime; suite skips gracefully if absent):
-#   - build/FreeBSD-15-aarch64-smolbsd.qcow2   — smolBSD boot image
+#   - build/FreeBSD-15-aarch64-smolfire.qcow2   — smolfire boot image
 #   - bin/vm-execute.nu                         — VM execution driver (parallel work)
 #   - sshpass OR expect                         — for unattended SSH
 #
@@ -19,7 +19,7 @@ use ../bin/mbox-parse.nu [parse-mbox, msg-id]
 
 # Return a skip record if a prerequisite is absent, null otherwise.
 def check-prereqs [] {
-    let qcow2      = "build/FreeBSD-15-aarch64-smolbsd.qcow2"
+    let qcow2      = "build/FreeBSD-15-aarch64-smolfire.qcow2"
     let vm_execute = "bin/vm-execute.nu"
 
     if not ($qcow2 | path exists) {
@@ -57,7 +57,7 @@ def check-prereqs [] {
 # Create an isolated temp root with the subdirectory layout coord-tick expects.
 # Returns the absolute path string.
 def make-e2e-root [] {
-    let tmp = ^mktemp -d -t smolbsd-e2e | str trim
+    let tmp = ^mktemp -d -t smolfire-e2e | str trim
     mkdir ($tmp | path join "var" "mail")
     mkdir ($tmp | path join "var" "run")
     mkdir ($tmp | path join "var" "run" "dispatch-logs")
@@ -122,7 +122,7 @@ def run-tick [root: string, spool_abs: string, state_abs: string, max_ticks: int
 def test-submit-vm-task [root: string, spool_abs: string] {
     let name      = "e2e: coord-submit writes vm-builder task to spool"
     let task_id   = "task-e2e-001"
-    let task_body = $"task_id = \"($task_id)\"\nrole    = \"vm-builder\"\n\n[brief]\nobjective = \"Boot smolBSD and capture identity\"\n\n[commands]\nrun = [\"uname -a\", \"echo SMOLBSD_E2E_OK\"]\n\n[context_pointers]\nimage_path = \"build/FreeBSD-15-aarch64-smolbsd.qcow2\"\narch       = \"arm64\"\n"
+    let task_body = $"task_id = \"($task_id)\"\nrole    = \"vm-builder\"\n\n[brief]\nobjective = \"Boot smolfire and capture identity\"\n\n[commands]\nrun = [\"uname -a\", \"echo SMOLFIRE_E2E_OK\"]\n\n[context_pointers]\nimage_path = \"build/FreeBSD-15-aarch64-smolfire.qcow2\"\narch       = \"arm64\"\n"
 
     let result = (^nu --no-config-file bin/coord-submit.nu --task-id $task_id --role "vm-builder" --subject "E2E test boot" --body $task_body --spool $spool_abs) | complete
 
@@ -156,7 +156,7 @@ def test-tick1-dispatches [root: string, spool_abs: string, state_abs: string] {
         try { open --raw $state_abs | from toml } catch { {} }
     } else { {} }
 
-    let task_body = $"task_id = \"($task_id)\"\nrole    = \"vm-builder\"\n\n[brief]\nobjective = \"Boot smolBSD and capture identity\"\n\n[commands]\nrun = [\"uname -a\", \"echo SMOLBSD_E2E_OK\"]\n\n[context_pointers]\nimage_path = \"build/FreeBSD-15-aarch64-smolbsd.qcow2\"\narch       = \"arm64\"\n"
+    let task_body = $"task_id = \"($task_id)\"\nrole    = \"vm-builder\"\n\n[brief]\nobjective = \"Boot smolfire and capture identity\"\n\n[commands]\nrun = [\"uname -a\", \"echo SMOLFIRE_E2E_OK\"]\n\n[context_pointers]\nimage_path = \"build/FreeBSD-15-aarch64-smolfire.qcow2\"\narch       = \"arm64\"\n"
 
     # Seed the current state-dispatching contract: pending_task_id / pending_to_addr /
     # pending_request_id. The original Message-ID is the request envelope coord-submit
@@ -172,16 +172,16 @@ def test-tick1-dispatches [root: string, spool_abs: string, state_abs: string] {
         if ($match | length) > 0 {
             $match | first | get headers | get "Message-ID"
         } else {
-            $"<($task_id).initial@smolbsd.local>"
+            $"<($task_id).initial@smolfire.local>"
         }
     } else {
-        $"<($task_id).initial@smolbsd.local>"
+        $"<($task_id).initial@smolfire.local>"
     }
 
     let seeded = $cur_state
         | upsert fsm_state          "dispatching"
         | upsert pending_task_id    $task_id
-        | upsert pending_to_addr    "vm-builder@smolbsd.local"
+        | upsert pending_to_addr    "vm-builder@smolfire.local"
         | upsert pending_request_id $initial_req_id
         | upsert dispatched_at      ""
 
@@ -235,7 +235,7 @@ def test-tick2-harvests-reply [root: string, spool_abs: string, state_abs: strin
         # the FreeBSD uname string or our echo marker.
         let from_count    = count-from-lines $spool_abs
         let spool_content = if ($spool_abs | path exists) { open --raw $spool_abs } else { "" }
-        let has_reply_content = ($spool_content | str contains "FreeBSD") or ($spool_content | str contains "SMOLBSD_E2E_OK")
+        let has_reply_content = ($spool_content | str contains "FreeBSD") or ($spool_content | str contains "SMOLFIRE_E2E_OK")
 
         if $from_count >= 2 and $has_reply_content {
             $reply_present = true
@@ -278,14 +278,14 @@ def test-reply-contains-freebsd [spool_abs: string] {
 
 # Test E: spool contains the echo marker proving our command ran.
 def test-reply-contains-marker [spool_abs: string] {
-    let name          = "e2e: reply contains SMOLBSD_E2E_OK echo marker"
+    let name          = "e2e: reply contains SMOLFIRE_E2E_OK echo marker"
     let spool_content = if ($spool_abs | path exists) { open --raw $spool_abs } else { "" }
-    let has_marker    = $spool_content | str contains "SMOLBSD_E2E_OK"
+    let has_marker    = $spool_content | str contains "SMOLFIRE_E2E_OK"
 
     if $has_marker {
-        {name: $name, status: "pass", detail: "SMOLBSD_E2E_OK marker found in spool"}
+        {name: $name, status: "pass", detail: "SMOLFIRE_E2E_OK marker found in spool"}
     } else {
-        {name: $name, status: "fail", detail: "SMOLBSD_E2E_OK not found — echo command did not appear in reply"}
+        {name: $name, status: "fail", detail: "SMOLFIRE_E2E_OK not found — echo command did not appear in reply"}
     }
 }
 
@@ -342,7 +342,7 @@ def run-e2e-suite [root: string, spool_abs: string, state_abs: string] {
             {name: "e2e: tick-1 dispatches vm-builder task (waiting state)",               status: "skip", detail: "skipped — submit failed"}
             {name: "e2e: tick-2+ harvests VM reply into state",                            status: "skip", detail: "skipped — submit failed"}
             {name: "e2e: reply contains FreeBSD identity (uname -a)",                      status: "skip", detail: "skipped — submit failed"}
-            {name: "e2e: reply contains SMOLBSD_E2E_OK echo marker",                       status: "skip", detail: "skipped — submit failed"}
+            {name: "e2e: reply contains SMOLFIRE_E2E_OK echo marker",                       status: "skip", detail: "skipped — submit failed"}
             {name: "e2e: state.seen_ids includes both request and reply Message-IDs",      status: "skip", detail: "skipped — submit failed"}
         ]
     }
@@ -355,7 +355,7 @@ def run-e2e-suite [root: string, spool_abs: string, state_abs: string] {
 
     # D–F: assertions on spool + state content
     let rd = try { test-reply-contains-freebsd $spool_abs } catch {|e| {name: "e2e: reply contains FreeBSD identity (uname -a)",    status: "fail", detail: $"exception: ($e.msg)"}}
-    let re = try { test-reply-contains-marker   $spool_abs } catch {|e| {name: "e2e: reply contains SMOLBSD_E2E_OK echo marker",     status: "fail", detail: $"exception: ($e.msg)"}}
+    let re = try { test-reply-contains-marker   $spool_abs } catch {|e| {name: "e2e: reply contains SMOLFIRE_E2E_OK echo marker",     status: "fail", detail: $"exception: ($e.msg)"}}
     let rf = try { test-state-seen-ids           $state_abs } catch {|e| {name: "e2e: state.seen_ids includes both request and reply Message-IDs", status: "fail", detail: $"exception: ($e.msg)"}}
 
     [$ra $rb $rc $rd $re $rf]
